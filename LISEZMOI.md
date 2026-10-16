@@ -1,6 +1,6 @@
 # Coffre
 
-Appli Windows **et Android** pour gérer ta collection : les 722 cartes de **Yu-Gi-Oh! Forbidden Memories** (avec images), **toutes les cartes Yu-Gi-Oh** (collection par extension et decks) et tes **vinyles** (recherche en ligne avec pochettes via MusicBrainz ou Discogs). Sur le téléphone, l'appareil photo reconnaît les cartes par leur illustration et lit le code-barres des vinyles. Le PC et le téléphone se synchronisent sur le Wi-Fi.
+Appli Windows **et Android** pour gérer ta collection : les 722 cartes de **Yu-Gi-Oh! Forbidden Memories** (avec images), **toutes les cartes Yu-Gi-Oh** (collection par extension et decks) et tes **vinyles** (recherche Discogs avec pochettes et prix du marché). Sur le téléphone, l'appareil photo reconnaît les cartes et lit le code-barres des vinyles. Le PC et le téléphone se synchronisent sur le Wi-Fi.
 
 Tes données sont rangées dans `%AppData%\Coffre` (fichier `coffre.json` + dossier `pochettes`). Les mises à jour de l'appli n'y touchent jamais.
 
@@ -43,12 +43,14 @@ En mode test, les mises à jour automatiques sont désactivées : c'est normal.
 
 ---
 
-## 4. Discogs (optionnel)
+## 4. Discogs (nécessaire pour les vinyles)
 
-MusicBrainz marche tout de suite, sans compte. Discogs référence plus de pressages vinyles (couleurs, rééditions…) :
+La recherche de vinyles et leurs prix passent par Discogs. Il faut une clé gratuite :
 1. Connecte-toi sur discogs.com → **Paramètres → Développeurs** → **Créer une application** (nom : `Coffre`).
 2. Copie la **Consumer Key** et le **Consumer Secret**.
 3. Dans Coffre : ⚙ **Réglages** → colle-les dans les deux champs Discogs. À faire sur le PC et sur le téléphone (ces clés ne sont jamais envoyées d'un appareil à l'autre, ni mises dans le code).
+
+**Prix** : chaque vinyle affiche le prix le plus bas actuellement en vente sur Discogs (et le nombre d'exemplaires en vente). La valeur de ta collection est en haut de l'onglet Vinyles. Les prix se mettent à jour tout seuls chaque semaine, ou avec le bouton **Actualiser les prix**. Les vinyles ajoutés avant via MusicBrainz ou à la main n'ont pas de prix : rajoute-les depuis la recherche Discogs si tu veux leur prix.
 
 ---
 

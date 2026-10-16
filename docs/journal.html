@@ -4,6 +4,17 @@ h1{margin:0 0 4px}h2{margin:28px 0 8px;color:#e3b54a}.d{color:#9a95ad}details{bo
 summary{cursor:pointer;padding:8px 12px}pre{margin:0;padding:12px;overflow:auto;max-height:520px;font:12px Consolas,monospace;background:#100e16;border-top:1px solid #322e42}
 .mod{font-size:11px;background:#3a2f17;color:#e3b54a;padding:1px 6px;border-radius:4px}.new{font-size:11px;background:#1f3a26;color:#6cc58c;padding:1px 6px;border-radius:4px}ul{margin:4px 0 0}</style></head><body>
 <h1>Journal des modifications</h1><p class="d">Coffre — clique sur un fichier pour voir son code.</p>
+<h2>v1.5.0 <span class="d">— 16/10/2026</span></h2>
+<ul><li>Vinyles : <b>prix Discogs</b>. Chaque vinyle affiche le prix le plus bas actuellement en vente sur Discogs (en €) et le nombre d’exemplaires en vente ; la valeur de ta collection est en haut de l’onglet.</li><li>Prix mis à jour tout seuls chaque semaine (un vinyle par seconde, limite de Discogs), ou avec le bouton <b>Actualiser les prix</b>.</li><li><b>MusicBrainz retiré</b> : la recherche (texte et code-barres) passe uniquement par Discogs. Les vinyles déjà ajoutés via MusicBrainz restent dans ta collection, sans prix.</li></ul>
+<details><summary><code>src/shared/coffre-core.js</code> <span class="mod">modifié</span></summary><pre><span style="color:#ef7a62">- searchMusicBrainz, detailsMusicBrainz, mbRelease (MusicBrainz)</span>
+<span style="color:#6cc58c">+ https://api.discogs.com/releases/${id}?curr_abbr=EUR</span>
+<span style="color:#6cc58c">+ dp: lowest_price, dpN: num_for_sale, dpAt: date   // prix du marché Discogs</span>
+<span style="color:#6cc58c">+ search: ({ q, page, auth }) =&gt; searchDiscogs(q, page, auth)</span></pre></details>
+<details><summary><code>src/renderer/app.js</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ function refreshPrices(onlyStale) { … }   // une demande par seconde</span>
+<span style="color:#6cc58c">+ Prix Discogs dans la fiche, « dès X € » sur chaque pochette, valeur totale en haut</span>
+<span style="color:#ef7a62">- choix MusicBrainz / Discogs (recherche et réglages)</span></pre></details>
+<details><summary><code>src/renderer/index.html</code>, <code>src/main.js</code>, <code>mobile/src/mobile.js</code>, <code>LISEZMOI.md</code>, <code>package.json</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ &lt;button id=&quot;vinPriceBtn&quot;&gt;Actualiser les prix&lt;/button&gt;   &lt;span id=&quot;vinValue&quot;&gt;&lt;/span&gt;</span>
+<span style="color:#6cc58c">+ &quot;version&quot;: &quot;1.5.0&quot;,</span></pre></details>
 <h2>v1.4.1 <span class="d">— 16/10/2026</span></h2>
 <ul><li>Cartes FM : bouton <b>Wishlist Cardmarket</b>. Il copie les cartes FM manquantes au format wishlist Cardmarket, avec le nom officiel de la carte (retrouvée dans la base Yu-Gi-Oh par son mot de passe, sinon par son nom) et le prix estimé.</li><li>Choix « toutes les manquantes » ou « seulement le filtre actuel ». Les cartes introuvables dans la base (propres au jeu, ou nom différent) sont mises à part, avec un bouton pour les ajouter quand même.</li></ul>
 <details><summary><code>src/renderer/app.js</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ function openFmWish() { … }   function renderFmWish() { … }</span>

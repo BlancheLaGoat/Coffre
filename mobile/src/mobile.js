@@ -94,7 +94,7 @@
   }
 
   // ---------- Données ----------
-  const defaultData = () => ({ version: 1, fm: {}, vinyls: {}, ygo: {}, decks: {}, settings: { source: 'musicbrainz', discogsToken: '', layout: 'gal' } });
+  const defaultData = () => ({ version: 1, fm: {}, vinyls: {}, ygo: {}, decks: {}, settings: { source: 'discogs', discogsToken: '', layout: 'gal' } });
   let coversUrl = '';
   let lastSyncedJson = '';
 

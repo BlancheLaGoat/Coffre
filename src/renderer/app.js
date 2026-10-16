@@ -23,7 +23,7 @@ let data = null;
 let info = { coversUrl: '', version: '' };
 const fmF = { q: '', t: '', v: 'all' };
 const vinF = { q: '', v: 'all', sort: 'artist' };
-const search = { q: '', source: 'musicbrainz', page: 1, results: [], hasMore: false, loading: false, error: '' };
+const search = { q: '', source: 'discogs', page: 1, results: [], hasMore: false, loading: false, error: '' };
 let modalKind = null;
 
 const coverUrl = name => name ? info.coversUrl + encodeURIComponent(name) : '';
@@ -238,6 +238,8 @@ function renderVinyls() {
   $('vinOwned').textContent = all.filter(([, v]) => v.status !== 'wish').length;
   $('vinWish').textContent = all.filter(([, v]) => v.status === 'wish').length;
   $('tabVinCount').textContent = all.filter(([, v]) => v.status !== 'wish').length;
+  const value = all.filter(([, v]) => v.status !== 'wish' && typeof v.dp === 'number').reduce((a, [, v]) => a + v.dp, 0);
+  $('vinValue').innerHTML = value ? ` · valeur ≈ <b class="price">${eurFmt.format(value)}</b> <span class="hint">(Discogs)</span>` : '';
   if (!all.length) {
     $('vinList').innerHTML = `<div class="empty">Ton bac est vide.<br>Clique sur <b>Rechercher un vinyle</b>, tape un artiste ou un album, puis ajoute le disque avec sa pochette.</div>`;
     return;
@@ -258,7 +260,7 @@ function renderVinyls() {
       ${coverHtml(v)}
       <span class="t">${esc(v.title)}</span>
       <span class="a">${esc(v.artist)}${v.year ? ' · ' + esc(v.year) : ''}</span>
-      <span>${v.status === 'wish' ? '<span class="pill wish">Recherché</span>' : v.grade ? `<span class="pill">${esc(v.grade)}</span>` : ''}</span>
+      <span>${v.status === 'wish' ? '<span class="pill wish">Recherché</span>' : v.grade ? `<span class="pill">${esc(v.grade)}</span>` : ''} ${dpText(v) ? `<span class="price">${esc(dpText(v))}</span>` : ''}</span>
     </button>`).join('')}</div>` : `<div class="empty">Aucun disque ne correspond.</div>`;
 }
 
@@ -269,16 +271,52 @@ $('vinSort').addEventListener('change', e => { vinF.sort = e.target.value; rende
 const GRADES = ['', 'M', 'NM', 'VG+', 'VG', 'G+', 'G', 'P'];
 const gradeOpts = cur => GRADES.map(g => `<option value="${g}" ${cur === g ? 'selected' : ''}>${g || '—'}</option>`).join('');
 const sourceName = s => s === 'discogs' ? 'Discogs' : s === 'musicbrainz' ? 'MusicBrainz' : 'ajout manuel';
+const eurFmt = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' });
+const dpText = v => typeof v.dp === 'number' ? `dès ${eurFmt.format(v.dp)}` : '';
 
 function tracksHtml(list) {
   if (!list || !list.length) return '';
   return `<div class="tracks">${list.map(t => `<div><span class="p">${esc(t.pos)}</span><span>${esc(t.title)}</span><span class="d">${esc(t.duration)}</span></div>`).join('')}</div>`;
 }
 
+// ---------- Prix Discogs (prix le plus bas en vente sur le marché Discogs) ----------
 function vinylInfoHtml(v) {
   const rows = [['Label', v.label], ['Référence', v.catno], ['Format', v.format], ['Pays', v.country], ['Année', v.year], ['Genres', (v.genres || []).join(', ')]].filter(([, x]) => x);
-  return `<dl class="kv">${rows.map(([k, x]) => `<dt>${k}</dt><dd>${esc(x)}</dd>`).join('')}</dl>`;
+  const price = typeof v.dp === 'number'
+    ? `<dt>Prix Discogs</dt><dd><b class="price">${eurFmt.format(v.dp)}</b> <span class="hint">le moins cher en vente · ${v.dpN || 0} en vente${v.dpAt ? ' · ' + new Date(v.dpAt).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }) : ''}</span></dd>`
+    : (v.dpAt ? `<dt>Prix Discogs</dt><dd class="hint">aucun exemplaire en vente</dd>` : '');
+  return `<dl class="kv">${rows.map(([k, x]) => `<dt>${k}</dt><dd>${esc(x)}</dd>`).join('')}${price}</dl>`;
 }
+
+// Met à jour le prix Discogs de chaque vinyle (une demande par seconde : limite de Discogs)
+let priceRun = null;
+async function refreshPrices(onlyStale) {
+  if (priceRun) return;
+  if (!hasDiscogs()) { if (!onlyStale) toast('Ajoute ta clé Discogs dans les réglages pour avoir les prix'); return; }
+  const week = 7 * 864e5;
+  const ids = liveVinyls().filter(([, v]) => v.source === 'discogs' && v.sourceId && (!onlyStale || !v.dpAt || Date.now() - v.dpAt > week)).map(([id]) => id);
+  if (!ids.length) { if (!onlyStale) toast('Aucun vinyle Discogs à mettre à jour'); return; }
+  priceRun = { done: 0, total: ids.length };
+  const btn = $('vinPriceBtn');
+  try {
+    for (const id of ids) {
+      const v = data.vinyls[id]; if (!v || v.deleted) continue;
+      if (btn) btn.textContent = `Prix… ${priceRun.done + 1}/${priceRun.total}`;
+      try {
+        const d = await window.coffre.details({ source: 'discogs', id: v.sourceId, auth: discogsAuth() });
+        data.vinyls[id] = { ...data.vinyls[id], dp: d.dp, dpN: d.dpN, dpAt: d.dpAt || Date.now(), mt: now() };
+        scheduleSave(); renderVinyls();
+      } catch (e) { if (/limite/i.test(String(e.message))) await new Promise(r => setTimeout(r, 10000)); }
+      priceRun.done++;
+      await new Promise(r => setTimeout(r, 1100));
+    }
+    if (!onlyStale) toast('Prix Discogs mis à jour');
+  } finally {
+    priceRun = null;
+    if (btn) btn.textContent = 'Actualiser les prix';
+  }
+}
+$('vinPriceBtn').addEventListener('click', () => refreshPrices(false));
 
 // Fiche d'un vinyle de la collection
 function openVinyl(id) {
@@ -346,27 +384,15 @@ function findInCollection(r) {
 
 function openSearch() {
   modalKind = 'search';
-  search.source = data.settings.source || 'musicbrainz';
-  const noToken = !hasDiscogs();
+  search.source = 'discogs';
   openModal(`
     <div class="sheet-head"><h3>Rechercher un vinyle</h3><button class="close" data-act="close">Fermer</button></div>
     <form class="searchbar" id="sForm">
       <input id="sQ" type="search" placeholder="Artiste, album, label, référence ou code-barres…" value="${esc(search.q)}" autofocus>
-      <div class="seg" id="sSrc">
-        <button type="button" data-v="musicbrainz">MusicBrainz</button>
-        <button type="button" data-v="discogs" ${noToken ? 'title="Ajoute ta clé Discogs dans les réglages"' : ''}>Discogs</button>
-      </div>
-      <button class="primary" type="submit">Chercher</button>
+      <button class="primary" type="submit">Chercher sur Discogs</button>
     </form>
     ${search.hint ? `<div class="shint" id="sHint">${search.hint}</div>` : ''}
     <div class="results" id="sRes"></div>`, 'vinyl wide');
-  const mark = () => $('sSrc').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === search.source)));
-  mark();
-  $('sSrc').addEventListener('click', e => {
-    const b = e.target.closest('button'); if (!b) return;
-    search.source = b.dataset.v; data.settings.source = search.source; scheduleSave(); mark();
-    if (search.q) runSearch(1);
-  });
   $('sForm').addEventListener('submit', e => { e.preventDefault(); search.q = $('sQ').value.trim(); if (search.q) runSearch(1); });
   renderResults();
 }
@@ -405,7 +431,7 @@ function renderResults() {
   if (search.error) { el.innerHTML = `<div class="spinner error">${esc(search.error)}</div>`; return; }
   if (!search.results.length) {
     el.innerHTML = search.loading ? `<div class="spinner">Recherche…</div>`
-      : `<div class="spinner">${search.q ? 'Aucun vinyle trouvé. Essaie avec moins de mots, ou change de source.' : 'Tape un nom et appuie sur Entrée. Les résultats viennent directement de ' + (search.source === 'discogs' ? 'Discogs' : 'MusicBrainz') + ', les nouveautés comprises.'}</div>`;
+      : `<div class="spinner">${search.q ? 'Aucun vinyle trouvé. Essaie avec moins de mots.' : hasDiscogs() ? 'Tape un nom ou un code-barres et appuie sur Entrée. Les résultats viennent directement de Discogs, les nouveautés comprises.' : 'Ajoute ta Consumer Key et ton Consumer Secret Discogs dans les réglages (⚙) pour pouvoir chercher.'}</div>`;
     return;
   }
   el.innerHTML = (search.reranking ? `<div class="spinner" style="padding:6px">Comparaison avec ta photo…</div>` : '') + search.results.map((r, i) => {
@@ -476,7 +502,8 @@ async function addRelease() {
     label: r.label || '', catno: r.catno || '', format: r.format || '',
     genres: r.genres || [], tracklist: r.tracklist || [],
     status: $('aStatus').value, grade: $('aGrade').value, price: $('aPrice').value.trim(), note: $('aNote').value.trim(),
-    cover, added: now(), mt: now()
+    cover, added: now(), mt: now(),
+    ...(r.dpAt ? { dp: r.dp, dpN: r.dpN, dpAt: r.dpAt } : {})
   };
   scheduleSave(); renderVinyls();
   $('aMsg').textContent = cover ? 'Ajouté au coffre.' : 'Ajouté au coffre (sans pochette, tu peux en choisir une dans sa fiche).';
@@ -576,8 +603,6 @@ function openSettings() {
   openModal(`
     <div class="sheet-head"><h3>Réglages</h3><button class="close" data-act="close">Fermer</button></div>
     <div class="form">
-      <label class="f">Source de recherche par défaut
-        <select id="stSource"><option value="musicbrainz">MusicBrainz (sans clé)</option><option value="discogs">Discogs (clé requise)</option></select></label>
       <label class="f">Discogs — Consumer Key
         <input id="stKey" value="${esc(data.settings.discogsKey || '')}" spellcheck="false" autocomplete="off"></label>
       <label class="f">Discogs — Consumer Secret
@@ -585,7 +610,7 @@ function openSettings() {
       <label class="f wide">Ou token personnel Discogs (facultatif)
         <input id="stToken" type="password" value="${esc(data.settings.discogsToken || '')}" placeholder="Seulement si tu en as un" spellcheck="false" autocomplete="off"></label>
     </div>
-    <p class="hint">Discogs référence plus de pressages vinyles. Sur Discogs : Paramètres → Développeurs → « Créer une application », puis copie la Consumer Key et le Consumer Secret ici. Ils restent sur cet appareil, jamais dans le code. <a data-act="dgs">Ouvrir la page ↗</a></p>
+    <p class="hint">La recherche de vinyles et leurs prix passent par Discogs. Sur Discogs : Paramètres → Développeurs → « Créer une application », puis copie la Consumer Key et le Consumer Secret ici. Ils restent sur cet appareil, jamais dans le code. <a data-act="dgs">Ouvrir la page ↗</a></p>
     ${phoneSectionHtml()}
     <h3>Sauvegarde</h3>
     <div class="actions" style="justify-content:flex-start">
@@ -599,7 +624,6 @@ function openSettings() {
       <button data-act="check">Chercher une mise à jour</button>
       ${updateState.status === 'ready' ? `<button class="primary" data-act="install">${info.platform === 'mobile' ? 'Télécharger la mise à jour' : 'Redémarrer et mettre à jour'}</button>` : ''}</div>
     <p class="hint" id="stUpd">${esc(updateLabel())}</p>`, 'vinyl');
-  $('stSource').value = data.settings.source || 'musicbrainz';
   loadPhoneSection();
 }
 
@@ -629,7 +653,6 @@ async function loadPhoneSection() {
 }
 $('sheet').addEventListener('change', e => {
   if (modalKind !== 'settings') return;
-  if (e.target.id === 'stSource') data.settings.source = e.target.value;
   if (e.target.id === 'stToken') data.settings.discogsToken = e.target.value.trim();
   if (e.target.id === 'stKey') data.settings.discogsKey = e.target.value.trim();
   if (e.target.id === 'stSecret') data.settings.discogsSecret = e.target.value.trim();
@@ -744,8 +767,8 @@ window.CoffreApp = {
     if (done) startRerank();
     if (modalKind === 'search') renderResults();
   },
-  searchRaw(q) { return window.coffre.search({ q, source: search.source || data.settings.source || 'musicbrainz', page: 1, auth: discogsAuth() }); },
-  get searchSource() { return search.source || data.settings.source || 'musicbrainz'; },
+  searchRaw(q) { return window.coffre.search({ q, source: 'discogs', page: 1, auth: discogsAuth() }); },
+  get searchSource() { return 'discogs'; },
   rerunSearch(q) { search.q = q; const i = $('sQ'); if (i) i.value = q; if (q) runSearch(1); }
 };
 
@@ -760,6 +783,8 @@ window.CoffreApp = {
   showTab(['vin', 'ygo'].includes(data.settings.tab) ? data.settings.tab : 'fm');
   renderAll();
   if (ext.ready) ext.ready();
+  // Prix Discogs manquants ou vieux de plus d'une semaine, en arrière-plan
+  setTimeout(() => refreshPrices(true), 8000);
   window.coffreReady = true;
   document.dispatchEvent(new Event('coffre:ready'));
 })();

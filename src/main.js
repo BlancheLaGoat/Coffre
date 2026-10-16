@@ -1,5 +1,5 @@
 // Coffre — processus principal Electron
-// Gère la fenêtre, le stockage local, la recherche de vinyles (MusicBrainz / Discogs),
+// Gère la fenêtre, le stockage local, la recherche de vinyles (Discogs),
 // les pochettes, la synchronisation avec l'appli Android (Wi-Fi local)
 // et les mises à jour automatiques via GitHub Releases.
 
@@ -34,7 +34,7 @@ function ensureDirs() {
 }
 
 function defaultData() {
-  return { version: 1, fm: {}, vinyls: {}, ygo: {}, decks: {}, settings: { source: 'musicbrainz', discogsToken: '', discogsKey: '', discogsSecret: '', layout: 'gal' } };
+  return { version: 1, fm: {}, vinyls: {}, ygo: {}, decks: {}, settings: { source: 'discogs', discogsToken: '', discogsKey: '', discogsSecret: '', layout: 'gal' } };
 }
 
 function loadData() {

@@ -1,5 +1,5 @@
 // Coffre — code partagé entre l'appli PC (Node/Electron) et l'appli Android (navigateur).
-// Contient la recherche de vinyles (MusicBrainz / Discogs, par texte ou code-barres)
+// Contient la recherche de vinyles (Discogs, par texte ou code-barres, avec le prix du marché)
 // et la fusion des collections pour la synchronisation PC <-> téléphone.
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
@@ -35,8 +35,6 @@
   // ---------- Recherche de vinyles ----------
   // getJson(url, headers) doit renvoyer le JSON décodé ou lever une erreur lisible.
   function createVinylApi(getJson) {
-    const mbArtist = credit => (credit || []).map(c => (c.name || (c.artist && c.artist.name) || '') + (c.joinphrase || '')).join('').trim();
-    const msToTime = ms => { if (!ms) return ''; const s = Math.round(ms / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
     const isBarcode = q => /^\d{8,14}$/.test(String(q).replace(/\s/g, ''));
 
     function discogsAuth(auth) {
@@ -44,53 +42,6 @@
       if (auth.token) return { Authorization: `Discogs token=${auth.token}` };
       if (auth.key && auth.secret) return { Authorization: `Discogs key=${auth.key}, secret=${auth.secret}` };
       return null;
-    }
-
-    function mbRelease(r) {
-      const li = (r['label-info'] || [])[0] || {};
-      const formats = (r.media || []).map(m => m.format).filter(Boolean);
-      const discs = (r.media || []).length;
-      return {
-        source: 'musicbrainz', id: r.id,
-        artist: mbArtist(r['artist-credit']), title: r.title,
-        year: (r.date || '').slice(0, 4), country: r.country || '',
-        label: (li.label && li.label.name) || '', catno: li['catalog-number'] || '',
-        format: discs > 1 ? `${discs}× ${formats[0] || 'Vinyl'}` : (formats[0] || 'Vinyl'),
-        barcode: r.barcode || '',
-        thumb: `https://coverartarchive.org/release/${r.id}/front-250`,
-        cover: `https://coverartarchive.org/release/${r.id}/front-500`
-      };
-    }
-
-    async function searchMusicBrainz(q, page) {
-      const limit = 30;
-      let query;
-      if (isBarcode(q)) {
-        // Un même disque peut être enregistré en UPC (12 chiffres) ou en EAN (13 chiffres, avec un 0 devant)
-        const b = String(q).replace(/\s/g, '');
-        const alt = b.length === 12 ? '0' + b : (b.length === 13 && b[0] === '0' ? b.slice(1) : '');
-        query = alt ? `barcode:(${b} OR ${alt})` : `barcode:${b}`;
-      } else {
-        const t = String(q).replace(/[\\+\-!(){}\[\]^"~*?:/]|&&|\|\|/g, ' ').trim();
-        if (!t) return { results: [], hasMore: false };
-        query = `(release:(${t}) OR artist:(${t}) OR label:(${t}) OR catno:(${t})) AND format:vinyl`;
-      }
-      const d = await getJson(`https://musicbrainz.org/ws/2/release/?query=${encodeURIComponent(query)}&fmt=json&limit=${limit}&offset=${(page - 1) * limit}`, {});
-      return { results: (d.releases || []).map(mbRelease), hasMore: (d.count || 0) > page * limit };
-    }
-
-    async function detailsMusicBrainz(id) {
-      const r = await getJson(`https://musicbrainz.org/ws/2/release/${id}?inc=recordings+labels+artist-credits+release-groups&fmt=json`, {});
-      const tracklist = [];
-      (r.media || []).forEach((m, i) => (m.tracks || []).forEach(t => tracklist.push({ pos: (r.media.length > 1 ? `${i + 1}-` : '') + (t.number || ''), title: t.title, duration: msToTime(t.length) })));
-      const li = (r['label-info'] || [])[0] || {};
-      return {
-        tracklist, genres: [],
-        label: (li.label && li.label.name) || '', catno: li['catalog-number'] || '',
-        country: r.country || '', year: (r.date || '').slice(0, 4),
-        cover: `https://coverartarchive.org/release/${id}/front-500`,
-        url: `https://musicbrainz.org/release/${id}`
-      };
     }
 
     async function searchDiscogs(q, page, auth) {
@@ -113,7 +64,7 @@
     }
 
     async function detailsDiscogs(id, auth) {
-      const d = await getJson(`https://api.discogs.com/releases/${id}`, discogsAuth(auth) || {});
+      const d = await getJson(`https://api.discogs.com/releases/${id}?curr_abbr=EUR`, discogsAuth(auth) || {});
       const imgs = d.images || [];
       const primary = imgs.find(i => i.type === 'primary') || imgs[0];
       const fmt = (d.formats || [])[0];
@@ -124,15 +75,19 @@
         country: d.country || '', year: d.year ? String(d.year) : '',
         format: fmt ? [fmt.qty && fmt.qty !== '1' ? `${fmt.qty}×` : '', fmt.name, ...(fmt.descriptions || [])].filter(Boolean).join(' ') : '',
         cover: (primary && primary.uri) || '',
-        url: d.uri || `https://www.discogs.com/release/${id}`
+        url: d.uri || `https://www.discogs.com/release/${id}`,
+        // Marché Discogs : prix le plus bas actuellement en vente (en €) et nombre d'exemplaires en vente
+        dp: typeof d.lowest_price === 'number' ? d.lowest_price : null,
+        dpN: d.num_for_sale || 0,
+        dpAt: Date.now()
       };
     }
 
     return {
       isBarcode,
       hasDiscogs: auth => !!discogsAuth(auth),
-      search: ({ q, source, page = 1, auth }) => source === 'discogs' ? searchDiscogs(q, page, auth) : searchMusicBrainz(q, page),
-      details: ({ source, id, auth }) => source === 'discogs' ? detailsDiscogs(id, auth) : detailsMusicBrainz(id)
+      search: ({ q, page = 1, auth }) => searchDiscogs(q, page, auth),
+      details: ({ id, auth }) => detailsDiscogs(id, auth)
     };
   }
 
