@@ -77,3 +77,6 @@ body.mobile #ygoQ { flex-basis: 100%; }
 body.mobile #ygoView { flex: 1 1 100%; }
 body.mobile .tabs .count { display: none; }
 body.mobile .tabs button { padding: 10px 4px; gap: 5px; font-size: 14px; }
+
+.scan-tool { min-width: 44px; height: 40px; border-radius: 99px; border: 0; background: rgba(255, 255, 255, .18); color: #fff; font-weight: 700; padding: 0 10px; min-height: 0 !important; }
+.scan-title { min-width: 0; font-size: 15px !important; }

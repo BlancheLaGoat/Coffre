@@ -135,6 +135,8 @@
       <div class="scan-top">
         <button class="scan-close" data-scan="close" aria-label="Fermer">✕</button>
         <div class="scan-title" id="scanTitle"></div>
+        <button class="scan-tool" id="scanZoom" data-scan="zoom" hidden>×2</button>
+        <button class="scan-tool" id="scanCam" data-scan="cam" hidden aria-label="Changer d'objectif">🔄</button>
         <label class="scan-auto" id="scanAutoWrap"><input type="checkbox" id="scanAuto"> Ajout auto</label>
       </div>
       <div class="scan-bottom">
@@ -144,6 +146,7 @@
       </div>`;
     document.body.appendChild(el);
     el.addEventListener('click', onClick);
+    el.querySelector('#scanVideo').addEventListener('click', refocus);
     const cands = el.querySelector('#scanCands');
     const hold = () => { cam.pauseUntil = Date.now() + 1500; };
     cands.addEventListener('touchstart', hold, { passive: true });
@@ -154,22 +157,90 @@
     });
   }
 
+  // ---------- Caméra : objectif principal, zoom et mise au point ----------
+  // Sur les téléphones à plusieurs objectifs, le navigateur choisit parfois le grand-angle,
+  // qui ne fait pas la mise au point de près. On prend l'objectif principal et on zoome ×2
+  // pour pouvoir tenir le téléphone plus loin (là où la mise au point fonctionne).
+  let backCams = [];
+  const camSet = () => App.data.settings;
+  async function openStream(deviceId) {
+    return navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: deviceId
+        ? { deviceId: { exact: deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } }
+        : { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }
+    });
+  }
+  async function listBackCams() {
+    try {
+      const all = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput');
+      const back = all.filter(d => /back|arri[eè]re|rear|environment/i.test(d.label));
+      // « camera2 0 » (le premier) est en général l'objectif principal
+      backCams = (back.length ? back : all).sort((a, b) => a.label.localeCompare(b.label, 'en', { numeric: true }));
+    } catch (e) { backCams = []; }
+  }
   async function startCamera() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error("L'appareil photo n'est pas disponible.");
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio: false,
-      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }
-    });
+    stream = await openStream(camSet().camId || null).catch(() => openStream(null));
+    await listBackCams();
+    const want = camSet().camId && backCams.find(d => d.deviceId === camSet().camId) ? camSet().camId : (backCams[0] && backCams[0].deviceId);
+    const cur = stream.getVideoTracks()[0].getSettings().deviceId;
+    if (want && cur && want !== cur) {
+      stream.getTracks().forEach(t => t.stop());
+      stream = await openStream(want).catch(() => openStream(null));
+    }
     const v = $('scanVideo');
     v.srcObject = stream;
     await v.play().catch(() => {});
     await new Promise(r => { if (v.videoWidth) r(); else v.onloadedmetadata = () => r(); });
-    // Mise au point continue si le téléphone la propose
-    try {
-      const track = stream.getVideoTracks()[0];
-      const caps = track.getCapabilities ? track.getCapabilities() : {};
-      if (caps.focusMode && caps.focusMode.includes('continuous')) await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
-    } catch (e) { /* pas grave */ }
+    await setupTrack();
+  }
+  async function setupTrack() {
+    const track = stream && stream.getVideoTracks()[0]; if (!track) return;
+    const caps = track.getCapabilities ? track.getCapabilities() : {};
+    const adv = {};
+    if (caps.focusMode && caps.focusMode.includes('continuous')) adv.focusMode = 'continuous';
+    if (caps.zoom && mode !== 'qr') {
+      const z = camSet().camZoom != null ? camSet().camZoom : 2;
+      adv.zoom = Math.max(caps.zoom.min, Math.min(caps.zoom.max, z));
+    }
+    try { if (Object.keys(adv).length) await track.applyConstraints({ advanced: [adv] }); } catch (e) { /* pas grave */ }
+    const zb = $('scanZoom');
+    if (zb) { zb.hidden = !caps.zoom || mode === 'qr'; zb.textContent = '×' + (track.getSettings().zoom ? Math.round(track.getSettings().zoom * 10) / 10 : 1); }
+    const cb = $('scanCam'); if (cb) cb.hidden = backCams.length < 2;
+  }
+  async function switchCam() {
+    if (backCams.length < 2 || !stream) return;
+    const cur = stream.getVideoTracks()[0].getSettings().deviceId;
+    const i = backCams.findIndex(d => d.deviceId === cur);
+    const next = backCams[(i + 1) % backCams.length];
+    camSet().camId = next.deviceId; App.scheduleSave();
+    stream.getTracks().forEach(t => t.stop());
+    stream = await openStream(next.deviceId).catch(() => openStream(null));
+    $('scanVideo').srcObject = stream;
+    await $('scanVideo').play().catch(() => {});
+    await setupTrack();
+    App.toast(`Objectif ${(i + 1) % backCams.length + 1} sur ${backCams.length}`);
+  }
+  async function toggleZoom() {
+    const track = stream && stream.getVideoTracks()[0]; if (!track) return;
+    const caps = track.getCapabilities ? track.getCapabilities() : {}; if (!caps.zoom) return;
+    const cur = track.getSettings().zoom || 1;
+    const steps = [1, 2, 3].filter(z => z >= caps.zoom.min && z <= caps.zoom.max);
+    const next = steps[(steps.findIndex(z => z >= cur - 0.05) + 1) % steps.length] || 1;
+    camSet().camZoom = next; App.scheduleSave();
+    await setupTrack();
+  }
+  // Toucher l'image relance la mise au point
+  async function refocus(e) {
+    const track = stream && stream.getVideoTracks()[0]; if (!track) return;
+    const caps = track.getCapabilities ? track.getCapabilities() : {};
+    const v = $('scanVideo'), r = v.getBoundingClientRect();
+    const adv = {};
+    if (caps.pointsOfInterest) adv.pointsOfInterest = [{ x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height }];
+    if (caps.focusMode && caps.focusMode.includes('single-shot')) adv.focusMode = 'single-shot';
+    try { if (Object.keys(adv).length) await track.applyConstraints({ advanced: [adv] }); } catch (err) { /* pas grave */ }
+    if (adv.focusMode) setTimeout(() => setupTrack(), 1500);
   }
 
   function stopCamera() {
@@ -191,13 +262,13 @@
     $('scanTitle').textContent = m === 'card' ? 'Scanner des cartes FM' : m === 'ygo' ? 'Scanner des cartes Yu-Gi-Oh' : m === 'vinyl' ? 'Code-barres du vinyle' : 'QR code du PC';
     Object.assign(yg, { busy: false, last: '', seen: 0, armed: true, missing: 0, hit: null, added: [] });
     cam.smooth = null; cam.lead = ''; cam.leadCount = 0; cam.armed = true; cam.lastAuto = ''; cam.added = [];
-    msg(m === 'card' ? 'Place la carte dans le cadre, bien à plat.' : m === 'vinyl' ? 'Vise le code-barres au dos de la pochette.' : m === 'ygo' ? (TextReader ? 'Place la carte dans le cadre : le code sous l\'illustration (ex. SGX1-FRA18) est lu tout seul.' : 'La lecture du code n\'est pas disponible sur cet appareil.') : 'Vise le QR code affiché dans les réglages de Coffre sur le PC.');
+    msg(m === 'card' ? 'Place la carte dans le cadre, bien à plat. Flou ? Éloigne un peu le téléphone ou touche l\'image.' : m === 'vinyl' ? 'Vise le code-barres au dos de la pochette.' : m === 'ygo' ? (TextReader ? 'Place la carte dans le cadre : le code sous l\'illustration (ex. SGX1-FRA18) est lu tout seul. Flou ? Éloigne un peu le téléphone ou touche l\'image.' : 'La lecture du code n\'est pas disponible sur cet appareil.') : 'Vise le QR code affiché dans les réglages de Coffre sur le PC.');
     layoutFrame();
     try {
       if (m === 'card') {
         await prepareRefs(p => msg(`Préparation de la reconnaissance… ${Math.round(p * 100)} %`));
         if (mode !== m || view.hidden) return;
-        msg('Place la carte dans le cadre, bien à plat.');
+        msg('Place la carte dans le cadre, bien à plat. Flou ? Éloigne un peu le téléphone ou touche l\'image.');
       }
       await startCamera();
       if (view.hidden) return stopCamera();
@@ -459,6 +530,8 @@
     const b = e.target.closest('[data-scan]'); if (!b) return;
     const act = b.dataset.scan;
     if (act === 'close') return close();
+    if (act === 'zoom') return toggleZoom();
+    if (act === 'cam') return switchCam();
     if (act === 'yadd' && yg.hit) return addYgo(yg.hit.prints[Number(b.dataset.i)], false);
     if (act === 'yundo') {
       const x = yg.added.pop(); if (!x) return;
