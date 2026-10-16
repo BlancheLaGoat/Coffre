@@ -170,6 +170,59 @@ $('sheet').addEventListener('change', e => {
 });
 
 $('fmSearch').addEventListener('input', e => { fmF.q = e.target.value; renderFm(); });
+
+// ---------- Wishlist Cardmarket des cartes FM manquantes ----------
+// Chaque carte FM est retrouvée dans la base Yu-Gi-Oh (mot de passe, sinon nom) pour écrire son nom officiel.
+// Les cartes qui n'existent que dans le jeu (pas de version papier) sont mises à part.
+function fmFiltered(c) {
+  const q = fmF.q.trim().toLowerCase();
+  if (fmF.t && c.t !== fmF.t) return false;
+  if (q && !(c.name.toLowerCase().includes(q) || c.n.includes(q) || Number(c.n) === Number(q) || (c.pw && c.pw.includes(q)))) return false;
+  return true;
+}
+let fmWishScope = 'all', fmWishKeep = false;
+function openFmWish() {
+  modalKind = 'fmwish';
+  fmWishScope = (fmF.q.trim() || fmF.t) ? 'shown' : 'all';
+  openModal(`<div class="sheet-head"><h3>Wishlist Cardmarket — cartes FM</h3><button class="close" data-act="close">Fermer</button></div><div id="fmWishBox"></div>`, 'card');
+  renderFmWish();
+}
+function renderFmWish() {
+  const box = $('fmWishBox'); if (!box) return;
+  const Y = window.CoffreYgo;
+  const missing = CARDS.filter(c => !((data.fm[c.n] || {}).qty) && (fmWishScope === 'all' || fmFiltered(c)));
+  const lines = [], fmOnly = []; let value = 0;
+  for (const c of missing) {
+    const real = Y && Y.dbReady ? Y.matchCard(c.name, c.pw) : null;
+    if (Y && Y.dbReady && !real) { fmOnly.push(c); if (!fmWishKeep) continue; }
+    lines.push(`1 ${real ? real.n : c.name}`);
+    if (real && real.cm) value += real.cm;
+  }
+  const filtered = !!(fmF.q.trim() || fmF.t);
+  box.innerHTML = `
+    ${filtered ? `<div class="seg" id="fmWishScope"><button data-scope="all" aria-pressed="${fmWishScope === 'all'}">Toutes les manquantes</button><button data-scope="shown" aria-pressed="${fmWishScope === 'shown'}">Seulement le filtre actuel</button></div>` : ''}
+    <p><b>${lines.length}</b> carte${lines.length > 1 ? 's' : ''} à mettre dans ta wishlist${value ? ` · ≈ <b class="price">${esc(Y.money(value))}</b> (prix de référence Cardmarket)` : ''}.</p>
+    <textarea id="fmWishText" readonly rows="10">${esc(lines.join('\n'))}</textarea>
+    <div class="actions"><span class="hint grow">Cardmarket → Wishlist → « Ajouter des cartes » : colle la liste (une carte par ligne).</span>
+      <button class="primary" data-act="copyWish" ${lines.length ? '' : 'disabled'}>Copier la liste</button></div>
+    ${!(Y && Y.dbReady) ? `<p class="hint">Astuce : télécharge la base de cartes dans l'onglet Yu-Gi-Oh pour avoir les noms officiels Cardmarket, les prix, et mettre à part les cartes qui n'existent pas en vrai.</p>` : ''}
+    ${fmOnly.length ? `<details><summary>${fmOnly.length} carte${fmOnly.length > 1 ? 's' : ''} introuvable${fmOnly.length > 1 ? 's' : ''} dans la base (propres au jeu, ou nom différent) — ${fmWishKeep ? 'incluses' : 'exclues'}</summary>
+      <p class="hint">${fmOnly.map(c => esc(c.n + ' ' + c.name)).join(' · ')}</p>
+      <button data-act="keepWish">${fmWishKeep ? 'Les retirer de la liste' : 'Les ajouter quand même'}</button></details>` : ''}`;
+}
+$('fmWishBtn').addEventListener('click', openFmWish);
+$('sheet').addEventListener('click', async e => {
+  if (modalKind !== 'fmwish') return;
+  const b = e.target.closest('[data-act],[data-scope]'); if (!b) return;
+  if (b.dataset.scope) { fmWishScope = b.dataset.scope; return renderFmWish(); }
+  if (b.dataset.act === 'close') return closeModal();
+  if (b.dataset.act === 'keepWish') { fmWishKeep = !fmWishKeep; renderFmWish(); const d = $('fmWishBox').querySelector('details'); if (d) d.open = true; return; }
+  if (b.dataset.act === 'copyWish') {
+    const t = $('fmWishText'); let ok = false;
+    try { await navigator.clipboard.writeText(t.value); ok = true; } catch (err) { t.removeAttribute('readonly'); t.select(); try { ok = document.execCommand('copy'); } catch (e2) { ok = false; } t.setAttribute('readonly', ''); }
+    toast(ok ? 'Liste copiée : colle-la dans ta wishlist Cardmarket' : 'Sélectionne le texte et copie-le à la main');
+  }
+});
 $('fmType').addEventListener('change', e => { fmF.t = e.target.value; renderFm(); });
 
 // ============================================================

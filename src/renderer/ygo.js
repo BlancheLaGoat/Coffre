@@ -636,6 +636,16 @@
   }
 
   window.CoffreYgo = {
+    // Carte Forbidden Memories → carte du jeu réel (par mot de passe, sinon par nom), pour la wishlist Cardmarket
+    matchCard(name, passcode) {
+      if (!st.db) return null;
+      const id = parseInt(passcode, 10);
+      if (id && st.idx.byId.has(id)) return st.db.cards[st.idx.byId.get(id)];
+      const ci = nameIndex().map.get(normName(name));
+      return ci != null ? st.db.cards[ci] : null;
+    },
+    get dbReady() { return !!st.db; },
+    money: v => eur.format(v || 0),
     render, refreshDb, lookupCodes, lookupScan, locCode, curLang, addGeneric: id => addGeneric(id, 1), removeGeneric: id => addGeneric(id, -1), addPrinting, openCard, label,
     get ready() { return !!st.db; },
     imgTag, loadImages,

@@ -85,6 +85,12 @@ Ensuite, chaque tag de version (`v1.1.0`, `v1.1.1`…) produit aussi `Coffre-And
 
 ---
 
+## Wishlist des cartes FM
+
+Onglet Cartes FM → **Wishlist Cardmarket** : la liste des cartes FM qui te manquent, au format Cardmarket (une carte par ligne), avec le nom officiel de la carte et une estimation du prix. Si tu as filtré (type ou recherche), tu peux ne prendre que les cartes affichées. Les cartes introuvables dans la base Yu-Gi-Oh (propres au jeu, ou nom différent) sont mises à part ; tu peux les ajouter quand même.
+
+---
+
 ## 6. Yu-Gi-Oh (toutes les cartes du jeu)
 
 La première fois, l'onglet **Yu-Gi-Oh** propose de **télécharger la base de cartes** (YGOPRODeck, gratuite : environ 13 000 cartes avec toutes leurs extensions, noms anglais et français). Elle se met ensuite à jour toute seule toutes les deux semaines. Sur le téléphone associé, elle est récupérée depuis le PC. Les images des cartes se téléchargent au fur et à mesure, puis restent sur l'appareil.
