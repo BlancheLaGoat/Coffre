@@ -4,6 +4,15 @@ h1{margin:0 0 4px}h2{margin:28px 0 8px;color:#e3b54a}.d{color:#9a95ad}details{bo
 summary{cursor:pointer;padding:8px 12px}pre{margin:0;padding:12px;overflow:auto;max-height:520px;font:12px Consolas,monospace;background:#100e16;border-top:1px solid #322e42}
 .mod{font-size:11px;background:#3a2f17;color:#e3b54a;padding:1px 6px;border-radius:4px}.new{font-size:11px;background:#1f3a26;color:#6cc58c;padding:1px 6px;border-radius:4px}ul{margin:4px 0 0}</style></head><body>
 <h1>Journal des modifications</h1><p class="d">Coffre — clique sur un fichier pour voir son code.</p>
+<h2>v1.5.1 <span class="d">— 16/10/2026</span></h2>
+<ul><li>Yu-Gi-Oh : nouvel onglet <b>Wishlist</b> (à côté de Ma collection et Decks) pour les cartes que tu veux en dehors des decks : recherche, quantités, prix estimé, « déjà X dans ta collection », galerie ou liste, et <b>Copier la liste</b> au format Cardmarket.</li><li>Fiche d’une carte : bouton « ☆ Ajouter à la wishlist ».</li><li>Android : quand on fait défiler, l’en-tête reste caché jusqu’à revenir <b>tout en haut</b> de la liste (il ne réapparaît plus en remontant un peu). Aussi dans l’onglet Yu-Gi-Oh.</li></ul>
+<details><summary><code>src/renderer/ygo.js</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ const WISH = &#x27;wishlist&#x27;;   function wishDeck() { … }</span>
+<span style="color:#6cc58c">+ function renderWish() { … }   // wishlist affichée dans l&#x27;onglet</span>
+<span style="color:#6cc58c">+ function addToWish(id, delta) { … }</span>
+<span style="color:#6cc58c">+ bouton « ☆ Ajouter à la wishlist » dans la fiche</span></pre></details>
+<details><summary><code>mobile/src/mobile.js</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ if (y &lt; 20) en-tête visible ; else if (y &gt; 80 &amp;&amp; liste longue) en-tête replié</span></pre></details>
+<details><summary><code>src/renderer/index.html</code>, <code>styles.css</code>, <code>LISEZMOI.md</code>, <code>package.json</code>, <code>mobile/package.json</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ &lt;button data-v=&quot;wish&quot;&gt;Wishlist&lt;/button&gt;</span>
+<span style="color:#6cc58c">+ &quot;version&quot;: &quot;1.5.1&quot;,</span></pre></details>
 <h2>v1.5.0 <span class="d">— 16/10/2026</span></h2>
 <ul><li>Vinyles : <b>prix Discogs</b>. Chaque vinyle affiche le prix le plus bas actuellement en vente sur Discogs (en €) et le nombre d’exemplaires en vente ; la valeur de ta collection est en haut de l’onglet.</li><li>Prix mis à jour tout seuls chaque semaine (un vinyle par seconde, limite de Discogs), ou avec le bouton <b>Actualiser les prix</b>.</li><li><b>MusicBrainz retiré</b> : la recherche (texte et code-barres) passe uniquement par Discogs. Les vinyles déjà ajoutés via MusicBrainz restent dans ta collection, sans prix.</li></ul>
 <details><summary><code>src/shared/coffre-core.js</code> <span class="mod">modifié</span></summary><pre><span style="color:#ef7a62">- searchMusicBrainz, detailsMusicBrainz, mbRelease (MusicBrainz)</span>

@@ -219,3 +219,5 @@ body.mobile .desktop-only { display: none !important; }
 .gcard .cap .price { display: block; color: var(--muted); font-weight: 400; }
 b.price { font-size: inherit; }
 .price.miss { color: var(--wax); }
+.ywish { padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
+.ywish .gal { padding: 0; }

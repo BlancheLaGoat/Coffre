@@ -480,18 +480,17 @@
   };
 
   // ---------- En-tête qui se replie quand on fait défiler la liste ----------
+  // L'en-tête se replie dès qu'on descend, et ne revient qu'une fois remonté tout en haut de la liste
   function watchScroll(list) {
-    let last = 0;
     list.addEventListener('scroll', () => {
       const y = list.scrollTop;
-      if (y < 40) document.body.classList.remove('compact');
-      else if (y > last + 8) document.body.classList.add('compact');
-      else if (y < last - 24) document.body.classList.remove('compact');
-      if (Math.abs(y - last) > 8 || y < 40) last = y;
+      if (y < 20) document.body.classList.remove('compact');
+      // (seulement si la liste est assez longue, sinon l'en-tête clignoterait)
+      else if (y > 80 && list.scrollHeight - list.clientHeight > 400) document.body.classList.add('compact');
     }, { passive: true });
   }
   document.addEventListener('DOMContentLoaded', () => {
-    ['fmList', 'vinList'].forEach(id => { const el = document.getElementById(id); if (el) watchScroll(el); });
+    ['fmList', 'vinList', 'ygoList'].forEach(id => { const el = document.getElementById(id); if (el) watchScroll(el); });
     const tabs = document.getElementById('tabs');
     if (tabs) tabs.addEventListener('click', () => document.body.classList.remove('compact'));
   });

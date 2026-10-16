@@ -109,12 +109,13 @@
     let cards = 0, copies = 0, value = 0; const ids = new Set();
     for (const e of Object.values(col())) if (e && e.qty > 0) { copies += e.qty; ids.add(e.id); value += priceOf(e.id) * e.qty; }
     cards = ids.size;
-    $('ygoStats').innerHTML = `<b>${cards}</b> cartes · ${copies} exemplaires${st.db && st.db.v === 2 ? ` · valeur ≈ <b class="price">${money(value)}</b> <span class="hint" title="Prix de référence Cardmarket de chaque carte (toutes éditions), mis à jour chaque semaine">(Cardmarket, ${pricesDate()})</span>` : ''} · ${Object.values(App.data.decks || {}).filter(d => d && !d.deleted).length} decks`;
+    $('ygoStats').innerHTML = `<b>${cards}</b> cartes · ${copies} exemplaires${st.db && st.db.v === 2 ? ` · valeur ≈ <b class="price">${money(value)}</b> <span class="hint" title="Prix de référence Cardmarket de chaque carte (toutes éditions), mis à jour chaque semaine">(Cardmarket, ${pricesDate()})</span>` : ''} · ${liveDecks().length} decks${wishCount() ? ` · ${wishCount()} en wishlist` : ''}`;
     $('tabYgoCount').textContent = cards;
   }
 
   // ---------- Rendu de l'onglet ----------
   function toolsHtml() {
+    if (st.view === 'wish') return '';
     if (st.view === 'decks') return `<button class="primary" data-y="newDeck">Nouveau deck</button>`;
     return `<button class="primary" data-y="add">Ajouter des cartes</button>
       <input type="search" id="ygoQ" placeholder="Filtrer ma collection (nom, code)…" value="${esc(st.q)}">
@@ -140,7 +141,8 @@
         ${st.error ? `<p class="error">${esc(st.error)}</p>` : ''}</div>`;
       return;
     }
-    list.innerHTML = st.view === 'decks' ? decksHtml() : collectionHtml();
+    if (st.view === 'wish') { renderWish(); }
+    else list.innerHTML = st.view === 'decks' ? decksHtml() : collectionHtml();
     loadImages(list);
     refreshOpenModal();
   }
@@ -172,7 +174,15 @@
 
   // ---------- Decks ----------
   const decks = () => App.data.decks || (App.data.decks = {});
-  const liveDecks = () => Object.entries(decks()).filter(([, d]) => d && !d.deleted);
+  const WISH = 'wishlist';
+  const liveDecks = () => Object.entries(decks()).filter(([id, d]) => d && !d.deleted && id !== WISH);
+  // Wishlist : cartes que tu veux, en dehors de tout deck (même format, gardée dans les « decks » pour la synchro)
+  function wishDeck() {
+    const d = decks()[WISH];
+    if (!d || d.deleted) decks()[WISH] = { name: 'Wishlist', cards: {}, wish: true, created: now(), mt: now() };
+    return decks()[WISH];
+  }
+  function wishCount() { const d = decks()[WISH]; return d && !d.deleted ? Object.values(d.cards || {}).reduce((a, q) => a + q, 0) : 0; }
   function deckCounts(d) {
     let total = 0, missing = 0;
     for (const [id, q] of Object.entries(d.cards || {})) {
@@ -280,6 +290,50 @@
     loadImages(box);
   }
 
+  // ---------- Wishlist (dans l'onglet, pas dans une fenêtre) ----------
+  function renderWish(keepFocus) {
+    const box = $('ygoList'); if (!box) return;
+    const d = decks()[WISH] && !decks()[WISH].deleted ? decks()[WISH] : { cards: {} };
+    const entries = Object.entries(d.cards || {}).map(([id, q]) => ({ c: card(Number(id)), q, owned: ownedOf(Number(id)) })).filter(x => x.c)
+      .sort((a, b) => label(a.c).localeCompare(label(b.c), 'fr'));
+    const total = entries.reduce((a, x) => a + x.q, 0);
+    const value = entries.reduce((a, x) => a + x.q * (x.c.cm || 0), 0);
+    const cm = entries.map(x => Core.cmLine(x.q, x.c.n)).join('\n');
+    const results = searchCards(st.wishQ || '', 30);
+    const wq = q => `<div class="qty"><button data-y="wq" data-d="-1" aria-label="Retirer de la wishlist">−</button><output>${q}</output><button data-y="wq" data-d="1" aria-label="En vouloir une de plus">+</button></div>`;
+    const ownTxt = o => o ? `<span class="own">déjà ${o} dans ta collection</span>` : '';
+    const q0 = $('ywQ'), hadFocus = q0 && document.activeElement === q0, caret = q0 ? q0.selectionStart : 0;
+    box.innerHTML = `<div class="ywish">
+      <p class="hint">Les cartes que tu veux, en dehors de tes decks. ${total ? `<b>${total}</b> carte${total > 1 ? 's' : ''}${value ? ` · ≈ <b class="price">${money(value)}</b> <span class="hint">(Cardmarket, ${pricesDate()})</span>` : ''}` : ''}</p>
+      <div class="ydeckbar">
+        <input type="search" id="ywQ" placeholder="Ajouter une carte à la wishlist : nom (français ou anglais) ou code…" value="${esc(st.wishQ || '')}">
+        ${layoutSeg('ywLayout')}
+      </div>
+      ${st.wishQ ? `<div class="yresults">${results.length ? results.map(c => resultHtml(c, `<button class="primary" data-y="wadd">+ Wishlist</button>`)).join('') : '<p class="hint">Aucune carte trouvée.</p>'}</div>` : ''}
+      ${entries.length ? (gal() ? `<div class="gal">${entries.map(({ c, q, owned }) => `<div class="gcard own" data-id="${c.i}">
+          <button class="pic" data-y="card" aria-label="Détails de ${esc(label(c))}">${imgTag(c.i)}<span class="badge">×${q}</span></button>
+          <div class="cap"><span class="num">${ownTxt(owned)}</span>${esc(label(c))}${priceTag(c.i, q)}</div>${wq(q)}</div>`).join('')}</div>`
+        : entries.map(({ c, q, owned }) => `<div class="yrow" data-id="${c.i}">
+          <button class="ypic" data-y="card">${imgTag(c.i)}</button>
+          <div class="yinfo"><button class="nm" data-y="card">${esc(label(c))}</button>${sub(c) ? `<span class="en">${esc(sub(c))}</span>` : ''}
+            <span class="meta">${ownTxt(owned)}${priceTag(c.i, q)}</span></div>${wq(q)}</div>`).join(''))
+        : `<p class="empty">Ta wishlist est vide : cherche une carte au-dessus, ou ouvre la fiche d'une carte et touche « Ajouter à la wishlist ».</p>`}
+      ${entries.length ? `<div class="ycm"><h4>Pour ta wishlist Cardmarket</h4>
+        <textarea id="ywCm" readonly rows="${Math.min(8, entries.length)}">${esc(cm)}</textarea>
+        <div class="actions"><span class="hint grow">Cardmarket → Wishlist → « Ajouter des cartes » : colle la liste (une carte par ligne).</span>
+          <button data-y="wclear">Vider la wishlist</button><button class="primary" data-y="wcopy">Copier la liste</button></div></div>` : ''}
+    </div>`;
+    if (hadFocus || keepFocus) { const n = $('ywQ'); n.focus(); try { n.setSelectionRange(caret, caret); } catch (e) { /* rien */ } }
+    loadImages(box);
+  }
+  function addToWish(id, delta = 1) {
+    const d = wishDeck(); d.cards = d.cards || {};
+    const n = (d.cards[id] || 0) + delta;
+    if (n > 0) d.cards[id] = n; else delete d.cards[id];
+    touchDeck(d);
+    return n;
+  }
+
   // ---------- Fiche d'une carte (toutes ses impressions) ----------
   let cardBack = null;
   function openCard(id, back) {
@@ -308,6 +362,7 @@
             ${c.cm ? `<dt>Prix Cardmarket</dt><dd><b class="price">${money(c.cm)}</b> <span class="hint">(prix de référence, toutes éditions)</span></dd>` : ''}</dl>
           <div class="actions" style="justify-content:flex-start">
             ${ds.length ? `<select id="ycDeck">${ds.map(([id, d]) => `<option value="${id}">${esc(d.name || 'Deck')}</option>`).join('')}</select><button data-y="toDeck">Ajouter au deck</button>` : ''}
+            <button data-y="toWish">☆ Ajouter à la wishlist${decks()[WISH] && !decks()[WISH].deleted && (decks()[WISH].cards || {})[c.i] ? ` (${decks()[WISH].cards[c.i]})` : ''}</button>
             <a data-y="cm">Voir sur Cardmarket ↗</a></div>
           <h4 class="yaddh">Ajouter à ma collection ${langSelect('ycLang')}</h4>
           <div class="yprints">
@@ -442,11 +497,32 @@
     if (b.dataset.y === 'newDeck') return st.db ? newDeck() : refreshDb();
   });
   $('ygoTools').addEventListener('click', e => { const b = e.target.closest('#ygoLayout button'); if (b) setLayout(b.dataset.v); });
+  let wishTimer = null;
+  $('ygoList').addEventListener('input', e => {
+    if (e.target.id === 'ywQ') { st.wishQ = e.target.value; clearTimeout(wishTimer); wishTimer = setTimeout(() => renderWish(true), 200); }
+  });
   $('ygoTools').addEventListener('input', e => { if (e.target.id === 'ygoQ') { st.q = e.target.value; render(); } });
   $('ygoTools').addEventListener('change', e => { if (e.target.id === 'ygoSort') { st.sort = e.target.value; render(); } });
-  $('ygoList').addEventListener('click', e => {
-    const b = e.target.closest('[data-y],[data-act]'); if (!b) return;
+  $('ygoList').addEventListener('click', async e => {
+    const b = e.target.closest('[data-y],[data-act],[data-v]'); if (!b) return;
     if (b.dataset.y === 'dl') return refreshDb();
+    if (st.view === 'wish') {
+      const y = b.dataset.y, row = b.closest('[data-id]');
+      if (b.dataset.v && b.closest('#ywLayout')) return setLayout(b.dataset.v);
+      if (y === 'wadd' && row) { const n = addToWish(Number(row.dataset.id), 1); App.toast(`Ajoutée à la wishlist (×${n})`); return render(); }
+      if (y === 'wq' && row) { addToWish(Number(row.dataset.id), Number(b.dataset.d)); return render(); }
+      if (y === 'wcopy') {
+        const t = $('ywCm'); let ok = false;
+        try { await navigator.clipboard.writeText(t.value); ok = true; } catch (err) { t.removeAttribute('readonly'); t.select(); try { ok = document.execCommand('copy'); } catch (e2) { ok = false; } t.setAttribute('readonly', ''); }
+        return App.toast(ok ? 'Liste copiée : colle-la dans ta wishlist Cardmarket' : 'Sélectionne le texte et copie-le à la main');
+      }
+      if (y === 'wclear') {
+        if (b.dataset.sure) { const d = wishDeck(); d.cards = {}; touchDeck(d); return render(); }
+        b.dataset.sure = '1'; b.textContent = 'Confirmer : tout vider'; return;
+      }
+      if (y === 'card' && row) return openCard(Number(row.dataset.id));
+      return;
+    }
     if (b.dataset.y === 'deck') return openDeck(b.dataset.deck);
     const row = b.closest('[data-id]');
     if (b.dataset.y === 'card' && row) return openCard(Number(row.dataset.id));
@@ -483,6 +559,10 @@
       const delta = b.dataset.act === 'inc' ? 1 : -1;
       if (pr.dataset.gen) addGeneric(id, delta); else addPrinting(st.idx.byId.get(id), Number(pr.dataset.pi), delta);
       renderCard(); render(); return;
+    }
+    if (k === 'ygo-card' && y === 'toWish') {
+      const id = Number($('ycardSheet').dataset.id); const n = addToWish(id, 1);
+      App.toast(`Ajoutée à la wishlist (×${n})`); renderCard(); render(); return;
     }
     if (k === 'ygo-card' && y === 'toDeck') {
       const d = decks()[$('ycDeck').value]; const id = Number($('ycardSheet').dataset.id);
@@ -651,6 +731,6 @@
     imgTag, loadImages,
     ownedOf
   };
-  const start = () => { st.view = App.data.settings.ygoView === 'decks' ? 'decks' : 'col'; render(); loadDb(); };
+  const start = () => { st.view = ['decks', 'wish'].includes(App.data.settings.ygoView) ? App.data.settings.ygoView : 'col'; render(); loadDb(); };
   if (window.coffreReady) start(); else document.addEventListener('coffre:ready', start, { once: true });
 })();
