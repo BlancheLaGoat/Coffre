@@ -510,8 +510,72 @@
     return out;
   }
 
+  // Anciennes cartes européennes : extension sous un autre préfixe, et numéros différents
+  // (ex. LDD-F092 = Légende du Dragon Blanc aux Yeux Bleus = LOB en anglais). On les retrouve par le nom.
+  const PREFIX_ALIAS = { LDD: 'LOB', DDY: 'SDY', MIY: 'SDY', BIY: 'SDY', DIY: 'SDY', DDK: 'SDK', MIK: 'SDK', BIK: 'SDK', DIK: 'SDK', DDP: 'SDP', MIP: 'SDP', BIP: 'SDP', DIP: 'SDP' };
+  const normName = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  let nameIdx = null;
+  function nameIndex() {
+    if (nameIdx && nameIdx.db === st.db) return nameIdx;
+    const map = new Map(), list = [];
+    st.db.cards.forEach((c, ci) => {
+      for (const n of [c.n, c.f]) {
+        const k = normName(n); if (!k) continue;
+        if (!map.has(k)) { map.set(k, ci); list.push([k, ci]); }
+      }
+    });
+    nameIdx = { db: st.db, map, list };
+    return nameIdx;
+  }
+  function editDistance(a, b, max) {
+    if (Math.abs(a.length - b.length) > max) return max + 1;
+    let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+    for (let i = 1; i <= a.length; i++) {
+      const cur = [i]; let best = i;
+      for (let j = 1; j <= b.length; j++) {
+        cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+        if (cur[j] < best) best = cur[j];
+      }
+      if (best > max) return max + 1;
+      prev = cur;
+    }
+    return prev[b.length];
+  }
+  // Nom de la carte lu en haut (français ou anglais), avec une petite tolérance aux erreurs de lecture
+  function findByName(lines) {
+    const ni = nameIndex();
+    const cand = (lines || []).slice().sort((a, b) => (a.y || 0) - (b.y || 0))
+      .map(l => normName(l.text)).filter(t => t.replace(/[^a-z]/g, '').length >= 4).slice(0, 5);
+    let best = null;
+    for (const t of cand) {
+      if (ni.map.has(t)) return ni.map.get(t);
+      const max = Math.max(1, Math.floor(t.length * 0.15));
+      for (const [k, ci] of ni.list) {
+        const d = editDistance(t, k, max);
+        if (d <= max && (!best || d / k.length < best.score)) best = { ci, score: d / k.length };
+      }
+    }
+    return best ? best.ci : null;
+  }
+  // Ce que le scan a lu → impressions possibles. D'abord le code exact, sinon le nom de la carte.
+  function lookupScan(res) {
+    if (!st.idx) return null;
+    const codes = Core.ygoCodesInText(res && res.text);
+    const hits = lookupCodes(codes);
+    if (hits.length) return hits[0];
+    const ci = findByName(res && res.lines);
+    if (ci == null) return null;
+    const c = st.db.cards[ci];
+    let prints = c.p.map((p, pi) => ({ ci, pi, card: c, p }));
+    // Le préfixe lu (ex. LDD → LOB) indique l'extension, même si le numéro diffère
+    const prefixes = codes.map(x => x.split('-')[0]).map(x => PREFIX_ALIAS[x] || x);
+    const inSet = prints.filter(x => prefixes.includes(x.p[1].split('-')[0]));
+    if (inSet.length) prints = inSet;
+    return { code: '', byName: true, card: c, prints };
+  }
+
   window.CoffreYgo = {
-    render, refreshDb, lookupCodes, addPrinting, openCard, label,
+    render, refreshDb, lookupCodes, lookupScan, addGeneric: id => addGeneric(id, 1), removeGeneric: id => addGeneric(id, -1), addPrinting, openCard, label,
     get ready() { return !!st.db; },
     imgTag, loadImages,
     ownedOf

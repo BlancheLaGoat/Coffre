@@ -466,17 +466,15 @@
     const Y = window.CoffreYgo;
     if (!Y || !Y.ready) { msg("La base de cartes n'est pas encore téléchargée : ouvre l'onglet Yu-Gi-Oh."); return; }
     const v = $('scanVideo'), r = frameInVideo(); if (!r) return;
-    // Bas de la carte (code et texte), en bonne résolution
-    const y0 = r.y + r.h * 0.55, h = r.h * 0.45;
+    // Toute la carte : le code sous l'illustration, et le nom en haut si le code n'est pas reconnu
     const k = Math.min(2, 1100 / r.w);
-    ycv.width = Math.round(r.w * k); ycv.height = Math.round(h * k);
-    ycv.getContext('2d').drawImage(v, r.x, y0, r.w, h, 0, 0, ycv.width, ycv.height);
+    ycv.width = Math.round(r.w * k); ycv.height = Math.round(r.h * k);
+    ycv.getContext('2d').drawImage(v, r.x, r.y, r.w, r.h, 0, 0, ycv.width, ycv.height);
     yg.busy = true;
     try {
       const res = await withTimeout(TextReader.read({ image: ycv.toDataURL('image/jpeg', 0.92).split(',')[1] }), 4000);
       if (mode !== 'ygo') return;
-      const hits = Y.lookupCodes(window.CoffreCore.ygoCodesInText(res.text));
-      onYgoHit(hits[0] || null);
+      onYgoHit(Y.lookupScan(res));
     } catch (e) { /* lecture ratée : on réessaie à la prochaine image */ }
     finally { yg.busy = false; }
   }
@@ -485,7 +483,7 @@
     if (!hit) {
       yg.missing++;
       if (yg.missing >= 2) { yg.armed = true; yg.last = ''; yg.seen = 0; }   // carte retirée : prêt pour la suivante
-      if (!yg.hit) msg('Vise le code sous l\'illustration (ex. SGX1-FRA18), bien net.');
+      if (!yg.hit) msg('Vise la carte entière : le code sous l\'illustration (ex. SGX1-FRA18) ou son nom en haut, bien net.');
       return;
     }
     yg.missing = 0;
@@ -504,10 +502,11 @@
     const Y = window.CoffreYgo, hit = yg.hit;
     if (!hit) return;
     const c = hit.prints[0].card;
-    msg(hit.prints.length > 1 ? 'Plusieurs raretés existent pour ce code : touche la bonne.' : '');
+    msg(hit.byName ? (hit.prints.length > 1 ? 'Carte reconnue par son nom : touche son extension, ou « Peu importe ».' : 'Carte reconnue par son nom.') : hit.prints.length > 1 ? 'Plusieurs raretés existent pour ce code : touche la bonne.' : '');
     $('scanCands').innerHTML = `<div class="ycand">${Y.imgTag(c.i)}<div><b>${esc(Y.label(c))}</b>${c.f ? `<span>${esc(c.n)}</span>` : ''}
-      <span class="code">${esc(hit.prints[0].p[1])}</span> · ${Y.ownedOf(c.i)} dans ta collection</div></div>
-      <div class="ychoices">${hit.prints.map((x, i) => `<button class="primary" data-scan="yadd" data-i="${i}">+ ${esc(x.p[3] || x.p[2])}</button>`).join('')}</div>`;
+      ${hit.byName && hit.prints.length > 1 ? '' : `<span class="code">${esc(hit.prints[0].p[1])}</span> · `}${Y.ownedOf(c.i)} dans ta collection</div></div>
+      <div class="ychoices">${hit.prints.slice(0, 10).map((x, i) => `<button class="primary" data-scan="yadd" data-i="${i}">+ ${hit.byName && hit.prints.length > 1 ? esc(x.p[1]) + ' ' : ''}${esc(x.p[3] || x.p[2])}</button>`).join('')}
+        ${hit.byName && hit.prints.length > 1 ? `<button data-scan="ygen">+ Peu importe l'extension</button>` : ''}</div>`;
     Y.loadImages($('scanCands'));
     $('scanActions').innerHTML = yg.added.length
       ? `<span>Ajoutées : <b>${yg.added.length}</b></span><button data-scan="yundo">Annuler</button>`
@@ -533,9 +532,17 @@
     if (act === 'zoom') return toggleZoom();
     if (act === 'cam') return switchCam();
     if (act === 'yadd' && yg.hit) return addYgo(yg.hit.prints[Number(b.dataset.i)], false);
+    if (act === 'ygen' && yg.hit) {
+      const Y = window.CoffreYgo, c = yg.hit.card;
+      const q = Y.addGeneric(c.i); yg.added.push({ generic: true, card: c }); Y.render();
+      if (navigator.vibrate) navigator.vibrate(30);
+      App.toast(`${Y.label(c)} ajoutée · ×${q}`);
+      return renderYgo();
+    }
     if (act === 'yundo') {
       const x = yg.added.pop(); if (!x) return;
-      window.CoffreYgo.addPrinting(x.ci, x.pi, -1); window.CoffreYgo.render();
+      if (x.generic) window.CoffreYgo.removeGeneric(x.card.i); else window.CoffreYgo.addPrinting(x.ci, x.pi, -1);
+      window.CoffreYgo.render();
       App.toast(`${window.CoffreYgo.label(x.card)} retirée`);
       return renderYgo();
     }
