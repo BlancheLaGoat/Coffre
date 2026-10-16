@@ -38,6 +38,9 @@
   const label = c => c.f || c.n;                       // nom français si connu
   const sub = c => c.f ? c.n : '';                     // nom anglais en dessous
   const isExtra = c => EXTRA.test(c.t || '');
+  const gal = () => App.data.settings.ygoLayout !== 'list';
+  const layoutSeg = id => `<div class="seg" id="${id}"><button data-v="gal" aria-pressed="${gal()}">Galerie</button><button data-v="list" aria-pressed="${!gal()}">Liste</button></div>`;
+  function setLayout(v) { App.data.settings.ygoLayout = v; App.scheduleSave(); render(); }
 
   // ---------- Images (téléchargées une fois, puis gardées sur l'appareil) ----------
   const imgTag = (id, cls = '') => `<img class="yimg ${cls}" data-ygo="${id}" alt="" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">`;
@@ -88,6 +91,7 @@
     if (st.view === 'decks') return `<button class="primary" data-y="newDeck">Nouveau deck</button>`;
     return `<button class="primary" data-y="add">Ajouter des cartes</button>
       <input type="search" id="ygoQ" placeholder="Filtrer ma collection (nom, code)…" value="${esc(st.q)}">
+      ${layoutSeg('ygoLayout')}
       <select id="ygoSort" aria-label="Trier"><option value="name">Par nom</option><option value="added">Derniers ajouts</option><option value="code">Par code</option></select>`;
   }
 
@@ -100,6 +104,7 @@
       tools.innerHTML = toolsHtml(); tools.dataset.view = st.view;
       const s = $('ygoSort'); if (s) s.value = st.sort;
     }
+    const ls = $('ygoLayout'); if (ls) ls.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.v === 'gal') === gal())));
     const list = $('ygoList');
     if (!st.db) {
       list.innerHTML = `<div class="empty">
@@ -128,6 +133,9 @@
     }
     const by = { name: (a, b) => label(a.c).localeCompare(label(b.c), 'fr'), added: (a, b) => (b.e.mt || 0) - (a.e.mt || 0), code: (a, b) => (a.e.code || '~').localeCompare(b.e.code || '~') };
     rows.sort(by[st.sort] || by.name);
+    if (gal()) return `<div class="gal">` + rows.map(({ key, e, c, p }) => `<div class="gcard own" data-key="${esc(key)}" data-id="${c.i}">
+        <button class="pic" data-y="card" aria-label="Détails de ${esc(label(c))}">${imgTag(c.i)}<span class="badge">×${e.qty}</span></button>
+        <div class="cap"><span class="num">${esc(e.code || "toute extension")}${p ? ' · ' + esc(p[2]) : ''}</span>${esc(label(c))}</div>${App.qtyHtml(e.qty)}</div>`).join('') + `</div>`;
     return rows.map(({ key, e, c, p }) => `<div class="yrow" data-key="${esc(key)}" data-id="${c.i}">
         <button class="ypic" data-y="card">${imgTag(c.i)}</button>
         <div class="yinfo"><button class="nm" data-y="card">${esc(label(c))}</button>${sub(c) ? `<span class="en">${esc(sub(c))}</span>` : ''}
@@ -202,12 +210,16 @@
     const entries = Object.entries(d.cards || {}).map(([id, q]) => ({ c: card(Number(id)), q, owned: ownedOf(Number(id)) })).filter(x => x.c);
     const missingList = entries.filter(x => x.q > x.owned);
     const shown = st.deckView === 'miss' ? missingList : entries;
-    const group = (title, arr) => arr.length ? `<h4>${title} <span class="num">${arr.reduce((a, x) => a + x.q, 0)}</span></h4>` + arr.sort((a, b) => label(a.c).localeCompare(label(b.c), 'fr')).map(({ c, q, owned }) => `
+    const dq = q => `<div class="qty"><button data-y="dq" data-d="-1" aria-label="Retirer du deck">−</button><output>${q}</output><button data-y="dq" data-d="1" aria-label="Ajouter au deck">+</button></div>`;
+    const tile = ({ c, q, owned }) => `<div class="gcard${owned >= q ? ' own' : ' short'}" data-id="${c.i}">
+        <button class="pic" data-y="card" aria-label="Détails de ${esc(label(c))}">${imgTag(c.i)}<span class="badge">×${q}</span></button>
+        <div class="cap"><span class="num">${owned >= q ? `<span class="own">${owned} possédée${owned > 1 ? 's' : ''}</span>` : `<span class="miss">il en manque ${q - owned}</span>`}</span>${esc(label(c))}</div>${dq(q)}</div>`;
+    const group = (title, arr) => arr.length ? `<h4>${title} <span class="num">${arr.reduce((a, x) => a + x.q, 0)}</span></h4>` + (gal() ? `<div class="gal">${arr.sort((a, b) => label(a.c).localeCompare(label(b.c), 'fr')).map(tile).join('')}</div>` : arr.sort((a, b) => label(a.c).localeCompare(label(b.c), 'fr')).map(({ c, q, owned }) => `
       <div class="yrow${owned >= q ? ' ok' : ' short'}" data-id="${c.i}">
         <button class="ypic" data-y="card">${imgTag(c.i)}</button>
         <div class="yinfo"><button class="nm" data-y="card">${esc(label(c))}</button>${sub(c) ? `<span class="en">${esc(sub(c))}</span>` : ''}
           <span class="meta">${owned >= q ? `<span class="own">${owned} possédée${owned > 1 ? 's' : ''}</span>` : `<span class="miss">il en manque ${q - owned}</span><span>(${owned} possédée${owned > 1 ? 's' : ''})</span>`}</span></div>
-        <div class="qty"><button data-y="dq" data-d="-1" aria-label="Retirer du deck">−</button><output>${q}</output><button data-y="dq" data-d="1" aria-label="Ajouter au deck">+</button></div></div>`).join('') : '';
+        ${dq(q)}</div>`).join('')) : '';
     const main = shown.filter(x => !isExtra(x.c)), extra = shown.filter(x => isExtra(x.c));
     const mainCount = entries.filter(x => !isExtra(x.c)).reduce((a, x) => a + x.q, 0);
     const extraCount = entries.filter(x => isExtra(x.c)).reduce((a, x) => a + x.q, 0);
@@ -221,6 +233,7 @@
       <div class="ydeckbar">
         <input type="search" id="ydQ" placeholder="Ajouter une carte : nom (français ou anglais) ou code…" value="${esc(st.deckQ)}">
         <div class="seg" id="ydView"><button data-v="all" aria-pressed="${st.deckView === 'all'}">Toutes</button><button data-v="miss" aria-pressed="${st.deckView === 'miss'}">Manquantes</button></div>
+        ${layoutSeg('ydLayout')}
       </div>
       ${st.deckQ ? `<div class="yresults">${results.length ? results.map(c => resultHtml(c, `<button class="primary" data-y="dadd">+ Deck</button>`)).join('') : '<p class="hint">Aucune carte trouvée.</p>'}</div>` : ''}
       <div class="ydecklist">${group('Main Deck', main)}${group('Extra Deck', extra)}${!shown.length ? `<p class="hint">${st.deckView === 'miss' ? 'Aucune carte manquante.' : 'Deck vide : cherche une carte au-dessus pour l\'ajouter.'}</p>` : ''}</div>
@@ -257,6 +270,9 @@
             ${c.l !== '' ? `<dt>${/link/.test(c.t) ? 'Lien' : /xyz/.test(c.t) ? 'Rang' : 'Niveau'}</dt><dd>${c.l}</dd>` : ''}
             ${c.k !== '' ? `<dt>ATK / DEF</dt><dd>${c.k} / ${c.d === '' ? '—' : c.d}</dd>` : ''}
             <dt>Dans ta collection</dt><dd><b>${ownedOf(c.i)}</b></dd></dl>
+          <div class="actions" style="justify-content:flex-start">
+            ${ds.length ? `<select id="ycDeck">${ds.map(([id, d]) => `<option value="${id}">${esc(d.name || 'Deck')}</option>`).join('')}</select><button data-y="toDeck">Ajouter au deck</button>` : ''}
+            <a data-y="cm">Voir sur Cardmarket ↗</a></div>
           <h4>Ajouter à ma collection</h4>
           <div class="yprints">
             <div class="yprint" data-gen="1"><div><b>Peu importe l'extension</b></div>${App.qtyHtml((gen && gen.qty) || 0)}</div>
@@ -264,8 +280,6 @@
               <div><span class="code">${esc(p[1])}</span> <span class="tag">${esc(p[3] || p[2])}</span><div class="hint">${esc(setName(p[0]))}</div></div>
               ${App.qtyHtml((e && e.qty) || 0)}</div>`).join('')}
           </div>
-          ${ds.length ? `<div class="actions" style="justify-content:flex-start"><select id="ycDeck">${ds.map(([id, d]) => `<option value="${id}">${esc(d.name || 'Deck')}</option>`).join('')}</select><button data-y="toDeck">Ajouter au deck</button></div>` : ''}
-          <p class="hint"><a data-y="cm">Voir sur Cardmarket ↗</a></p>
         </div></div>`;
     loadImages(box);
   }
@@ -309,6 +323,7 @@
     if (b.dataset.y === 'add') return st.db ? openAdd() : refreshDb();
     if (b.dataset.y === 'newDeck') return st.db ? newDeck() : refreshDb();
   });
+  $('ygoTools').addEventListener('click', e => { const b = e.target.closest('#ygoLayout button'); if (b) setLayout(b.dataset.v); });
   $('ygoTools').addEventListener('input', e => { if (e.target.id === 'ygoQ') { st.q = e.target.value; render(); } });
   $('ygoTools').addEventListener('change', e => { if (e.target.id === 'ygoSort') { st.sort = e.target.value; render(); } });
   $('ygoList').addEventListener('click', e => {
@@ -369,6 +384,7 @@
     if (k === 'ygo-deck') {
       const d = decks()[st.deckId]; if (!d) return;
       d.cards = d.cards || {};
+      if (b.dataset.v && b.closest('#ydLayout')) { setLayout(b.dataset.v); return renderDeck(); }
       if (b.dataset.v) { st.deckView = b.dataset.v; return renderDeck(); }
       if (y === 'dadd' && row) { const id = Number(row.dataset.id); d.cards[id] = (d.cards[id] || 0) + 1; touchDeck(d); renderDeck(); render(); return; }
       if (y === 'dq' && row) {
