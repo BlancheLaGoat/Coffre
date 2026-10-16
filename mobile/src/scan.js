@@ -260,7 +260,7 @@
     $('scanAutoWrap').hidden = m !== 'card' && m !== 'ygo';
     $('scanAuto').checked = App.data.settings.scanAuto !== false;
     $('scanTitle').textContent = m === 'card' ? 'Scanner des cartes FM' : m === 'ygo' ? 'Scanner des cartes Yu-Gi-Oh' : m === 'vinyl' ? 'Code-barres du vinyle' : 'QR code du PC';
-    Object.assign(yg, { busy: false, last: '', seen: 0, armed: true, missing: 0, hit: null, added: [] });
+    Object.assign(yg, { busy: false, last: '', seen: 0, armed: true, missing: 0, hit: null, added: [], full: null, band: null });
     cam.smooth = null; cam.lead = ''; cam.leadCount = 0; cam.armed = true; cam.lastAuto = ''; cam.added = [];
     msg(m === 'card' ? 'Place la carte dans le cadre, bien à plat. Flou ? Éloigne un peu le téléphone ou touche l\'image.' : m === 'vinyl' ? 'Vise le code-barres au dos de la pochette.' : m === 'ygo' ? (TextReader ? 'Place la carte dans le cadre : le code sous l\'illustration (ex. SGX1-FRA18) est lu tout seul. Flou ? Éloigne un peu le téléphone ou touche l\'image.' : 'La lecture du code n\'est pas disponible sur cet appareil.') : 'Vise le QR code affiché dans les réglages de Coffre sur le PC.');
     layoutFrame();
@@ -329,7 +329,7 @@
     } catch (e) { /* image pas prête */ }
     if (!stream) return;
     const spent = performance.now() - t0;
-    loopTimer = setTimeout(loop, Math.max(120, (mode === 'card' ? 380 : mode === 'ygo' ? 500 : 220) - spent));
+    loopTimer = setTimeout(loop, Math.max(120, (mode === 'card' ? 380 : mode === 'ygo' ? 250 : 220) - spent));
   }
 
   // ---------- Cartes ----------
@@ -461,20 +461,42 @@
   const ycv = document.createElement('canvas');
   const yg = { busy: false, last: '', seen: 0, armed: true, missing: 0, hit: null, added: [] };
 
+  // Deux lectures en alternance : la carte entière (nom + code), puis la bande du code agrandie
+  // (le code est petit : agrandi, il est bien mieux lu). Les deux dernières lectures sont combinées.
   async function tickYgo() {
     if (yg.busy || !TextReader) return;
     const Y = window.CoffreYgo;
     if (!Y || !Y.ready) { msg("La base de cartes n'est pas encore téléchargée : ouvre l'onglet Yu-Gi-Oh."); return; }
     const v = $('scanVideo'), r = frameInVideo(); if (!r) return;
-    // Toute la carte : le code sous l'illustration, et le nom en haut si le code n'est pas reconnu
-    const k = Math.min(2, 1100 / r.w);
-    ycv.width = Math.round(r.w * k); ycv.height = Math.round(r.h * k);
-    ycv.getContext('2d').drawImage(v, r.x, r.y, r.w, r.h, 0, 0, ycv.width, ycv.height);
+    const pass = yg.pass = ((yg.pass || 0) + 1) % 2;
+    let sx, sy, sw, sh, outW;
+    if (pass === 1) {
+      // Carte entière, avec une petite marge si la carte déborde du cadre
+      const m = 0.05;
+      sx = r.x - r.w * m; sy = r.y - r.h * m; sw = r.w * (1 + 2 * m); sh = r.h * (1 + 2 * m);
+      outW = 1100;
+    } else {
+      // Bande sous l'illustration, côté droit, là où est imprimé le code
+      sx = r.x + r.w * 0.30; sy = r.y + r.h * 0.62; sw = r.w * 0.75; sh = r.h * 0.22;
+      outW = 1500;
+    }
+    sx = Math.max(0, sx); sy = Math.max(0, sy);
+    sw = Math.min(r.vw - sx, sw); sh = Math.min(r.vh - sy, sh);
+    const k = outW / sw;
+    ycv.width = Math.round(sw * k); ycv.height = Math.round(sh * k);
+    const ctx = ycv.getContext('2d');
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(v, sx, sy, sw, sh, 0, 0, ycv.width, ycv.height);
     yg.busy = true;
     try {
       const res = await withTimeout(TextReader.read({ image: ycv.toDataURL('image/jpeg', 0.92).split(',')[1] }), 4000);
       if (mode !== 'ygo') return;
-      onYgoHit(Y.lookupScan(res));
+      const t = Date.now();
+      if (pass === 1) yg.full = { res, t }; else yg.band = { res, t };
+      const fresh = x => x && t - x.t < 1600;
+      const full = fresh(yg.full) ? yg.full.res : null, band = fresh(yg.band) ? yg.band.res : null;
+      const merged = { text: [band && band.text, full && full.text].filter(Boolean).join('\n'), lines: (full && full.lines) || [] };
+      onYgoHit(Y.lookupScan(merged));
     } catch (e) { /* lecture ratée : on réessaie à la prochaine image */ }
     finally { yg.busy = false; }
   }
@@ -482,7 +504,7 @@
   function onYgoHit(hit) {
     if (!hit) {
       yg.missing++;
-      if (yg.missing >= 2) { yg.armed = true; yg.last = ''; yg.seen = 0; }   // carte retirée : prêt pour la suivante
+      if (yg.missing >= 3) { yg.armed = true; yg.last = ''; yg.seen = 0; }   // carte retirée : prêt pour la suivante
       if (!yg.hit) msg('Vise la carte entière : le code sous l\'illustration (ex. SGX1-FRA18) ou son nom en haut, bien net.');
       return;
     }
