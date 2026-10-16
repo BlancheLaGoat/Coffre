@@ -21,7 +21,8 @@
     try { setDb(await window.coffre.ygoDb()); } catch (e) { /* pas encore téléchargée */ }
     render();
     // Mise à jour discrète toutes les deux semaines (nouvelles extensions)
-    if (st.db && now() - (st.db.at || 0) > 14 * 864e5) refreshDb(true);
+    // Mise à jour discrète (nouvelles cartes, prix Cardmarket) chaque semaine, ou si la base est d'un ancien format
+    if (st.db && (st.db.v !== 2 || now() - (st.db.at || 0) > 7 * 864e5)) refreshDb(true);
   }
   async function refreshDb(silent) {
     if (st.loading) return;
@@ -97,11 +98,18 @@
   }
   function addGeneric(id, delta = 1) { return changeEntry(`${id}|*`, { id, code: '', r: '' }, delta); }
 
+  // ---------- Prix Cardmarket ----------
+  const eur = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' });
+  const priceOf = id => { const c = card(id); return (c && c.cm) || 0; };
+  const money = v => eur.format(v || 0);
+  const priceTag = (id, qty = 1) => { const p = priceOf(id); return p ? `<span class="price">${money(p * qty)}</span>` : ''; };
+  const pricesDate = () => st.db && st.db.v === 2 ? new Date(st.db.at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }) : '';
+
   function stats() {
-    let cards = 0, copies = 0; const ids = new Set();
-    for (const e of Object.values(col())) if (e && e.qty > 0) { copies += e.qty; ids.add(e.id); }
+    let cards = 0, copies = 0, value = 0; const ids = new Set();
+    for (const e of Object.values(col())) if (e && e.qty > 0) { copies += e.qty; ids.add(e.id); value += priceOf(e.id) * e.qty; }
     cards = ids.size;
-    $('ygoStats').innerHTML = `<b>${cards}</b> cartes · ${copies} exemplaires · ${Object.values(App.data.decks || {}).filter(d => d && !d.deleted).length} decks`;
+    $('ygoStats').innerHTML = `<b>${cards}</b> cartes · ${copies} exemplaires${st.db && st.db.v === 2 ? ` · valeur ≈ <b class="price">${money(value)}</b> <span class="hint" title="Prix de référence Cardmarket de chaque carte (toutes éditions), mis à jour chaque semaine">(Cardmarket, ${pricesDate()})</span>` : ''} · ${Object.values(App.data.decks || {}).filter(d => d && !d.deleted).length} decks`;
     $('tabYgoCount').textContent = cards;
   }
 
@@ -154,11 +162,11 @@
     rows.sort(by[st.sort] || by.name);
     if (gal()) return `<div class="gal">` + rows.map(({ key, e, c, p }) => `<div class="gcard own" data-key="${esc(key)}" data-id="${c.i}">
         <button class="pic" data-y="card" aria-label="Détails de ${esc(label(c))}">${imgTag(c.i)}<span class="badge">×${e.qty}</span></button>
-        <div class="cap"><span class="num">${esc(e.code ? (e.lcode || e.code) : 'toute extension')}${p ? ' · ' + esc(p[2]) : ''}${e.lang ? ' · ' + esc(e.lang) : ''}</span>${esc(label(c))}</div>${App.qtyHtml(e.qty)}</div>`).join('') + `</div>`;
+        <div class="cap"><span class="num">${esc(e.code ? (e.lcode || e.code) : 'toute extension')}${p ? ' · ' + esc(p[2]) : ''}${e.lang ? ' · ' + esc(e.lang) : ''}</span>${priceTag(c.i)}${esc(label(c))}</div>${App.qtyHtml(e.qty)}</div>`).join('') + `</div>`;
     return rows.map(({ key, e, c, p }) => `<div class="yrow" data-key="${esc(key)}" data-id="${c.i}">
         <button class="ypic" data-y="card">${imgTag(c.i)}</button>
         <div class="yinfo"><button class="nm" data-y="card">${esc(label(c))}</button>${sub(c) ? `<span class="en">${esc(sub(c))}</span>` : ''}
-          <span class="meta">${e.code ? `<span class="code">${esc(e.lcode || e.code)}</span>${e.lang ? `<span class="tag">${esc(e.lang)}</span>` : ''}<span>${esc(p ? p[3] : e.r)}</span><span>${esc(p ? setName(p[0]) : '')}</span>` : `<span class="tag">peu importe l'extension</span>`}</span></div>
+          <span class="meta">${e.code ? `<span class="code">${esc(e.lcode || e.code)}</span>${e.lang ? `<span class="tag">${esc(e.lang)}</span>` : ''}<span>${esc(p ? p[3] : e.r)}</span><span>${esc(p ? setName(p[0]) : '')}</span>` : `<span class="tag">peu importe l'extension</span>`}${priceTag(c.i)}</span></div>
         ${App.qtyHtml(e.qty)}</div>`).join('');
   }
 
@@ -172,6 +180,11 @@
     }
     return { total, missing };
   }
+  function missingCost(d) {
+    let v = 0;
+    for (const [id, q] of Object.entries(d.cards || {})) v += Math.max(0, q - ownedOf(Number(id))) * priceOf(Number(id));
+    return v;
+  }
   function decksHtml() {
     const ds = liveDecks().sort((a, b) => (b[1].mt || 0) - (a[1].mt || 0));
     if (!ds.length) return `<div class="empty">Aucun deck. Touche « Nouveau deck », puis ajoute des cartes, même celles que tu n'as pas encore : Coffre te dira lesquelles manquent.</div>`;
@@ -181,7 +194,7 @@
       return `<button class="ydeck" data-y="deck" data-deck="${id}">
         <span class="ycover">${cover ? imgTag(cover) : ''}</span>
         <span class="t">${esc(d.name || 'Deck sans nom')}</span>
-        <span class="a">${total} cartes · ${missing ? `<b class="miss">${missing} manquante${missing > 1 ? 's' : ''}</b>` : 'complet'}</span></button>`;
+        <span class="a">${total} cartes · ${missing ? `<b class="miss">${missing} manquante${missing > 1 ? 's' : ''}</b>` : 'complet'}${missingCost(d) ? ` · ≈ ${money(missingCost(d))} à acheter` : ''}</span></button>`;
     }).join('') + `</div>`;
   }
 
@@ -232,23 +245,26 @@
     const dq = q => `<div class="qty"><button data-y="dq" data-d="-1" aria-label="Retirer du deck">−</button><output>${q}</output><button data-y="dq" data-d="1" aria-label="Ajouter au deck">+</button></div>`;
     const tile = ({ c, q, owned }) => `<div class="gcard${owned >= q ? ' own' : ' short'}" data-id="${c.i}">
         <button class="pic" data-y="card" aria-label="Détails de ${esc(label(c))}">${imgTag(c.i)}<span class="badge">×${q}</span></button>
-        <div class="cap"><span class="num">${owned >= q ? `<span class="own">${owned} possédée${owned > 1 ? 's' : ''}</span>` : `<span class="miss">il en manque ${q - owned}</span>`}</span>${esc(label(c))}</div>${dq(q)}</div>`;
+        <div class="cap"><span class="num">${owned >= q ? `<span class="own">${owned} possédée${owned > 1 ? 's' : ''}</span>` : `<span class="miss">il en manque ${q - owned}</span>`}</span>${esc(label(c))}${priceTag(c.i)}</div>${dq(q)}</div>`;
     const group = (title, arr) => arr.length ? `<h4>${title} <span class="num">${arr.reduce((a, x) => a + x.q, 0)}</span></h4>` + (gal() ? `<div class="gal">${arr.sort((a, b) => label(a.c).localeCompare(label(b.c), 'fr')).map(tile).join('')}</div>` : arr.sort((a, b) => label(a.c).localeCompare(label(b.c), 'fr')).map(({ c, q, owned }) => `
       <div class="yrow${owned >= q ? ' ok' : ' short'}" data-id="${c.i}">
         <button class="ypic" data-y="card">${imgTag(c.i)}</button>
         <div class="yinfo"><button class="nm" data-y="card">${esc(label(c))}</button>${sub(c) ? `<span class="en">${esc(sub(c))}</span>` : ''}
-          <span class="meta">${owned >= q ? `<span class="own">${owned} possédée${owned > 1 ? 's' : ''}</span>` : `<span class="miss">il en manque ${q - owned}</span><span>(${owned} possédée${owned > 1 ? 's' : ''})</span>`}</span></div>
+          <span class="meta">${owned >= q ? `<span class="own">${owned} possédée${owned > 1 ? 's' : ''}</span>` : `<span class="miss">il en manque ${q - owned}</span><span>(${owned} possédée${owned > 1 ? 's' : ''})</span>`}${priceTag(c.i)}</span></div>
         ${dq(q)}</div>`).join('')) : '';
     const main = shown.filter(x => !isExtra(x.c)), extra = shown.filter(x => isExtra(x.c));
     const mainCount = entries.filter(x => !isExtra(x.c)).reduce((a, x) => a + x.q, 0);
     const extraCount = entries.filter(x => isExtra(x.c)).reduce((a, x) => a + x.q, 0);
     const results = searchCards(st.deckQ, 30);
     const cm = missingList.map(x => Core.cmLine(x.q - x.owned, x.c.n)).join('\n');
+    const deckValue = entries.reduce((a, x) => a + x.q * (x.c.cm || 0), 0);
+    const missValue = missingList.reduce((a, x) => a + (x.q - x.owned) * (x.c.cm || 0), 0);
     const q = $('ydQ'), hadFocus = q && document.activeElement === q, caret = q ? q.selectionStart : 0;
     box.innerHTML = `
       <div class="sheet-head"><input id="ydName" class="dname" value="${esc(d.name || '')}" aria-label="Nom du deck">
         <button class="close" data-y="close">Fermer</button></div>
-      <p class="hint">${mainCount} cartes dans le Main Deck${extraCount ? ` · ${extraCount} dans l'Extra Deck` : ''} · ${missingList.length ? `<b class="miss">${missingList.reduce((a, x) => a + x.q - x.owned, 0)} carte(s) manquante(s)</b>` : 'tu as toutes les cartes'}</p>
+      <p class="hint">${mainCount} cartes dans le Main Deck${extraCount ? ` · ${extraCount} dans l'Extra Deck` : ''} · ${missingList.length ? `<b class="miss">${missingList.reduce((a, x) => a + x.q - x.owned, 0)} carte(s) manquante(s)</b>` : 'tu as toutes les cartes'}
+        ${deckValue ? `<br>Prix du deck ≈ <b class="price">${money(deckValue)}</b>${missValue ? ` · ce qu'il te manque ≈ <b class="price miss">${money(missValue)}</b>` : ''} <span class="hint">(Cardmarket, ${pricesDate()})</span>` : ''}</p>
       <div class="ydeckbar">
         <input type="search" id="ydQ" placeholder="Ajouter une carte : nom (français ou anglais) ou code…" value="${esc(st.deckQ)}">
         <div class="seg" id="ydView"><button data-v="all" aria-pressed="${st.deckView === 'all'}">Toutes</button><button data-v="miss" aria-pressed="${st.deckView === 'miss'}">Manquantes</button></div>
@@ -288,7 +304,8 @@
           <dl class="kv"><dt>Type</dt><dd>${esc(c.ty)}${c.r ? ' · ' + esc(c.r) : ''}${c.a ? ' · ' + esc(c.a) : ''}</dd>
             ${c.l !== '' ? `<dt>${/link/.test(c.t) ? 'Lien' : /xyz/.test(c.t) ? 'Rang' : 'Niveau'}</dt><dd>${c.l}</dd>` : ''}
             ${c.k !== '' ? `<dt>ATK / DEF</dt><dd>${c.k} / ${c.d === '' ? '—' : c.d}</dd>` : ''}
-            <dt>Dans ta collection</dt><dd><b>${ownedOf(c.i)}</b></dd></dl>
+            <dt>Dans ta collection</dt><dd><b>${ownedOf(c.i)}</b></dd>
+            ${c.cm ? `<dt>Prix Cardmarket</dt><dd><b class="price">${money(c.cm)}</b> <span class="hint">(prix de référence, toutes éditions)</span></dd>` : ''}</dl>
           <div class="actions" style="justify-content:flex-start">
             ${ds.length ? `<select id="ycDeck">${ds.map(([id, d]) => `<option value="${id}">${esc(d.name || 'Deck')}</option>`).join('')}</select><button data-y="toDeck">Ajouter au deck</button>` : ''}
             <a data-y="cm">Voir sur Cardmarket ↗</a></div>
@@ -377,7 +394,7 @@
         <button data-y="unset">← Retour</button>
         <div class="grow"><b>${esc(x[0])}</b> <span class="code">${esc(x[1] || '')}</span>${x[2] ? ` <span class="hint">${esc(x[2].slice(0, 4))}</span>` : ''}
           <div class="bar"><i style="width:${(cur ? (cur.total ? cur.own / cur.total : 0) : (total ? own / total : 0)) * 100}%"></i></div>
-          <span class="hint">${cur ? `<b>${cur.own}</b> / ${cur.total} en ${esc(st.setRarity)}` : `<b>${own}</b> / ${total} cartes de l'extension · ${allV.own} / ${allV.total} versions (toutes raretés)`}</span></div>
+          <span class="hint">${cur ? `<b>${cur.own}</b> / ${cur.total} en ${esc(st.setRarity)}` : `<b>${own}</b> / ${total} cartes de l'extension · ${allV.own} / ${allV.total} versions (toutes raretés)`}${(() => { const seen = new Set(); let v = 0; for (const y of setMissing(i)) { if (seen.has(y.p[1])) continue; seen.add(y.p[1]); v += y.c.cm || 0; } return v ? ` · manquantes ≈ <b class="price">${money(v)}</b>` : ''; })()}</span></div>
         <div class="seg" id="ysView"><button data-sv="all" aria-pressed="${st.setView === 'all'}">Toutes</button><button data-sv="miss" aria-pressed="${st.setView === 'miss'}">Manquantes</button></div>
         ${miss ? `<button data-y="copySet" title="Format wishlist Cardmarket : 1 Nom (Extension)">Copier les manquantes</button>` : ''}
         ${rars.length > 1 ? `<div class="yrars"><button class="chip" data-rar="" aria-pressed="${!st.setRarity}">Toutes raretés</button>${rars.map(([k, v]) => `<button class="chip${v.own === v.total ? ' done' : ''}" data-rar="${esc(k)}" aria-pressed="${st.setRarity === k}">${esc(k)} <b>${v.own}/${v.total}</b></button>`).join('')}</div>` : ''}</div>

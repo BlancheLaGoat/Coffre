@@ -170,10 +170,12 @@
         i: c.id, n: c.name, f: frn && frn !== c.name ? frn : '', t: c.frameType || '', ty: c.humanReadableCardType || c.type || '',
         r: c.race || '', a: c.attribute || '', l: c.level != null ? c.level : (c.linkval != null ? c.linkval : ''),
         k: c.atk != null ? c.atk : '', d: c.def != null ? c.def : '',
-        im: (c.card_images || []).map(x => x.id), p
+        im: (c.card_images || []).map(x => x.id), p,
+        // Prix de référence Cardmarket de la carte (en €), toutes éditions confondues
+        cm: parseFloat(((c.card_prices || [])[0] || {}).cardmarket_price) || 0
       });
     }
-    return { v: 1, at: Date.now(), cards, sets: setList };
+    return { v: 2, at: Date.now(), cards, sets: setList };
   }
 
   // Clé d'une impression dans la collection : « SGX1-ENA18|C »

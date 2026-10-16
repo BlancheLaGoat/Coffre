@@ -94,6 +94,8 @@ La première fois, l'onglet **Yu-Gi-Oh** propose de **télécharger la base de c
 - **Decks** : **Nouveau deck**, donne-lui un nom, puis ajoute n'importe quelle carte du jeu, même si tu ne l'as pas. Chaque carte indique combien tu en possèdes ; le filtre **Manquantes** montre ce qu'il te faut.
 - **Wishlist Cardmarket** : dans un deck, **Copier la liste** copie les cartes manquantes au format Cardmarket (`2 Dark Magician`, une carte par ligne). Sur Cardmarket : Wishlist → ajouter des cartes → colle la liste.
 
+- **Prix** : la valeur de ta collection, le prix de chaque deck (et de ce qu'il te manque) et le coût des manquantes d'une extension utilisent le prix de référence Cardmarket de chaque carte, toutes éditions confondues (données YGOPRODeck, mises à jour chaque semaine). C'est une estimation : une rareté chère peut valoir bien plus.
+
 Tout se synchronise entre le PC et le téléphone, comme le reste.
 
 ---

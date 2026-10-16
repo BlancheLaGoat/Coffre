@@ -214,3 +214,8 @@ body.mobile .desktop-only { display: none !important; }
 .ylang { flex: none; width: auto; font-weight: 700; }
 .yaddh { display: flex; align-items: center; gap: 10px; }
 .yaddh .ylang { font-size: 13px; padding: 3px 8px; }
+
+.price { font: 600 12px var(--f-mono); color: var(--fg); white-space: nowrap; }
+.gcard .cap .price { display: block; color: var(--muted); font-weight: 400; }
+b.price { font-size: inherit; }
+.price.miss { color: var(--wax); }
