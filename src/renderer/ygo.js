@@ -10,7 +10,7 @@
   const now = () => Date.now();
 
   const EXTRA = /fusion|synchro|xyz|link/;          // cadres qui vont dans l'Extra Deck
-  const st = { db: null, idx: null, loading: false, error: '', view: 'col', q: '', sort: 'name', addQ: '', deckId: '', deckView: 'all', deckQ: '' };
+  const st = { db: null, idx: null, loading: false, error: '', view: 'col', q: '', sort: 'name', addQ: '', addSet: null, setView: 'all', deckId: '', deckView: 'all', deckQ: '' };
 
   // ---------- Base de cartes ----------
   function setDb(db) {
@@ -288,21 +288,79 @@
   function openAdd() {
     App.openModal(`
       <div class="sheet-head"><h3>Ajouter des cartes</h3><button class="close" data-y="close">Fermer</button></div>
-      <input type="search" id="yaQ" placeholder="Nom de la carte (français ou anglais) ou code (ex. SGX1-FRA18)…" value="${esc(st.addQ)}" autofocus>
+      <input type="search" id="yaQ" placeholder="Nom de carte (français ou anglais), code (SGX1-FRA18) ou extension…" value="${esc(st.addQ)}" autofocus>
       <div class="yresults" id="yaRes"></div>`, 'ygo wide', 'ygo-add');
     renderAdd();
   }
+  // ---------- Extensions : toutes les cartes d'une extension, pour la compléter ----------
+  function searchSets(q, max = 8) {
+    q = q.trim().toLowerCase(); if (q.length < 2) return [];
+    const words = q.split(/\s+/), uq = q.toUpperCase();
+    const out = [];
+    st.db.sets.forEach((x, i) => {
+      if (!st.idx.bySet.has(i)) return;
+      const name = x[0].toLowerCase();
+      if (words.every(w => name.includes(w)) || (x[1] && x[1].toUpperCase() === uq)) out.push(i);
+    });
+    return out.sort((a, b) => (st.db.sets[b][2] || '').localeCompare(st.db.sets[a][2] || '')).slice(0, max);
+  }
+  function setPrints(i) {
+    return (st.idx.bySet.get(i) || []).map(([ci, pi]) => ({ ci, pi, c: st.db.cards[ci], p: st.db.cards[ci].p[pi] }))
+      .sort((a, b) => a.p[1].localeCompare(b.p[1], 'en', { numeric: true }) || a.p[2].localeCompare(b.p[2]));
+  }
+  const qtyOf = (code, r) => { const e = col()[Core.ygoKey(code, r)]; return (e && e.qty) || 0; };
+  // Progression : un numéro de carte compte comme possédé si tu as au moins une de ses raretés
+  function setProgress(i) {
+    const codes = new Map();
+    for (const x of setPrints(i)) codes.set(x.p[1], (codes.get(x.p[1]) || 0) + qtyOf(x.p[1], x.p[2]));
+    let own = 0; for (const q of codes.values()) if (q > 0) own++;
+    return { own, total: codes.size };
+  }
+  function setMissingText(i) {
+    const seen = new Set(), lines = [];
+    for (const x of setPrints(i)) {
+      if (seen.has(x.p[1])) continue; seen.add(x.p[1]);
+      const owned = setPrints(i).filter(y => y.p[1] === x.p[1]).some(y => qtyOf(y.p[1], y.p[2]) > 0);
+      if (!owned) lines.push(`1 ${x.c.n} (${setName(i)})`);
+    }
+    return lines.join('\n');
+  }
+  function renderSet(el) {
+    const i = st.addSet, x = st.db.sets[i];
+    const { own, total } = setProgress(i);
+    let rows = setPrints(i);
+    if (st.setView === 'miss') rows = rows.filter(y => !setPrints(i).some(z => z.p[1] === y.p[1] && qtyOf(z.p[1], z.p[2]) > 0));
+    const miss = setMissingText(i);
+    el.innerHTML = `<div class="yset-head">
+        <button data-y="unset">← Retour</button>
+        <div class="grow"><b>${esc(x[0])}</b> <span class="code">${esc(x[1] || '')}</span>${x[2] ? ` <span class="hint">${esc(x[2].slice(0, 4))}</span>` : ''}
+          <div class="bar"><i style="width:${total ? (own / total * 100).toFixed(1) : 0}%"></i></div>
+          <span class="hint"><b>${own}</b> / ${total} cartes de l'extension</span></div>
+        <div class="seg" id="ysView"><button data-sv="all" aria-pressed="${st.setView === 'all'}">Toutes</button><button data-sv="miss" aria-pressed="${st.setView === 'miss'}">Manquantes</button></div>
+        ${miss ? `<button data-y="copySet" title="Format wishlist Cardmarket : 1 Nom (Extension)">Copier les manquantes</button>` : ''}</div>
+      <textarea id="ysCm" hidden readonly>${esc(miss)}</textarea>
+      ${rows.length ? rows.map(({ ci, pi, c, p }) => { const q = qtyOf(p[1], p[2]); return `<div class="yres${q ? ' owned' : ''}" data-id="${c.i}">
+        <button class="ypic" data-y="card">${imgTag(c.i)}</button>
+        <div class="yinfo"><button class="nm" data-y="card">${esc(label(c))}</button>${sub(c) ? `<span class="en">${esc(sub(c))}</span>` : ''}
+          <span class="meta"><span class="code">${esc(p[1])}</span><span>${esc(p[3] || p[2])}</span></span></div>
+        <div class="yquick" data-ci="${ci}" data-pi="${pi}">${App.qtyHtml(q)}</div></div>`; }).join('') : '<p class="hint">Tu as toutes les cartes de cette extension.</p>'}`;
+    loadImages(el);
+  }
+
   function renderAdd() {
     const el = $('yaRes'); if (!el) return;
+    if (st.addSet != null) return renderSet(el);
     const q = st.addQ.trim();
     if (!q) { el.innerHTML = `<p class="hint">Tape quelques lettres : la recherche porte sur les ${st.db.cards.length.toLocaleString('fr-FR')} cartes du jeu.</p>`; return; }
     const nq = Core.ygoNormCode(q.toUpperCase());
     const exact = st.idx.byNorm.get(nq) || [];
     const res = searchCards(q);
-    el.innerHTML = (exact.length ? exact.map(([ci, pi]) => {
+    const sets = searchSets(q);
+    el.innerHTML = (sets.length ? `<h4>Extensions</h4><div class="ysets">${sets.map(i => { const { own, total } = setProgress(i); const x = st.db.sets[i];
+      return `<button class="yset" data-y="set" data-set="${i}"><b>${esc(x[0])}</b><span class="hint">${esc(x[1] || '')}${x[2] ? ' · ' + esc(x[2].slice(0, 4)) : ''} · ${own}/${total}</span></button>`; }).join('')}</div>${res.length || exact.length ? '<h4>Cartes</h4>' : ''}` : '') + (exact.length ? exact.map(([ci, pi]) => {
       const c = st.db.cards[ci], p = c.p[pi], e = col()[Core.ygoKey(p[1], p[2])];
       return resultHtml(c, `<div class="yquick" data-ci="${ci}" data-pi="${pi}"><span class="code">${esc(p[1])}</span> <span class="tag">${esc(p[3] || p[2])}</span>${App.qtyHtml((e && e.qty) || 0)}</div>`);
-    }).join('') : '') + (res.length ? res.map(c => resultHtml(c, `<button data-y="card">Choisir l'extension</button>`)).join('') : (exact.length ? '' : '<p class="hint">Aucune carte trouvée.</p>'));
+    }).join('') : '') + (res.length ? res.map(c => resultHtml(c, `<button data-y="card">Choisir l'extension</button>`)).join('') : (exact.length || sets.length ? '' : '<p class="hint">Aucune carte ni extension trouvée.</p>'));
     loadImages(el);
   }
 
@@ -341,7 +399,7 @@
 
   let addTimer = null, deckTimer = null;
   $('sheet').addEventListener('input', e => {
-    if (e.target.id === 'yaQ') { st.addQ = e.target.value; clearTimeout(addTimer); addTimer = setTimeout(renderAdd, 150); }
+    if (e.target.id === 'yaQ') { st.addQ = e.target.value; st.addSet = null; clearTimeout(addTimer); addTimer = setTimeout(renderAdd, 150); }
     if (e.target.id === 'ydQ') { st.deckQ = e.target.value; clearTimeout(deckTimer); deckTimer = setTimeout(() => renderDeck(true), 200); }
   });
   $('sheet').addEventListener('change', e => {
@@ -349,7 +407,7 @@
   });
   $('sheet').addEventListener('click', async e => {
     const k = App.modalKind; if (!k || !k.startsWith('ygo')) return;
-    const b = e.target.closest('[data-y],[data-act],[data-v]'); if (!b) return;
+    const b = e.target.closest('[data-y],[data-act],[data-v],[data-sv]'); if (!b) return;
     const y = b.dataset.y;
     if (y === 'close') return App.closeModal();
     if (y === 'back') { const back = cardBack; cardBack = null; return back && back(); }
@@ -375,6 +433,15 @@
       return window.coffre.openExternal(`https://www.cardmarket.com/fr/YuGiOh/Products/Search?searchString=${encodeURIComponent(c.n)}`);
     }
     // ajout rapide par code exact
+    if (k === 'ygo-add' && y === 'set') { st.addSet = Number(b.dataset.set); st.setView = 'all'; $('yaRes').scrollTop = 0; return renderAdd(); }
+    if (k === 'ygo-add' && y === 'unset') { st.addSet = null; return renderAdd(); }
+    if (k === 'ygo-add' && b.dataset.sv) { st.setView = b.dataset.sv; return renderAdd(); }
+    if (k === 'ygo-add' && y === 'copySet') {
+      const text = $('ysCm').value; let ok = false;
+      try { await navigator.clipboard.writeText(text); ok = true; } catch (err) { ok = false; }
+      App.toast(ok ? 'Manquantes copiées : colle-les dans ta wishlist Cardmarket' : 'Copie impossible sur cet appareil');
+      return;
+    }
     if (k === 'ygo-add' && b.dataset.act) {
       const q = b.closest('.yquick');
       addPrinting(Number(q.dataset.ci), Number(q.dataset.pi), b.dataset.act === 'inc' ? 1 : -1);

@@ -90,6 +90,7 @@ Ensuite, chaque tag de version (`v1.1.0`, `v1.1.1`…) produit aussi `Coffre-And
 La première fois, l'onglet **Yu-Gi-Oh** propose de **télécharger la base de cartes** (YGOPRODeck, gratuite : environ 13 000 cartes avec toutes leurs extensions, noms anglais et français). Elle se met ensuite à jour toute seule toutes les deux semaines. Sur le téléphone associé, elle est récupérée depuis le PC. Les images des cartes se téléchargent au fur et à mesure, puis restent sur l'appareil.
 
 - **Ma collection** : seulement les cartes que tu as. **Ajouter des cartes** → tape un nom (français ou anglais) ou un code (ex. SGX1-FRA18) → choisis l'extension et la rareté, ou « Peu importe l'extension ».
+- **Compléter une extension** : dans « Ajouter des cartes », tape le nom de l'extension (ex. « Legend of Blue Eyes ») ou son code (ex. « LOB »). Touche l'extension : toutes ses cartes s'affichent avec ta progression (ex. 12 / 126), le filtre **Manquantes**, et **Copier les manquantes** pour ta wishlist Cardmarket.
 - **Decks** : **Nouveau deck**, donne-lui un nom, puis ajoute n'importe quelle carte du jeu, même si tu ne l'as pas. Chaque carte indique combien tu en possèdes ; le filtre **Manquantes** montre ce qu'il te faut.
 - **Wishlist Cardmarket** : dans un deck, **Copier la liste** copie les cartes manquantes au format Cardmarket (`2 Dark Magician`, une carte par ligne). Sur Cardmarket : Wishlist → ajouter des cartes → colle la liste.
 
