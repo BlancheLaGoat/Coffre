@@ -230,7 +230,13 @@
     },
     ygoImg(id, big) { return ygoImage(id, big); },
     checkUpdate,
-    installUpdate() { if (apkUrl) return window.coffre.openExternal(apkUrl); },
+    // L'APK s'ouvre dans le navigateur du téléphone (Chrome…), qui la télécharge vraiment.
+    // (L'onglet intégré se refermait avant la fin du téléchargement.)
+    async installUpdate() {
+      if (!apkUrl) return;
+      try { if (P.AppLauncher) { await P.AppLauncher.openUrl({ url: apkUrl }); return; } } catch (e) { /* repli ci-dessous */ }
+      window.location.href = apkUrl;
+    },
     onUpdate(cb) { updateCb = cb; }
   };
 

@@ -4,6 +4,16 @@ h1{margin:0 0 4px}h2{margin:28px 0 8px;color:#e3b54a}.d{color:#9a95ad}details{bo
 summary{cursor:pointer;padding:8px 12px}pre{margin:0;padding:12px;overflow:auto;max-height:520px;font:12px Consolas,monospace;background:#100e16;border-top:1px solid #322e42}
 .mod{font-size:11px;background:#3a2f17;color:#e3b54a;padding:1px 6px;border-radius:4px}.new{font-size:11px;background:#1f3a26;color:#6cc58c;padding:1px 6px;border-radius:4px}ul{margin:4px 0 0}</style></head><body>
 <h1>Journal des modifications</h1><p class="d">Coffre — clique sur un fichier pour voir son code.</p>
+<h2>v1.3.2 <span class="d">— 16/10/2026</span></h2>
+<ul><li>Android : le bouton « Télécharger » de la mise à jour ouvre maintenant le navigateur du téléphone, qui télécharge vraiment l’APK. Avant, il passait par un onglet intégré qui se refermait avant la fin du téléchargement.</li></ul>
+<details><summary><code>mobile/src/mobile.js</code> <span class="mod">modifié</span></summary><pre><span style="color:#ef7a62">- installUpdate() { if (apkUrl) return window.coffre.openExternal(apkUrl); },</span>
+<span style="color:#6cc58c">+ async installUpdate() {</span>
+<span style="color:#6cc58c">+   if (P.AppLauncher) { await P.AppLauncher.openUrl({ url: apkUrl }); return; }   // navigateur du téléphone</span>
+<span style="color:#6cc58c">+   window.location.href = apkUrl;   // repli</span>
+<span style="color:#6cc58c">+ },</span></pre></details>
+<details><summary><code>mobile/package.json</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ &quot;@capacitor/app-launcher&quot;: &quot;^8.0.0&quot;,</span>
+<span style="color:#6cc58c">+ &quot;version&quot;: &quot;1.3.2&quot;,</span></pre></details>
+<details><summary><code>package.json</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ &quot;version&quot;: &quot;1.3.2&quot;,</span></pre></details>
 <h2>v1.3.1 <span class="d">— 16/10/2026</span></h2>
 <ul><li>Yu-Gi-Oh : <b>Galerie ou Liste</b> au choix, pour ta collection et dans chaque deck (comme les cartes FM). Dans un deck en galerie, les cartes manquantes sont grisées.</li><li>Le champ de recherche « Ajouter des cartes » fait de nouveau une seule ligne.</li><li>Fiche d’une carte : « Ajouter au deck » et « Voir sur Cardmarket » sont en haut, entre « Dans ta collection » et « Ajouter à ma collection ».</li></ul>
 <details><summary><code>src/renderer/ygo.js</code> <span class="mod">modifié</span></summary><pre>// Coffre — onglet Yu-Gi-Oh : toutes les cartes du jeu (base YGOPRODeck),
