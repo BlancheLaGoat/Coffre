@@ -188,9 +188,10 @@
     $('scanCands').innerHTML = ''; $('scanActions').innerHTML = '';
     $('scanAutoWrap').hidden = m !== 'card';
     $('scanAuto').checked = App.data.settings.scanAuto !== false;
-    $('scanTitle').textContent = m === 'card' ? 'Scanner des cartes' : m === 'vinyl' ? 'Code-barres du vinyle' : 'QR code du PC';
+    $('scanTitle').textContent = m === 'card' ? 'Scanner des cartes' : m === 'vinyl' ? 'Scanner un vinyle' : 'QR code du PC';
+    if (m === 'vinyl') $('scanActions').innerHTML = `<button class="scan-shot" data-scan="cover">📸 Reconnaître la pochette</button>`;
     cam.smooth = null; cam.lead = ''; cam.leadCount = 0; cam.armed = true; cam.lastAuto = ''; cam.added = [];
-    msg(m === 'card' ? 'Place la carte dans le cadre, bien à plat.' : m === 'vinyl' ? "Vise le code-barres au dos de la pochette." : 'Vise le QR code affiché dans les réglages de Coffre sur le PC.');
+    msg(m === 'card' ? 'Place la carte dans le cadre, bien à plat.' : m === 'vinyl' ? "Cadre la pochette et touche le bouton, ou vise un code-barres s'il y en a un." : 'Vise le QR code affiché dans les réglages de Coffre sur le PC.');
     layoutFrame();
     try {
       if (m === 'card') {
@@ -227,7 +228,7 @@
     if (mode === 'card') {
       const maxH = H * 0.56, maxW = W * 0.78;
       h = Math.min(maxH, maxW / CARD_RATIO); w = h * CARD_RATIO;
-    } else if (mode === 'vinyl') { w = W * 0.86; h = Math.min(H * 0.22, w * 0.5); }
+    } else if (mode === 'vinyl') { w = Math.min(W * 0.86, H * 0.48); h = w; }
     else { w = Math.min(W * 0.7, H * 0.45); h = w; }
     fr.style.width = w + 'px'; fr.style.height = h + 'px';
     fr.style.left = (W - w) / 2 + 'px'; fr.style.top = Math.max(64, H * 0.40 - h / 2) + 'px';
@@ -377,11 +378,129 @@
     }
   }
 
+
+  // ============================================================
+  //  VINYLES SANS CODE-BARRES : photo de la pochette
+  //  1. on lit le texte de la pochette (artiste, titre, référence) sur le téléphone, sans internet ;
+  //  2. on cherche avec ces mots ;
+  //  3. on classe les résultats selon la ressemblance de leur pochette avec la photo.
+  // ============================================================
+  let ocrWorker = null;
+  async function getOcr() {
+    if (ocrWorker) return ocrWorker;
+    const base = new URL('ocr/', location.href).href;
+    ocrWorker = window.Tesseract.createWorker(['eng', 'fra'], 1, {
+      workerPath: base + 'worker.min.js', corePath: base + 'core', langPath: base + 'lang',
+      workerBlobURL: false, cacheMethod: 'none', gzip: true
+    }).then(async w => { await w.setParameters({ tessedit_pageseg_mode: '3' }); return w; });
+    ocrWorker.catch(() => { ocrWorker = null; });
+    return ocrWorker;
+  }
+
+  // Mots lisibles, classés : gros texte d'abord (souvent l'artiste et le titre)
+  function wordsFromOcr(data) {
+    const out = [];
+    const lines = [];
+    for (const b of data.blocks || []) for (const p of b.paragraphs || []) for (const l of p.lines || []) lines.push(l);
+    for (const l of lines) {
+      const h = l.bbox.y1 - l.bbox.y0;
+      for (const w of l.words || []) {
+        const t = String(w.text || '').replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
+        if (w.confidence < 65 || t.length < 2 || (t.length === 2 && w.confidence < 85) || !/\p{L}{2}|\p{N}{3}/u.test(t)) continue;
+        out.push({ t, score: h * (w.confidence / 100), conf: w.confidence });
+      }
+    }
+    const seen = new Set();
+    return out.sort((a, b) => b.score - a.score).filter(w => { const k = w.t.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+  }
+
+  const snapCanvas = document.createElement('canvas');
+  async function recognizeCover() {
+    const v = $('scanVideo'), r = frameInVideo();
+    if (!r || !stream) return;
+    // Photo carrée de la pochette, en pleine résolution
+    const k = Math.min(1, 1400 / r.w);
+    snapCanvas.width = Math.round(r.w * k); snapCanvas.height = Math.round(r.h * k);
+    snapCanvas.getContext('2d').drawImage(v, r.x, r.y, r.w, r.h, 0, 0, snapCanvas.width, snapCanvas.height);
+    v.pause();
+    if (navigator.vibrate) navigator.vibrate(30);
+    const btn = $('scanView').querySelector('[data-scan=cover]'); if (btn) btn.disabled = true;
+    const photo = describe(snapCanvas, 0, 0, snapCanvas.width, snapCanvas.height);
+    let words = [];
+    try {
+      msg('Lecture du texte de la pochette…');
+      const w = await getOcr();
+      const res = await w.recognize(snapCanvas, {}, { blocks: true, text: false });
+      words = wordsFromOcr(res.data);
+    } catch (e) {
+      words = [];
+    }
+    if (mode !== 'vinyl') return;
+    close();
+    App.showTab('vin');
+    openCoverSearch(words, photo);
+  }
+
+  // Mots lus sur la photo, que l'on peut toucher pour corriger la recherche
+  const coverSearch = { words: [], chosen: new Set() };
+  const coverQuery = () => coverSearch.words.filter(w => coverSearch.chosen.has(w.t)).map(w => w.t).join(' ');
+  const coverHint = () => coverSearch.words.length
+    ? `<span>Mots lus sur la pochette (touche pour ajouter / retirer) :</span>` + coverSearch.words.slice(0, 16).map(w => `<button type="button" class="chip" data-ocr="${esc(w.t)}" aria-pressed="${coverSearch.chosen.has(w.t)}">${esc(w.t)}</button>`).join('')
+    : `<span>Aucun texte lisible sur cette pochette : tape l'artiste ou l'album. Les résultats seront classés selon leur ressemblance avec ta photo.</span>`;
+
+  function openCoverSearch(words, photo) {
+    coverSearch.words = words;
+    coverSearch.chosen = new Set(words.slice(0, 5).map(w => w.t));
+    App.searchFor(coverQuery(), { hint: coverHint(), rerank: list => rerankByCover(list, photo) });
+  }
+  document.addEventListener('click', e => {
+    const b = e.target.closest('#sHint [data-ocr]'); if (!b) return;
+    const t = b.dataset.ocr;
+    if (coverSearch.chosen.has(t)) coverSearch.chosen.delete(t); else coverSearch.chosen.add(t);
+    b.setAttribute('aria-pressed', String(coverSearch.chosen.has(t)));
+    App.setSearchHint(coverHint());
+    App.rerunSearch(coverQuery());
+  });
+
+  // Ressemblance entre la photo et la pochette de chaque résultat
+  const thumbCache = new Map();
+  async function thumbDescriptor(url) {
+    if (thumbCache.has(url)) return thumbCache.get(url);
+    const p = (async () => {
+      const b64 = await window.CoffreNet.getImageB64(url);
+      if (!b64) return null;
+      const img = new Image(); img.src = 'data:image/jpeg;base64,' + b64; await img.decode();
+      return describe(img, 0, 0, img.naturalWidth, img.naturalHeight);
+    })().catch(() => null);
+    thumbCache.set(url, p);
+    return p;
+  }
+  async function rerankByCover(list, photo) {
+    const N = Math.min(list.length, 20);
+    const head = list.slice(0, N), tail = list.slice(N);
+    const scores = new Map();
+    let i = 0;
+    const work = async () => {
+      while (i < head.length) {
+        const r = head[i++];
+        if (!r.thumb) continue;
+        const d = await thumbDescriptor(r.thumb);
+        if (d) { let s = 0; for (let j = 0; j < DIM; j++) s += d[j] * photo[j]; scores.set(r, s); }
+      }
+    };
+    await Promise.all([work(), work(), work(), work()]);
+    const sorted = head.map((r, idx) => ({ r, idx, s: scores.has(r) ? scores.get(r) : -1 }))
+      .sort((a, b) => (b.s - a.s) || (a.idx - b.idx))
+      .map(({ r, s }) => ({ ...r, match: s >= 0.75 ? 'Même pochette' : s >= 0.6 ? 'Pochette ressemblante' : '' }));
+    return sorted.concat(tail);
+  }
+
   // ---------- Boutons ----------
   function onClick(e) {
     const b = e.target.closest('[data-scan]'); if (!b) return;
     const act = b.dataset.scan;
     if (act === 'close') return close();
+    if (act === 'cover') return recognizeCover();
     if (act === 'add') return addCard(b.dataset.n, false);
     if (act === 'undo') {
       const n = cam.added.pop(); if (!n) return;
@@ -403,9 +522,16 @@
     }
     if (vinTools && !$('scanVinBtn')) {
       const b = document.createElement('button');
-      b.id = 'scanVinBtn'; b.className = 'primary scan-btn'; b.textContent = '📷 Scanner un code-barres';
+      b.id = 'scanVinBtn'; b.className = 'primary scan-btn'; b.textContent = '📷 Scanner un vinyle';
       b.addEventListener('click', () => open('vinyl'));
       vinTools.prepend(b);
+    }
+    // Bouton rond qui reste visible quand l'en-tête est replié
+    if (!$('scanFab')) {
+      const f = document.createElement('button');
+      f.id = 'scanFab'; f.className = 'scan-fab'; f.textContent = '📷'; f.setAttribute('aria-label', 'Scanner');
+      f.addEventListener('click', () => open($('shelves').dataset.tab === 'vin' ? 'vinyl' : 'card'));
+      document.body.appendChild(f);
     }
   }
   addButtons();

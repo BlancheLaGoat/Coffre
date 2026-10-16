@@ -406,4 +406,28 @@
   };
 
   window.CoffreSync = Sync;
+  // Téléchargement d'une image en base64 (pour comparer les pochettes à une photo)
+  window.CoffreNet = {
+    async getImageB64(url) {
+      const res = await http({ url, responseType: 'blob', headers: { 'User-Agent': UA }, readTimeout: 15000 });
+      return res.status >= 200 && res.status < 300 ? res.data : '';
+    }
+  };
+
+  // ---------- En-tête qui se replie quand on fait défiler la liste ----------
+  function watchScroll(list) {
+    let last = 0;
+    list.addEventListener('scroll', () => {
+      const y = list.scrollTop;
+      if (y < 40) document.body.classList.remove('compact');
+      else if (y > last + 8) document.body.classList.add('compact');
+      else if (y < last - 24) document.body.classList.remove('compact');
+      if (Math.abs(y - last) > 8 || y < 40) last = y;
+    }, { passive: true });
+  }
+  document.addEventListener('DOMContentLoaded', () => {
+    ['fmList', 'vinList'].forEach(id => { const el = document.getElementById(id); if (el) watchScroll(el); });
+    const tabs = document.getElementById('tabs');
+    if (tabs) tabs.addEventListener('click', () => document.body.classList.remove('compact'));
+  });
 })();

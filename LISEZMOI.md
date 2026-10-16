@@ -79,7 +79,11 @@ Ensuite, chaque tag de version (`v1.1.0`, `v1.1.1`…) produit aussi `Coffre-And
 ### Scanner
 - **Cartes FM** : onglet Cartes FM → **📷 Scanner des cartes**. Pose la carte bien à plat dans le cadre. Les 6 cartes les plus ressemblantes s'affichent en bas : touche la bonne pour l'ajouter. Avec **Ajout auto** coché, la carte est ajoutée toute seule quand l'appli est sûre d'elle ; retire-la du cadre et passe à la suivante. **Annuler** retire la dernière ajoutée.
   La reconnaissance regarde seulement l'illustration, donc les vieilles cartes japonaises sans code marchent aussi. 13 cartes n'ont pas d'image dans l'appli : celles-là, ajoute-les à la main.
-- **Vinyles** : onglet Vinyles → **📷 Scanner un code-barres** → vise le code-barres au dos. La recherche se lance toute seule ; touche le bon pressage puis **Ajouter**.
+- **Vinyles** : onglet Vinyles → **📷 Scanner un vinyle**.
+  - S'il y a un code-barres, vise-le : la recherche se lance toute seule.
+  - Sinon, cadre la pochette (le recto, ou le dos s'il y a du texte) et touche **Reconnaître la pochette**. Coffre lit le texte imprimé, cherche avec, puis met en premier les disques dont la pochette ressemble à ta photo (« Même pochette »). Les mots lus s'affichent sous la recherche : touche-les pour les ajouter ou les retirer. Si la pochette n'a aucun texte, tape l'artiste ou l'album : les résultats seront quand même classés selon la photo.
+  - Touche le bon pressage puis **Ajouter au coffre**.
+- Quand tu fais défiler une liste, le haut de l'écran se replie pour tout laisser aux cartes ; remonte un peu pour le faire revenir. Le bouton rond 📷 permet de scanner sans remonter.
 
 ---
 

@@ -305,6 +305,7 @@ function openSearch() {
       </div>
       <button class="primary" type="submit">Chercher</button>
     </form>
+    ${search.hint ? `<div class="shint" id="sHint">${search.hint}</div>` : ''}
     <div class="results" id="sRes"></div>`, 'vinyl wide');
   const mark = () => $('sSrc').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === search.source)));
   mark();
@@ -325,6 +326,17 @@ async function runSearch(page) {
     const r = await window.coffre.search({ q: search.q, source: search.source, page, auth: discogsAuth() });
     search.results = page === 1 ? r.results : search.results.concat(r.results);
     search.hasMore = r.hasMore;
+    // Appli Android : les résultats sont ensuite classés selon leur ressemblance avec la photo de la pochette
+    if (page === 1 && search.rerank && search.results.length) {
+      const token = search.token = {};
+      search.reranking = true;
+      search.rerank(search.results).then(sorted => {
+        if (search.token !== token) return;
+        search.reranking = false;
+        if (sorted) search.results = sorted;
+        if (modalKind === 'search') renderResults();
+      }).catch(() => { search.reranking = false; if (modalKind === 'search') renderResults(); });
+    }
   } catch (e) {
     search.error = String(e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
   }
@@ -340,13 +352,14 @@ function renderResults() {
       : `<div class="spinner">${search.q ? 'Aucun vinyle trouvé. Essaie avec moins de mots, ou change de source.' : 'Tape un nom et appuie sur Entrée. Les résultats viennent directement de ' + (search.source === 'discogs' ? 'Discogs' : 'MusicBrainz') + ', les nouveautés comprises.'}</div>`;
     return;
   }
-  el.innerHTML = search.results.map((r, i) => {
+  el.innerHTML = (search.reranking ? `<div class="spinner" style="padding:6px">Comparaison avec ta photo…</div>` : '') + search.results.map((r, i) => {
     const have = findInCollection(r);
     return `<button class="res" data-i="${i}">
       ${r.thumb ? `<img class="cover" src="${esc(r.thumb)}" alt="" loading="lazy" data-ph="1">` : `<div class="cover ph"></div>`}
       <span class="t">${esc(r.title)}</span><span class="a">${esc(r.artist)}</span>
       <span class="m">${[r.year, r.country, r.format].filter(Boolean).map(esc).join(' · ')}</span>
       ${r.label || r.catno ? `<span class="m">${esc([r.label, r.catno].filter(Boolean).join(' — '))}</span>` : ''}
+      ${r.match ? `<span class="match">${esc(r.match)}</span>` : ''}
       ${have ? `<span class="have">Déjà dans ton coffre</span>` : ''}
     </button>`;
   }).join('') + (search.loading ? `<div class="spinner">Chargement…</div>` : search.hasMore ? `<button class="more" data-act="more">Plus de résultats</button>` : '');
@@ -430,7 +443,7 @@ $('sheet').addEventListener('click', e => {
   }
 });
 
-$('vinFindBtn').addEventListener('click', openSearch);
+$('vinFindBtn').addEventListener('click', () => { search.rerank = null; search.hint = ''; openSearch(); });
 
 // ============================================================
 //  VINYLES — ajout à la main
@@ -652,7 +665,14 @@ window.CoffreApp = {
   get data() { return data; }, CARDS, HAS_IMG, cardImg, esc,
   changeQty, renderFm, renderVinyls, renderAll, scheduleSave, toast, applyRemote, showTab,
   openCard, openRelease, closeModal, coverUrl,
-  searchFor(q) { search.q = q; openSearch(); runSearch(1); }
+  // opts (appli Android) : rerank(résultats) → résultats triés ; hint : HTML affiché sous la barre de recherche
+  searchFor(q, opts = {}) {
+    search.q = q; search.rerank = opts.rerank || null; search.hint = opts.hint || '';
+    openSearch();
+    if (q) runSearch(1); else { const i = $('sQ'); if (i) i.focus(); }
+  },
+  setSearchHint(h) { search.hint = h; },
+  rerunSearch(q) { search.q = q; const i = $('sQ'); if (i) i.value = q; if (q) runSearch(1); }
 };
 
 (async () => {
