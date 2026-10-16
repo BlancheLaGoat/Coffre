@@ -1,15 +1,21 @@
 // Coffre — processus principal Electron
 // Gère la fenêtre, le stockage local, la recherche de vinyles (MusicBrainz / Discogs),
-// les pochettes et les mises à jour automatiques via GitHub Releases.
+// les pochettes, la synchronisation avec l'appli Android (Wi-Fi local)
+// et les mises à jour automatiques via GitHub Releases.
 
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
+const http = require('http');
 const { pathToFileURL } = require('url');
 const crypto = require('crypto');
+const Core = require('./shared/coffre-core');
 
 let autoUpdater = null;
 try { autoUpdater = require('electron-updater').autoUpdater; } catch (e) { autoUpdater = null; }
+let QRCode = null;
+try { QRCode = require('qrcode'); } catch (e) { QRCode = null; }
 
 const USER_AGENT = `Coffre/${app.getVersion()} ( https://github.com/BlancheLaGoat/Coffre )`;
 
@@ -18,6 +24,7 @@ const DATA_DIR = app.getPath('userData');            // %AppData%\Coffre
 const DATA_FILE = path.join(DATA_DIR, 'coffre.json');
 const PREV_FILE = path.join(DATA_DIR, 'coffre.precedent.json');
 const COVERS_DIR = path.join(DATA_DIR, 'pochettes');
+const SYNC_FILE = path.join(DATA_DIR, 'synchro.json');
 
 function ensureDirs() {
   fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -42,13 +49,27 @@ function loadData() {
   return defaultData();
 }
 
-function saveData(data) {
+function writeData(data) {
   ensureDirs();
   const tmp = DATA_FILE + '.tmp';
   fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf8');
   if (fs.existsSync(DATA_FILE)) fs.copyFileSync(DATA_FILE, PREV_FILE);
   fs.renameSync(tmp, DATA_FILE);
+}
+
+// L'interface envoie sa version des données : on la fusionne avec le fichier
+// (qui a pu recevoir des ajouts du téléphone entre-temps) au lieu de l'écraser.
+function saveFromRenderer(data) {
+  const cur = loadData();
+  const merged = Core.mergeCollections(cur, data);
+  const out = { ...cur, ...merged, settings: { ...cur.settings, ...(data.settings || {}) } };
+  writeData(out);
+  if (!Core.sameCollections(merged, data)) notifyDataChanged(merged);
   return true;
+}
+
+function notifyDataChanged(collections) {
+  if (win && !win.isDestroyed()) win.webContents.send('data:changed', collections);
 }
 
 // ---------- Réseau ----------
@@ -59,115 +80,11 @@ async function getJson(url, headers = {}) {
   if (!res.ok) throw new Error(`Le serveur a répondu ${res.status}.`);
   return res.json();
 }
-
-// MusicBrainz : gratuit, sans clé. Pochettes via Cover Art Archive.
-function mbArtist(credit) {
-  return (credit || []).map(c => (c.name || c.artist?.name || '') + (c.joinphrase || '')).join('').trim();
-}
-
-async function searchMusicBrainz(q, page) {
-  const t = q.replace(/[\\+\-!(){}\[\]^"~*?:/]|&&|\|\|/g, ' ').trim();
-  if (!t) return { results: [], hasMore: false };
-  const query = `(release:(${t}) OR artist:(${t}) OR label:(${t}) OR catno:(${t})) AND format:vinyl`;
-  const limit = 30;
-  const url = `https://musicbrainz.org/ws/2/release/?query=${encodeURIComponent(query)}&fmt=json&limit=${limit}&offset=${(page - 1) * limit}`;
-  const d = await getJson(url);
-  const results = (d.releases || []).map(r => {
-    const li = (r['label-info'] || [])[0] || {};
-    const formats = (r.media || []).map(m => m.format).filter(Boolean);
-    const discs = (r.media || []).length;
-    return {
-      source: 'musicbrainz',
-      id: r.id,
-      artist: mbArtist(r['artist-credit']),
-      title: r.title,
-      year: (r.date || '').slice(0, 4),
-      country: r.country || '',
-      label: li.label?.name || '',
-      catno: li['catalog-number'] || '',
-      format: discs > 1 ? `${discs}× ${formats[0] || 'Vinyl'}` : (formats[0] || 'Vinyl'),
-      thumb: `https://coverartarchive.org/release/${r.id}/front-250`,
-      cover: `https://coverartarchive.org/release/${r.id}/front-500`
-    };
-  });
-  return { results, hasMore: (d.count || 0) > page * limit };
-}
-
-function msToTime(ms) {
-  if (!ms) return '';
-  const s = Math.round(ms / 1000);
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-}
-
-async function detailsMusicBrainz(id) {
-  const r = await getJson(`https://musicbrainz.org/ws/2/release/${id}?inc=recordings+labels+artist-credits+release-groups&fmt=json`);
-  const tracklist = [];
-  (r.media || []).forEach((m, i) => {
-    (m.tracks || []).forEach(t => tracklist.push({ pos: (r.media.length > 1 ? `${i + 1}-` : '') + (t.number || ''), title: t.title, duration: msToTime(t.length) }));
-  });
-  const li = (r['label-info'] || [])[0] || {};
-  return {
-    tracklist,
-    genres: [],
-    label: li.label?.name || '',
-    catno: li['catalog-number'] || '',
-    country: r.country || '',
-    year: (r.date || '').slice(0, 4),
-    cover: `https://coverartarchive.org/release/${id}/front-500`,
-    url: `https://musicbrainz.org/release/${id}`
-  };
-}
-
-// Discogs : identifiants d'application (Consumer Key + Secret) ou token personnel.
-// Les deux se créent gratuitement sur discogs.com/settings/developers.
-function discogsAuth(auth = {}) {
-  if (auth.token) return { Authorization: `Discogs token=${auth.token}` };
-  if (auth.key && auth.secret) return { Authorization: `Discogs key=${auth.key}, secret=${auth.secret}` };
-  return null;
-}
-
-async function searchDiscogs(q, page, auth) {
-  const headers = discogsAuth(auth);
-  if (!headers) throw new Error('Ajoute ta Consumer Key et ton Consumer Secret Discogs dans les réglages pour chercher sur Discogs.');
-  const url = `https://api.discogs.com/database/search?q=${encodeURIComponent(q)}&type=release&format=Vinyl&per_page=30&page=${page}`;
-  const d = await getJson(url, headers);
-  const results = (d.results || []).map(r => {
-    const [artist, ...rest] = (r.title || '').split(' - ');
-    return {
-      source: 'discogs',
-      id: String(r.id),
-      artist: rest.length ? artist : '',
-      title: rest.length ? rest.join(' - ') : r.title,
-      year: r.year ? String(r.year) : '',
-      country: r.country || '',
-      label: (r.label || [])[0] || '',
-      catno: r.catno || '',
-      format: (r.format || []).slice(0, 3).join(', '),
-      thumb: r.thumb || r.cover_image || '',
-      cover: r.cover_image || r.thumb || ''
-    };
-  });
-  return { results, hasMore: (d.pagination?.pages || 1) > page };
-}
-
-async function detailsDiscogs(id, auth) {
-  const d = await getJson(`https://api.discogs.com/releases/${id}`, discogsAuth(auth) || {});
-  const primary = (d.images || []).find(i => i.type === 'primary') || (d.images || [])[0];
-  const fmt = (d.formats || [])[0];
-  return {
-    tracklist: (d.tracklist || []).filter(t => t.type_ !== 'heading').map(t => ({ pos: t.position, title: t.title, duration: t.duration })),
-    genres: [...(d.genres || []), ...(d.styles || [])],
-    label: d.labels?.[0]?.name || '',
-    catno: d.labels?.[0]?.catno || '',
-    country: d.country || '',
-    year: d.year ? String(d.year) : '',
-    format: fmt ? [fmt.qty && fmt.qty !== '1' ? `${fmt.qty}×` : '', fmt.name, ...(fmt.descriptions || [])].filter(Boolean).join(' ') : '',
-    cover: primary?.uri || '',
-    url: d.uri || `https://www.discogs.com/release/${id}`
-  };
-}
+const vinylApi = Core.createVinylApi(getJson);
 
 // ---------- Pochettes ----------
+const COVER_RE = /^[\w.-]+\.(jpg|jpeg|png|webp)$/i;
+
 function coverName(ext) {
   return `${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`;
 }
@@ -187,7 +104,119 @@ async function downloadCover(url) {
 
 function safeCoverPath(name) {
   const base = path.basename(String(name || ''));
-  return base ? path.join(COVERS_DIR, base) : '';
+  return base && COVER_RE.test(base) ? path.join(COVERS_DIR, base) : '';
+}
+
+function listCovers() {
+  ensureDirs();
+  return fs.readdirSync(COVERS_DIR).filter(f => COVER_RE.test(f));
+}
+
+// ============================================================
+//  SYNCHRONISATION AVEC LE TÉLÉPHONE (Wi-Fi local)
+// ============================================================
+const SYNC_PORT = 47800;
+let syncServer = null;
+let syncError = '';
+
+function loadSync() {
+  try { if (fs.existsSync(SYNC_FILE)) return JSON.parse(fs.readFileSync(SYNC_FILE, 'utf8')); } catch (e) { /* recréé plus bas */ }
+  const s = { token: crypto.randomBytes(18).toString('hex'), lastSync: null };
+  fs.writeFileSync(SYNC_FILE, JSON.stringify(s, null, 2));
+  return s;
+}
+function saveSync(s) { fs.writeFileSync(SYNC_FILE, JSON.stringify(s, null, 2)); }
+
+function localIps() {
+  const out = [];
+  for (const list of Object.values(os.networkInterfaces())) {
+    for (const i of list || []) {
+      if (i.family === 'IPv4' && !i.internal && !i.address.startsWith('169.254.')) out.push(i.address);
+    }
+  }
+  const score = ip => ip.startsWith('192.168.') ? 0 : ip.startsWith('10.') ? 1 : /^172\.(1[6-9]|2\d|3[01])\./.test(ip) ? 2 : 3;
+  return out.sort((a, b) => score(a) - score(b));
+}
+
+function tokenOk(req) {
+  const given = Buffer.from(String(req.headers['x-coffre-token'] || ''));
+  const want = Buffer.from(loadSync().token);
+  return given.length === want.length && crypto.timingSafeEqual(given, want);
+}
+
+function readBody(req, limit) {
+  return new Promise((resolve, reject) => {
+    const chunks = []; let size = 0;
+    req.on('data', c => { size += c.length; if (size > limit) { reject(new Error('trop gros')); req.destroy(); } else chunks.push(c); });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
+}
+
+function sendJson(res, code, obj) {
+  res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' });
+  res.end(JSON.stringify(obj));
+}
+
+async function handleSync(req, res) {
+  const url = new URL(req.url, 'http://x');
+  if (!tokenOk(req)) return sendJson(res, 401, { error: 'Code d’appairage invalide. Associe à nouveau le téléphone.' });
+  try {
+    if (url.pathname === '/api/ping' && req.method === 'GET') {
+      return sendJson(res, 200, { ok: true, app: 'coffre', name: os.hostname(), version: app.getVersion() });
+    }
+    if (url.pathname === '/api/sync' && req.method === 'POST') {
+      const inc = JSON.parse((await readBody(req, 20 * 1024 * 1024)).toString('utf8'));
+      const cur = loadData();
+      const merged = Core.mergeCollections(cur, { fm: inc.fm || {}, vinyls: inc.vinyls || {} });
+      if (!Core.sameCollections(merged, cur)) {
+        writeData({ ...cur, ...merged });
+        notifyDataChanged(merged);
+      }
+      const s = loadSync(); s.lastSync = { device: String(inc.device || 'Téléphone').slice(0, 60), at: Date.now() }; saveSync(s);
+      if (win && !win.isDestroyed()) win.webContents.send('sync:status', s.lastSync);
+      return sendJson(res, 200, { ...merged, covers: listCovers(), name: os.hostname() });
+    }
+    if (url.pathname === '/api/cover') {
+      const p = safeCoverPath(url.searchParams.get('name'));
+      if (!p) return sendJson(res, 400, { error: 'nom de fichier invalide' });
+      // b64=1 / corps JSON : l'appli Android échange les images en base64 dans du JSON.
+      const asJson = url.searchParams.get('b64') === '1' || /json/i.test(req.headers['content-type'] || '');
+      if (req.method === 'GET') {
+        if (!fs.existsSync(p)) return sendJson(res, 404, { error: 'absente' });
+        if (asJson) return sendJson(res, 200, { data: fs.readFileSync(p).toString('base64') });
+        res.writeHead(200, { 'Content-Type': 'application/octet-stream' });
+        return fs.createReadStream(p).pipe(res);
+      }
+      if (req.method === 'PUT') {
+        let buf = await readBody(req, 20 * 1024 * 1024);
+        if (asJson) buf = Buffer.from(String(JSON.parse(buf.toString('utf8')).data || ''), 'base64');
+        if (!buf.length) return sendJson(res, 400, { error: 'image vide' });
+        ensureDirs();
+        fs.writeFileSync(p, buf);
+        return sendJson(res, 200, { ok: true });
+      }
+    }
+    sendJson(res, 404, { error: 'inconnu' });
+  } catch (e) {
+    sendJson(res, 500, { error: String(e.message || e) });
+  }
+}
+
+function startSyncServer() {
+  loadSync();
+  syncServer = http.createServer((req, res) => { handleSync(req, res); });
+  syncServer.on('error', e => { syncError = e.code === 'EADDRINUSE' ? `Le port ${SYNC_PORT} est déjà utilisé par un autre programme.` : String(e.message || e); });
+  syncServer.listen(SYNC_PORT, '0.0.0.0', () => { syncError = ''; });
+}
+
+async function syncInfo() {
+  const s = loadSync();
+  const ips = localIps();
+  const payload = JSON.stringify({ t: 'coffre', v: 1, k: s.token, p: SYNC_PORT, h: ips });
+  let qr = '';
+  if (QRCode) { try { qr = await QRCode.toDataURL(payload, { margin: 1, width: 320, errorCorrectionLevel: 'M' }); } catch (e) { qr = ''; } }
+  return { ips, port: SYNC_PORT, code: s.token.slice(0, 8).toUpperCase(), token: s.token, qr, lastSync: s.lastSync, running: !!(syncServer && syncServer.listening), error: syncError };
 }
 
 // ---------- Fenêtre ----------
@@ -244,20 +273,16 @@ function setupUpdater() {
 ipcMain.handle('app:info', () => ({
   version: app.getVersion(),
   packaged: app.isPackaged,
+  platform: 'desktop',
   coversUrl: pathToFileURL(COVERS_DIR + path.sep).href,
   dataDir: DATA_DIR
 }));
 
 ipcMain.handle('data:load', () => loadData());
-ipcMain.handle('data:save', (_e, data) => saveData(data));
+ipcMain.handle('data:save', (_e, data) => saveFromRenderer(data));
 
-ipcMain.handle('vinyl:search', async (_e, { q, source, page = 1, auth }) => {
-  return source === 'discogs' ? searchDiscogs(q, page, auth) : searchMusicBrainz(q, page);
-});
-
-ipcMain.handle('vinyl:details', async (_e, { source, id, auth }) => {
-  return source === 'discogs' ? detailsDiscogs(id, auth) : detailsMusicBrainz(id);
-});
+ipcMain.handle('vinyl:search', (_e, args) => vinylApi.search(args));
+ipcMain.handle('vinyl:details', (_e, args) => vinylApi.details(args));
 
 ipcMain.handle('cover:download', async (_e, url) => {
   try { return await downloadCover(url); } catch (e) { return ''; }
@@ -272,7 +297,8 @@ ipcMain.handle('cover:pick', async () => {
   if (r.canceled || !r.filePaths[0]) return '';
   const src = r.filePaths[0];
   ensureDirs();
-  const name = coverName(path.extname(src).toLowerCase() || '.jpg');
+  const ext = path.extname(src).toLowerCase();
+  const name = coverName(['.jpg', '.jpeg', '.png', '.webp'].includes(ext) ? ext : '.jpg');
   fs.copyFileSync(src, path.join(COVERS_DIR, name));
   return name;
 });
@@ -297,7 +323,8 @@ ipcMain.handle('backup:export', async (_e, data) => {
     const p = safeCoverPath(v.cover);
     if (p && fs.existsSync(p)) covers[path.basename(p)] = fs.readFileSync(p).toString('base64');
   }
-  fs.writeFileSync(r.filePath, JSON.stringify({ format: 'coffre-backup', version: 1, data, covers }));
+  const clean = { ...data, settings: { ...data.settings, discogsSecret: '', discogsToken: '' } };
+  fs.writeFileSync(r.filePath, JSON.stringify({ format: 'coffre-backup', version: 1, data: clean, covers }));
   return { ok: true, path: r.filePath };
 });
 
@@ -313,15 +340,27 @@ ipcMain.handle('backup:import', async () => {
   if (!data || typeof data !== 'object' || (!data.fm && !data.vinyls)) throw new Error("Ce fichier n'est pas une sauvegarde Coffre.");
   ensureDirs();
   for (const [name, b64] of Object.entries(b.covers || {})) {
-    fs.writeFileSync(path.join(COVERS_DIR, path.basename(name)), Buffer.from(b64, 'base64'));
+    const p = safeCoverPath(name);
+    if (p) fs.writeFileSync(p, Buffer.from(b64, 'base64'));
   }
-  const merged = { ...defaultData(), ...data, settings: { ...defaultData().settings, ...(data.settings || {}) } };
-  saveData(merged);
-  return { ok: true, data: merged };
+  // Une restauration remet les entrées de la sauvegarde au premier plan.
+  const now = Date.now();
+  const restamp = m => Object.fromEntries(Object.entries(m || {}).map(([k, v]) => [k, { ...v, mt: now }]));
+  const cur = loadData();
+  const merged = Core.mergeCollections(cur, { fm: restamp(data.fm), vinyls: restamp(data.vinyls) });
+  const out = { ...cur, ...merged };
+  writeData(out);
+  return { ok: true, data: out };
 });
 
 ipcMain.handle('open:external', (_e, url) => { if (/^https?:\/\//.test(url)) shell.openExternal(url); });
 ipcMain.handle('open:dataDir', () => shell.openPath(DATA_DIR));
+
+ipcMain.handle('sync:info', () => syncInfo());
+ipcMain.handle('sync:reset', () => {
+  const s = loadSync(); s.token = crypto.randomBytes(18).toString('hex'); s.lastSync = null; saveSync(s);
+  return syncInfo();
+});
 
 ipcMain.handle('update:check', async () => {
   if (!autoUpdater || !app.isPackaged) return { status: 'dev' };
@@ -338,6 +377,7 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(() => {
     ensureDirs();
     createWindow();
+    startSyncServer();
     setupUpdater();
     app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
   });

@@ -16,5 +16,10 @@ contextBridge.exposeInMainWorld('coffre', {
   openDataDir: () => ipcRenderer.invoke('open:dataDir'),
   checkUpdate: () => ipcRenderer.invoke('update:check'),
   installUpdate: () => ipcRenderer.invoke('update:install'),
-  onUpdate: cb => ipcRenderer.on('update:status', (_e, s) => cb(s))
+  onUpdate: cb => ipcRenderer.on('update:status', (_e, s) => cb(s)),
+  // Synchronisation avec l'appli Android
+  syncInfo: () => ipcRenderer.invoke('sync:info'),
+  syncReset: () => ipcRenderer.invoke('sync:reset'),
+  onDataChanged: cb => ipcRenderer.on('data:changed', (_e, d) => cb(d)),
+  onSyncStatus: cb => ipcRenderer.on('sync:status', (_e, s) => cb(s))
 });

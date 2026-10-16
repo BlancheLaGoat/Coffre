@@ -1,0 +1,55 @@
+/* Coffre Android — adaptations écran de téléphone et vue appareil photo */
+body.mobile { font-size: 15px; padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); -webkit-tap-highlight-color: transparent; }
+body.mobile .top { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 10px; padding: 10px 12px 8px; }
+body.mobile .brand { display: contents; }
+body.mobile h1 { font-size: 21px; grid-column: 1; grid-row: 1; }
+body.mobile .top-right { grid-column: 2; grid-row: 1; gap: 8px; }
+body.mobile .tabs { grid-column: 1 / -1; grid-row: 2; }
+body.mobile .tabs button { flex: 1; justify-content: center; padding: 10px 8px; }
+body.mobile .icon-btn { width: 42px; height: 42px; }
+body.mobile .saved { font-size: 11px; max-width: 30vw; text-align: right; }
+body.mobile .update { position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); z-index: 30; justify-content: space-between; box-shadow: var(--shadow); }
+body.mobile .shelves { padding: 0 8px 8px; }
+body.mobile .shelf-head { padding: 12px; }
+body.mobile .tools > * { flex: 1 1 auto; }
+body.mobile .tools input[type=search] { flex-basis: 100%; }
+body.mobile #fmView, body.mobile #vinView { flex: 1 1 100%; }
+body.mobile #fmType, body.mobile #fmLayout, body.mobile #vinSort { flex: 1 1 40%; }
+body.mobile .seg button { flex: 1; padding: 9px 6px; }
+body.mobile button, body.mobile select, body.mobile input { min-height: 40px; }
+body.mobile .qty button { width: 36px; height: 36px; min-height: 0; }
+body.mobile .gal { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px; padding: 10px; }
+body.mobile .vgrid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; padding: 12px; }
+body.mobile .results { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 12px; }
+body.mobile .row { padding: 6px 10px; grid-template-columns: 34px 30px minmax(0, 1fr) auto; }
+body.mobile .overlay { padding: 0; align-items: stretch; }
+body.mobile .sheet { width: 100%; max-height: none; height: 100%; border-radius: 0; border: 0; padding: calc(14px + env(safe-area-inset-top, 0px)) 14px calc(14px + env(safe-area-inset-bottom, 0px)); }
+body.mobile .split { grid-template-columns: 1fr; }
+body.mobile .split img.big, body.mobile .split .noimg, body.mobile .split .cover { max-width: 260px; margin: 0 auto; }
+.scan-btn { flex-basis: 100% !important; font-size: 16px; padding: 11px 12px; }
+
+/* ---------- Appareil photo ---------- */
+.scan { position: fixed; inset: 0; z-index: 40; background: #000; color: #fff; overflow: hidden; }
+.scan video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.scan-frame { position: absolute; border-radius: 12px; box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .45); outline: 2px solid rgba(255, 255, 255, .9); pointer-events: none; }
+.scan[data-mode=card] .scan-frame i { position: absolute; left: 12%; right: 12%; top: 18.5%; bottom: 30%; border: 1.5px dashed rgba(255, 255, 255, .55); border-radius: 4px; }
+.scan[data-mode=vinyl] .scan-frame i { position: absolute; left: 6%; right: 6%; top: 50%; border-top: 2px solid #ef7a62; }
+.scan-frame.ok { animation: scanok .6s ease-out; }
+@keyframes scanok { 0% { outline-color: #6fe08a; outline-width: 6px; } 100% { outline-color: rgba(255, 255, 255, .9); outline-width: 2px; } }
+.scan-top { position: absolute; left: 0; right: 0; top: 0; padding: calc(10px + env(safe-area-inset-top, 0px)) 12px 10px; display: flex; align-items: center; gap: 10px; background: linear-gradient(rgba(0, 0, 0, .65), transparent); }
+.scan-title { flex: 1; font-weight: 700; font-size: 17px; }
+.scan-close { width: 44px; height: 44px; border-radius: 99px; border: 0; background: rgba(255, 255, 255, .18); color: #fff; font-size: 18px; padding: 0; }
+.scan-auto { display: flex; align-items: center; gap: 6px; font-size: 14px; background: rgba(255, 255, 255, .15); padding: 6px 12px; border-radius: 99px; }
+.scan-auto input { min-height: 0; width: 18px; height: 18px; accent-color: #e3b54a; }
+.scan-bottom { position: absolute; left: 0; right: 0; bottom: 0; padding: 12px 10px calc(12px + env(safe-area-inset-bottom, 0px)); background: linear-gradient(transparent, rgba(0, 0, 0, .8) 22%); display: flex; flex-direction: column; gap: 8px; }
+.scan-msg { margin: 0; text-align: center; font-size: 14px; text-shadow: 0 1px 3px #000; }
+.scan-msg:empty { display: none; }
+.scan-cands { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+.scan[data-mode=vinyl] .scan-cands, .scan[data-mode=qr] .scan-cands, .scan[data-mode=vinyl] .scan-actions, .scan[data-mode=qr] .scan-actions { display: none; }
+.cand { display: flex; flex-direction: column; gap: 3px; padding: 4px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, .2); background: rgba(255, 255, 255, .08); color: #fff; min-width: 0; min-height: 0 !important; text-align: left; }
+.cand.first { border-color: #e3b54a; background: rgba(227, 181, 74, .22); }
+.cand img { width: 100%; aspect-ratio: 421/614; object-fit: cover; border-radius: 4px; display: block; }
+.cand .nm { font-size: 10px; line-height: 1.15; max-height: 2.3em; overflow: hidden; overflow-wrap: anywhere; }
+.cand .sc { font: 10px var(--f-mono); opacity: .7; }
+.scan-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; min-height: 40px; }
+.scan-actions button { background: rgba(255, 255, 255, .18); color: #fff; border: 0; }

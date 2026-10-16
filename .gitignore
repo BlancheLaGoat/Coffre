@@ -1,3 +1,9 @@
 node_modules/
 dist/
 *.log
+mobile/node_modules/
+mobile/www/
+mobile/android/
+*.jks
+*.keystore
+cle-android*

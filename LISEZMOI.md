@@ -1,6 +1,6 @@
 # Coffre
 
-Appli Windows pour gérer ta collection : les 722 cartes de **Yu-Gi-Oh! Forbidden Memories** (avec images) et tes **vinyles** (recherche en ligne avec pochettes via MusicBrainz ou Discogs).
+Appli Windows **et Android** pour gérer ta collection : les 722 cartes de **Yu-Gi-Oh! Forbidden Memories** (avec images) et tes **vinyles** (recherche en ligne avec pochettes via MusicBrainz ou Discogs). Sur le téléphone, l'appareil photo reconnaît les cartes par leur illustration et lit le code-barres des vinyles. Le PC et le téléphone se synchronisent sur le Wi-Fi.
 
 Tes données sont rangées dans `%AppData%\Coffre` (fichier `coffre.json` + dossier `pochettes`). Les mises à jour de l'appli n'y touchent jamais.
 
@@ -32,7 +32,7 @@ Tes données sont rangées dans `%AppData%\Coffre` (fichier `coffre.json` + doss
 3. GitHub Desktop : **Commit** puis **Push origin**.
 4. **History** → clic droit sur ce commit → **Create Tag…** → `v1.0.1` (même numéro que dans package.json, avec un `v` devant) → **Push origin**.
 
-C'est tout. GitHub compile la nouvelle version, et au prochain lancement Coffre la télécharge en arrière-plan puis affiche **« Redémarrer »** en haut à droite.
+C'est tout. GitHub compile la nouvelle version pour Windows **et** Android. Au prochain lancement, Coffre sur PC la télécharge en arrière-plan puis affiche **« Redémarrer »** en haut à droite. Sur le téléphone, Coffre affiche **« Télécharger »** : ouvre le fichier téléchargé pour installer la mise à jour (tes données restent).
 
 ---
 
@@ -45,12 +45,44 @@ En mode test, les mises à jour automatiques sont désactivées : c'est normal.
 
 ## 4. Discogs (optionnel)
 
-MusicBrainz marche tout de suite, sans compte. Discogs référence plus de pressages vinyles (couleurs, rééditions…) mais demande un token gratuit :
-1. Connecte-toi sur discogs.com → **Paramètres → Développeurs** → **Générer un nouveau token**.
-2. Dans Coffre : ⚙ **Réglages** → colle le token.
+MusicBrainz marche tout de suite, sans compte. Discogs référence plus de pressages vinyles (couleurs, rééditions…) :
+1. Connecte-toi sur discogs.com → **Paramètres → Développeurs** → **Créer une application** (nom : `Coffre`).
+2. Copie la **Consumer Key** et le **Consumer Secret**.
+3. Dans Coffre : ⚙ **Réglages** → colle-les dans les deux champs Discogs. À faire sur le PC et sur le téléphone (ces clés ne sont jamais envoyées d'un appareil à l'autre, ni mises dans le code).
+
+---
+
+## 5. Appli Android
+
+### Préparer la clé de signature (une seule fois)
+Android n'accepte une mise à jour que si elle est signée avec la même clé que l'appli installée. Cette clé est dans le fichier `cle-android-coffre.txt` que je t'ai donné.
+1. **Range ce fichier en dehors du dossier `Projet`** (par exemple dans tes Documents), pour qu'il ne parte jamais sur GitHub. Garde-le précieusement : sans lui, impossible de publier une mise à jour Android (il faudrait désinstaller l'appli et perdre ce qui n'est pas synchronisé).
+2. Sur github.com, dans ton repo `Coffre` : **Settings → Secrets and variables → Actions → New repository secret**.
+3. Crée deux secrets, en copiant les valeurs du fichier :
+   - Nom `ANDROID_KEYSTORE` → la longue suite de caractères.
+   - Nom `ANDROID_KEYSTORE_PASSWORD` → le mot de passe.
+
+Ensuite, chaque tag de version (`v1.1.0`, `v1.1.1`…) produit aussi `Coffre-Android.apk` dans la release.
+
+### Installer sur le téléphone
+1. Sur le téléphone, ouvre `https://github.com/BlancheLaGoat/Coffre/releases/latest` et télécharge **Coffre-Android.apk**.
+2. Ouvre le fichier. Android demande d'autoriser l'installation d'applis depuis ton navigateur : accepte (seulement pour cette source).
+3. Si Play Protect affiche un avertissement (appli inconnue), choisis **Installer quand même**.
+
+### Associer le téléphone au PC
+1. Sur le PC : Coffre → ⚙ **Réglages** → section **Téléphone** : un QR code s'affiche. Si Windows demande l'autorisation réseau pour Coffre, accepte pour les **réseaux privés**.
+2. Sur le téléphone : ⚙ **Réglages → Associer au PC** → vise le QR code.
+3. C'est fait. Les deux appareils doivent être sur le même Wi-Fi, avec Coffre ouvert sur le PC. La synchro se fait toute seule (ouverture de l'appli, après chaque ajout, toutes les 45 secondes) ; il y a aussi un bouton **Synchroniser maintenant**.
+
+> Si la synchro dit « PC injoignable » alors que tout est allumé : vérifie que le Wi-Fi de Windows est en **réseau privé** (Paramètres → Réseau et Internet → Wi-Fi → ton réseau → Type de profil réseau : Privé). Si le PC change d'adresse, rescanne le QR code.
+
+### Scanner
+- **Cartes FM** : onglet Cartes FM → **📷 Scanner des cartes**. Pose la carte bien à plat dans le cadre. Les 6 cartes les plus ressemblantes s'affichent en bas : touche la bonne pour l'ajouter. Avec **Ajout auto** coché, la carte est ajoutée toute seule quand l'appli est sûre d'elle ; retire-la du cadre et passe à la suivante. **Annuler** retire la dernière ajoutée.
+  La reconnaissance regarde seulement l'illustration, donc les vieilles cartes japonaises sans code marchent aussi. 13 cartes n'ont pas d'image dans l'appli : celles-là, ajoute-les à la main.
+- **Vinyles** : onglet Vinyles → **📷 Scanner un code-barres** → vise le code-barres au dos. La recherche se lance toute seule ; touche le bon pressage puis **Ajouter**.
 
 ---
 
 ## Sauvegarde
 
-⚙ **Réglages → Exporter une sauvegarde** crée un fichier `.coffre` qui contient tout (cartes, vinyles, pochettes). **Importer une sauvegarde** le recharge, sur ce PC ou un autre.
+⚙ **Réglages → Exporter une sauvegarde** crée un fichier `.coffre` qui contient tout (cartes, vinyles, pochettes). **Importer une sauvegarde** le recharge, sur ce PC ou un autre. Sur le téléphone, l'export arrive dans le dossier **Documents**.

@@ -15,7 +15,7 @@ const CARDS = window.FM_RAW.map((r, i) => {
   };
 });
 const HAS_IMG = new Set(window.FM_IMG || []);
-const cardImg = n => `../assets/cards/${n}.webp`;
+const cardImg = n => `${window.CARD_IMG_BASE || '../assets/cards/'}${n}.webp`;
 const fmtCost = c => !c ? '—' : c === '999999' ? 'non achetable' : Number(c).toLocaleString('fr-FR') + ' ★';
 
 // ---------- État ----------
@@ -29,6 +29,8 @@ let modalKind = null;
 const coverUrl = name => name ? info.coversUrl + encodeURIComponent(name) : '';
 const discogsAuth = () => ({ token: data.settings.discogsToken || '', key: data.settings.discogsKey || '', secret: data.settings.discogsSecret || '' });
 const hasDiscogs = () => !!(data.settings.discogsToken || (data.settings.discogsKey && data.settings.discogsSecret));
+const now = () => Date.now();
+const liveVinyls = () => Object.entries(data.vinyls).filter(([, v]) => v && !v.deleted);
 const uid = () => 'v' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
 // ---------- Sauvegarde ----------
@@ -107,8 +109,10 @@ function renderFm() {
 function changeQty(n, delta) {
   const d = { ...(data.fm[n] || {}) };
   d.qty = Math.max(0, (d.qty || 0) + delta);
-  if (!d.qty && !d.cond && !d.lang && !d.note) delete data.fm[n]; else data.fm[n] = d;
+  d.mt = now();
+  data.fm[n] = d;
   scheduleSave();
+  return d.qty;
 }
 
 $('fmList').addEventListener('click', e => {
@@ -161,7 +165,7 @@ $('sheet').addEventListener('change', e => {
   if (modalKind !== 'card') return;
   const f = e.target.dataset.f; if (!f) return;
   const n = $('sheet').querySelector('[data-n]').dataset.n;
-  data.fm[n] = { ...(data.fm[n] || {}), [f]: e.target.value };
+  data.fm[n] = { ...(data.fm[n] || {}), [f]: e.target.value, mt: now() };
   scheduleSave(); renderFm();
 });
 
@@ -177,7 +181,7 @@ function coverHtml(v, cls = 'cover') {
 }
 
 function renderVinyls() {
-  const all = Object.entries(data.vinyls);
+  const all = liveVinyls();
   $('vinOwned').textContent = all.filter(([, v]) => v.status !== 'wish').length;
   $('vinWish').textContent = all.filter(([, v]) => v.status === 'wish').length;
   $('tabVinCount').textContent = all.filter(([, v]) => v.status !== 'wish').length;
@@ -261,7 +265,7 @@ $('sheet').addEventListener('click', async e => {
       const name = await window.coffre.pickCover();
       if (!name) return;
       if (v.cover) window.coffre.deleteCover(v.cover);
-      v.cover = name; scheduleSave(); renderVinyls(); openVinyl(id); return;
+      v.cover = name; v.mt = now(); scheduleSave(); renderVinyls(); openVinyl(id); return;
     }
     case 'ask':
       $('delZone').innerHTML = `<span class="hint">Retirer ce disque ?</span> <button class="danger" data-act="del">Oui, retirer</button> <button data-act="nodel">Non</button>`; return;
@@ -269,21 +273,22 @@ $('sheet').addEventListener('click', async e => {
       $('delZone').innerHTML = `<button class="danger" data-act="ask">Retirer du coffre</button>`; return;
     case 'del':
       if (v.cover) window.coffre.deleteCover(v.cover);
-      delete data.vinyls[id]; scheduleSave(); renderVinyls(); closeModal(); return;
+      data.vinyls[id] = { deleted: true, mt: now() }; scheduleSave(); renderVinyls(); closeModal(); return;
   }
 });
 $('sheet').addEventListener('change', e => {
   if (modalKind !== 'vinyl') return;
   const f = e.target.dataset.f; if (!f) return;
   const id = $('sheet').querySelector('[data-id]').dataset.id;
-  data.vinyls[id][f] = e.target.value; scheduleSave(); renderVinyls();
+  data.vinyls[id][f] = e.target.value; data.vinyls[id].mt = now(); scheduleSave(); renderVinyls();
 });
 
 // ============================================================
 //  VINYLES — recherche en ligne
 // ============================================================
 function findInCollection(r) {
-  return Object.keys(data.vinyls).find(k => data.vinyls[k].source === r.source && String(data.vinyls[k].sourceId) === String(r.id));
+  const hit = liveVinyls().find(([, v]) => v.source === r.source && String(v.sourceId) === String(r.id));
+  return hit ? hit[0] : undefined;
 }
 
 function openSearch() {
@@ -293,7 +298,7 @@ function openSearch() {
   openModal(`
     <div class="sheet-head"><h3>Rechercher un vinyle</h3><button class="close" data-act="close">Fermer</button></div>
     <form class="searchbar" id="sForm">
-      <input id="sQ" type="search" placeholder="Artiste, album, label ou référence…" value="${esc(search.q)}" autofocus>
+      <input id="sQ" type="search" placeholder="Artiste, album, label, référence ou code-barres…" value="${esc(search.q)}" autofocus>
       <div class="seg" id="sSrc">
         <button type="button" data-v="musicbrainz">MusicBrainz</button>
         <button type="button" data-v="discogs" ${noToken ? 'title="Ajoute ta clé Discogs dans les réglages"' : ''}>Discogs</button>
@@ -402,7 +407,7 @@ async function addRelease() {
     label: r.label || '', catno: r.catno || '', format: r.format || '',
     genres: r.genres || [], tracklist: r.tracklist || [],
     status: $('aStatus').value, grade: $('aGrade').value, price: $('aPrice').value.trim(), note: $('aNote').value.trim(),
-    cover, added: Date.now()
+    cover, added: now(), mt: now()
   };
   scheduleSave(); renderVinyls();
   $('aMsg').textContent = cover ? 'Ajouté au coffre.' : 'Ajouté au coffre (sans pochette, tu peux en choisir une dans sa fiche).';
@@ -461,7 +466,7 @@ function openManual() {
       artist: $('mArtist').value.trim(), title: $('mTitle').value.trim(), year: $('mYear').value.trim(),
       label: $('mLabel').value.trim(), catno: $('mCatno').value.trim(), format: $('mFormat').value.trim(), country: $('mCountry').value.trim(),
       genres: [], tracklist: [], status: $('mStatus').value, grade: $('mGrade').value, price: $('mPrice').value.trim(), note: $('mNote').value.trim(),
-      cover: manualCover, added: Date.now()
+      cover: manualCover, added: now(), mt: now()
     };
     manualCover = '';
     scheduleSave(); renderVinyls(); closeModal();
@@ -491,7 +496,7 @@ function updateLabel() {
     case 'none': return "Tu as la dernière version.";
     case 'available': return `Version ${s.version} trouvée, téléchargement…`;
     case 'downloading': return `Téléchargement de la mise à jour : ${s.percent} %`;
-    case 'ready': return `Version ${s.version} prête à être installée.`;
+    case 'ready': return info.platform === 'mobile' ? `Version ${s.version} disponible : touche « Télécharger », puis ouvre le fichier pour l'installer.` : `Version ${s.version} prête à être installée.`;
     case 'error': return `Impossible de vérifier les mises à jour : ${s.message}`;
     default: return '';
   }
@@ -511,20 +516,47 @@ function openSettings() {
       <label class="f wide">Ou token personnel Discogs (facultatif)
         <input id="stToken" type="password" value="${esc(data.settings.discogsToken || '')}" placeholder="Seulement si tu en as un" spellcheck="false" autocomplete="off"></label>
     </div>
-    <p class="hint">Discogs référence plus de pressages vinyles. Sur Discogs : Paramètres → Développeurs → « Créer une application », puis copie la Consumer Key et le Consumer Secret ici. Ils restent sur ton PC, jamais dans le code. <a data-act="dgs">Ouvrir la page ↗</a></p>
+    <p class="hint">Discogs référence plus de pressages vinyles. Sur Discogs : Paramètres → Développeurs → « Créer une application », puis copie la Consumer Key et le Consumer Secret ici. Ils restent sur cet appareil, jamais dans le code. <a data-act="dgs">Ouvrir la page ↗</a></p>
+    ${phoneSectionHtml()}
     <h3>Sauvegarde</h3>
     <div class="actions" style="justify-content:flex-start">
       <button data-act="export">Exporter une sauvegarde</button>
       <button data-act="import">Importer une sauvegarde</button>
-      <button data-act="folder">Ouvrir le dossier des données</button>
+      <button data-act="folder" class="desktop-only">Ouvrir le dossier des données</button>
     </div>
     <p class="hint" id="stMsg">L'export contient tes cartes, tes vinyles et toutes les pochettes dans un seul fichier.</p>
     <h3>Application</h3>
     <div class="actions" style="justify-content:flex-start"><span>Coffre version ${esc(info.version)}</span>
       <button data-act="check">Chercher une mise à jour</button>
-      ${updateState.status === 'ready' ? `<button class="primary" data-act="install">Redémarrer et mettre à jour</button>` : ''}</div>
+      ${updateState.status === 'ready' ? `<button class="primary" data-act="install">${info.platform === 'mobile' ? 'Télécharger la mise à jour' : 'Redémarrer et mettre à jour'}</button>` : ''}</div>
     <p class="hint" id="stUpd">${esc(updateLabel())}</p>`, 'vinyl');
   $('stSource').value = data.settings.source || 'musicbrainz';
+  loadPhoneSection();
+}
+
+// ---------- Téléphone (appli Android) ----------
+// Sur PC : QR code d'appairage. Sur téléphone : le module mobile fournit sa propre section.
+const ext = window.CoffreExt || {};
+function phoneSectionHtml() {
+  if (ext.settingsHtml) return ext.settingsHtml();
+  if (!window.coffre.syncInfo) return '';
+  return `<h3>Téléphone</h3><div id="phoneBox" class="phone"><p class="hint">Chargement…</p></div>`;
+}
+const fmtDate = ms => new Date(ms).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
+async function loadPhoneSection() {
+  if (ext.settingsHtml || !window.coffre.syncInfo || !$('phoneBox')) return;
+  const s = await window.coffre.syncInfo();
+  if (!$('phoneBox')) return;
+  $('phoneBox').innerHTML = `
+    ${s.qr ? `<img class="qr" src="${s.qr}" alt="QR code d'appairage">` : ''}
+    <div style="display:flex;flex-direction:column;gap:8px;min-width:0">
+      <p>Dans Coffre sur ton téléphone : <b>Réglages → Associer au PC</b>, puis scanne ce code. Le téléphone et le PC doivent être sur le même Wi-Fi.</p>
+      <dl class="kv"><dt>Adresse du PC</dt><dd>${s.ips.length ? s.ips.map(ip => esc(ip + ':' + s.port)).join('<br>') : 'aucun réseau détecté'}</dd>
+        <dt>Dernière synchro</dt><dd>${s.lastSync ? `${esc(s.lastSync.device)}, le ${fmtDate(s.lastSync.at)}` : 'jamais'}</dd></dl>
+      ${s.error ? `<p class="error">${esc(s.error)}</p>` : ''}
+      <p class="hint">Si Windows demande l'autorisation réseau pour Coffre, accepte pour les <b>réseaux privés</b>.</p>
+      <div><button data-act="phoneReset">Changer le code (déconnecte le téléphone)</button></div>
+    </div>`;
 }
 $('sheet').addEventListener('change', e => {
   if (modalKind !== 'settings') return;
@@ -555,6 +587,8 @@ $('sheet').addEventListener('click', async e => {
     }
     case 'check': { const r = await window.coffre.checkUpdate(); updateState = r.status === 'checking' ? { status: 'checking' } : r; $('stUpd').textContent = updateLabel(); return; }
     case 'install': return window.coffre.installUpdate();
+    case 'phoneReset': await window.coffre.syncReset(); return loadPhoneSection();
+    default: if (ext.settingsClick) return ext.settingsClick(b.dataset.act, b);
   }
 });
 $('settingsBtn').addEventListener('click', openSettings);
@@ -564,7 +598,7 @@ window.coffre.onUpdate(s => {
   updateState = s;
   const bar = $('updateBar');
   if (s.status === 'ready') {
-    bar.innerHTML = `<span>Version ${esc(s.version)} prête</span><button class="primary" id="updNow">Redémarrer</button>`;
+    bar.innerHTML = `<span>Version ${esc(s.version)} prête</span><button class="primary" id="updNow">${info.platform === 'mobile' ? 'Télécharger' : 'Redémarrer'}</button>`;
     bar.hidden = false;
     $('updNow').addEventListener('click', () => window.coffre.installUpdate());
   } else if (s.status === 'available' || s.status === 'downloading') {
@@ -593,12 +627,42 @@ document.addEventListener('keydown', e => {
   if (e.key === '2') showTab('vin');
 });
 
+// Changements arrivés d'un autre appareil (synchro)
+function applyRemote(c) {
+  data.fm = c.fm || data.fm; data.vinyls = c.vinyls || data.vinyls;
+  renderAll();
+  if (modalKind === 'vinyl') {
+    const id = $('sheet').querySelector('[data-id]')?.dataset.id;
+    if (id && (!data.vinyls[id] || data.vinyls[id].deleted)) closeModal();
+  }
+}
+if (window.coffre.onDataChanged) window.coffre.onDataChanged(applyRemote);
+if (window.coffre.onSyncStatus) window.coffre.onSyncStatus(() => { if (modalKind === 'settings') loadPhoneSection(); });
+
+// Petit message temporaire en bas de l'écran
+function toast(text) {
+  let el = $('toast');
+  if (!el) { el = document.createElement('div'); el.id = 'toast'; el.className = 'toast'; document.body.appendChild(el); }
+  el.textContent = text; el.hidden = false;
+  clearTimeout(el._t); el._t = setTimeout(() => { el.hidden = true; }, 2200);
+}
+
+// Accès pour le module de scan (appli Android)
+window.CoffreApp = {
+  get data() { return data; }, CARDS, HAS_IMG, cardImg, esc,
+  changeQty, renderFm, renderVinyls, renderAll, scheduleSave, toast, applyRemote, showTab,
+  openCard, openRelease, closeModal, coverUrl,
+  searchFor(q) { search.q = q; openSearch(); runSearch(1); }
+};
+
 (async () => {
   info = await window.coffre.info();
+  if (info.platform) document.body.classList.add(info.platform);
   data = await window.coffre.load();
   seg('fmLayout', data.settings.layout || 'gal', v => { data.settings.layout = v; scheduleSave(); renderFm(); });
   seg('fmView', 'all', v => { fmF.v = v; renderFm(); });
   seg('vinView', 'all', v => { vinF.v = v; renderVinyls(); });
   showTab(data.settings.tab === 'vin' ? 'vin' : 'fm');
   renderAll();
+  if (ext.ready) ext.ready();
 })();
