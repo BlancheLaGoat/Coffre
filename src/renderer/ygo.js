@@ -10,7 +10,7 @@
   const now = () => Date.now();
 
   const EXTRA = /fusion|synchro|xyz|link/;          // cadres qui vont dans l'Extra Deck
-  const st = { db: null, idx: null, loading: false, error: '', view: 'col', q: '', sort: 'name', addQ: '', addSet: null, setView: 'all', deckId: '', deckView: 'all', deckQ: '' };
+  const st = { db: null, idx: null, loading: false, error: '', view: 'col', q: '', sort: 'name', addQ: '', addSet: null, setView: 'all', setRarity: null, deckId: '', deckView: 'all', deckQ: '' };
 
   // ---------- Base de cartes ----------
   function setDb(db) {
@@ -316,34 +316,57 @@
     let own = 0; for (const q of codes.values()) if (q > 0) own++;
     return { own, total: codes.size };
   }
+  const rarName = p => p[3] || p[2];
+  // Manquantes : sans filtre, un numéro manque si tu n'en as aucune rareté ;
+  // avec une rareté choisie, chaque version de cette rareté compte à part.
+  function setMissing(i) {
+    const all = setPrints(i), r = st.setRarity;
+    if (r) return all.filter(y => rarName(y.p) === r && !qtyOf(y.p[1], y.p[2]));
+    return all.filter(y => !all.some(z => z.p[1] === y.p[1] && qtyOf(z.p[1], z.p[2]) > 0));
+  }
   function setMissingText(i) {
     const seen = new Set(), lines = [];
-    for (const x of setPrints(i)) {
-      if (seen.has(x.p[1])) continue; seen.add(x.p[1]);
-      const owned = setPrints(i).filter(y => y.p[1] === x.p[1]).some(y => qtyOf(y.p[1], y.p[2]) > 0);
-      if (!owned) lines.push(`1 ${x.c.n} (${setName(i)})`);
+    for (const x of setMissing(i)) {
+      if (seen.has(x.p[1] + '|' + (st.setRarity ? x.p[2] : ''))) continue;
+      seen.add(x.p[1] + '|' + (st.setRarity ? x.p[2] : ''));
+      lines.push(`1 ${x.c.n} (${setName(i)})`);
     }
     return lines.join('\n');
+  }
+  // Progression par rareté : nombre de versions possédées / nombre de versions de cette rareté
+  function rarityProgress(i) {
+    const m = new Map();
+    for (const x of setPrints(i)) {
+      const k = rarName(x.p); const v = m.get(k) || { own: 0, total: 0 };
+      v.total++; if (qtyOf(x.p[1], x.p[2]) > 0) v.own++; m.set(k, v);
+    }
+    return [...m.entries()].sort((a, b) => b[1].total - a[1].total || a[0].localeCompare(b[0]));
   }
   function renderSet(el) {
     const i = st.addSet, x = st.db.sets[i];
     const { own, total } = setProgress(i);
+    const rars = rarityProgress(i);
+    if (st.setRarity && !rars.some(([k]) => k === st.setRarity)) st.setRarity = null;
+    const allV = rars.reduce((a, [, v]) => ({ own: a.own + v.own, total: a.total + v.total }), { own: 0, total: 0 });
     let rows = setPrints(i);
-    if (st.setView === 'miss') rows = rows.filter(y => !setPrints(i).some(z => z.p[1] === y.p[1] && qtyOf(z.p[1], z.p[2]) > 0));
+    if (st.setRarity) rows = rows.filter(y => rarName(y.p) === st.setRarity);
+    if (st.setView === 'miss') { const m = new Set(setMissing(i)); rows = rows.filter(y => m.has(y) || [...m].some(z => z.ci === y.ci && z.pi === y.pi)); }
     const miss = setMissingText(i);
+    const cur = st.setRarity ? rars.find(([k]) => k === st.setRarity)[1] : null;
     el.innerHTML = `<div class="yset-head">
         <button data-y="unset">← Retour</button>
         <div class="grow"><b>${esc(x[0])}</b> <span class="code">${esc(x[1] || '')}</span>${x[2] ? ` <span class="hint">${esc(x[2].slice(0, 4))}</span>` : ''}
-          <div class="bar"><i style="width:${total ? (own / total * 100).toFixed(1) : 0}%"></i></div>
-          <span class="hint"><b>${own}</b> / ${total} cartes de l'extension</span></div>
+          <div class="bar"><i style="width:${(cur ? (cur.total ? cur.own / cur.total : 0) : (total ? own / total : 0)) * 100}%"></i></div>
+          <span class="hint">${cur ? `<b>${cur.own}</b> / ${cur.total} en ${esc(st.setRarity)}` : `<b>${own}</b> / ${total} cartes de l'extension · ${allV.own} / ${allV.total} versions (toutes raretés)`}</span></div>
         <div class="seg" id="ysView"><button data-sv="all" aria-pressed="${st.setView === 'all'}">Toutes</button><button data-sv="miss" aria-pressed="${st.setView === 'miss'}">Manquantes</button></div>
-        ${miss ? `<button data-y="copySet" title="Format wishlist Cardmarket : 1 Nom (Extension)">Copier les manquantes</button>` : ''}</div>
+        ${miss ? `<button data-y="copySet" title="Format wishlist Cardmarket : 1 Nom (Extension)">Copier les manquantes</button>` : ''}
+        ${rars.length > 1 ? `<div class="yrars"><button class="chip" data-rar="" aria-pressed="${!st.setRarity}">Toutes raretés</button>${rars.map(([k, v]) => `<button class="chip${v.own === v.total ? ' done' : ''}" data-rar="${esc(k)}" aria-pressed="${st.setRarity === k}">${esc(k)} <b>${v.own}/${v.total}</b></button>`).join('')}</div>` : ''}</div>
       <textarea id="ysCm" hidden readonly>${esc(miss)}</textarea>
       ${rows.length ? rows.map(({ ci, pi, c, p }) => { const q = qtyOf(p[1], p[2]); return `<div class="yres${q ? ' owned' : ''}" data-id="${c.i}">
         <button class="ypic" data-y="card">${imgTag(c.i)}</button>
         <div class="yinfo"><button class="nm" data-y="card">${esc(label(c))}</button>${sub(c) ? `<span class="en">${esc(sub(c))}</span>` : ''}
-          <span class="meta"><span class="code">${esc(p[1])}</span><span>${esc(p[3] || p[2])}</span></span></div>
-        <div class="yquick" data-ci="${ci}" data-pi="${pi}">${App.qtyHtml(q)}</div></div>`; }).join('') : '<p class="hint">Tu as toutes les cartes de cette extension.</p>'}`;
+          <span class="meta"><span class="code">${esc(p[1])}</span><span class="rar">${esc(rarName(p))}</span></span></div>
+        <div class="yquick" data-ci="${ci}" data-pi="${pi}">${App.qtyHtml(q)}</div></div>`; }).join('') : `<p class="hint">${st.setView === 'miss' ? 'Rien ne manque ici.' : 'Aucune carte.'}</p>`}`;
     loadImages(el);
   }
 
@@ -407,7 +430,7 @@
   });
   $('sheet').addEventListener('click', async e => {
     const k = App.modalKind; if (!k || !k.startsWith('ygo')) return;
-    const b = e.target.closest('[data-y],[data-act],[data-v],[data-sv]'); if (!b) return;
+    const b = e.target.closest('[data-y],[data-act],[data-v],[data-sv],[data-rar]'); if (!b) return;
     const y = b.dataset.y;
     if (y === 'close') return App.closeModal();
     if (y === 'back') { const back = cardBack; cardBack = null; return back && back(); }
@@ -433,7 +456,8 @@
       return window.coffre.openExternal(`https://www.cardmarket.com/fr/YuGiOh/Products/Search?searchString=${encodeURIComponent(c.n)}`);
     }
     // ajout rapide par code exact
-    if (k === 'ygo-add' && y === 'set') { st.addSet = Number(b.dataset.set); st.setView = 'all'; $('yaRes').scrollTop = 0; return renderAdd(); }
+    if (k === 'ygo-add' && b.dataset.rar != null) { st.setRarity = b.dataset.rar || null; return renderAdd(); }
+    if (k === 'ygo-add' && y === 'set') { st.addSet = Number(b.dataset.set); st.setView = 'all'; st.setRarity = null; $('yaRes').scrollTop = 0; return renderAdd(); }
     if (k === 'ygo-add' && y === 'unset') { st.addSet = null; return renderAdd(); }
     if (k === 'ygo-add' && b.dataset.sv) { st.setView = b.dataset.sv; return renderAdd(); }
     if (k === 'ygo-add' && y === 'copySet') {

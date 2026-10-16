@@ -204,3 +204,9 @@ body.mobile .desktop-only { display: none !important; }
 .yset-head .grow { flex: 1 1 220px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .yset-head .bar i { background: var(--ygo); }
 .yres.owned { background: linear-gradient(90deg, var(--ygo-soft), transparent 60%); }
+
+.yrars { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 6px; }
+.yrars .chip { padding: 4px 10px; border-radius: 99px; font-size: 12px; min-height: 0; }
+.yrars .chip[aria-pressed=true] { background: var(--ygo-soft); border-color: var(--ygo); }
+.yrars .chip.done b { color: var(--ygo); }
+.yres .rar { font-weight: 600; }

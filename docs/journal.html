@@ -4,6 +4,532 @@ h1{margin:0 0 4px}h2{margin:28px 0 8px;color:#e3b54a}.d{color:#9a95ad}details{bo
 summary{cursor:pointer;padding:8px 12px}pre{margin:0;padding:12px;overflow:auto;max-height:520px;font:12px Consolas,monospace;background:#100e16;border-top:1px solid #322e42}
 .mod{font-size:11px;background:#3a2f17;color:#e3b54a;padding:1px 6px;border-radius:4px}.new{font-size:11px;background:#1f3a26;color:#6cc58c;padding:1px 6px;border-radius:4px}ul{margin:4px 0 0}</style></head><body>
 <h1>Journal des modifications</h1><p class="d">Coffre — clique sur un fichier pour voir son code.</p>
+<h2>v1.3.5 <span class="d">— 16/10/2026</span></h2>
+<ul><li>Vue extension : la barre du haut compte aussi les <b>raretés</b>. Une pastille par rareté montre ta progression (ex. « Secret Rare 1/40 », « Starlight Rare 1/40 ») et le total « versions (toutes raretés) ».</li><li>Toucher une rareté filtre la liste et la barre sur cette rareté ; « Manquantes » et « Copier les manquantes » suivent le filtre.</li></ul>
+<details><summary><code>src/renderer/ygo.js</code> <span class="mod">modifié</span></summary><pre>// Coffre — onglet Yu-Gi-Oh : toutes les cartes du jeu (base YGOPRODeck),
+// ta collection (par impression : code + rareté, ou « peu importe l&#x27;extension »),
+// tes decks, et la liste des cartes manquantes au format wishlist Cardmarket.
+(function () {
+  &#x27;use strict&#x27;;
+  const App = window.CoffreApp;
+  const Core = window.CoffreCore;
+  const $ = id =&gt; document.getElementById(id);
+  const esc = App.esc;
+  const now = () =&gt; Date.now();
+
+  const EXTRA = /fusion|synchro|xyz|link/;          // cadres qui vont dans l&#x27;Extra Deck
+  const st = { db: null, idx: null, loading: false, error: &#x27;&#x27;, view: &#x27;col&#x27;, q: &#x27;&#x27;, sort: &#x27;name&#x27;, addQ: &#x27;&#x27;, addSet: null, setView: &#x27;all&#x27;, setRarity: null, deckId: &#x27;&#x27;, deckView: &#x27;all&#x27;, deckQ: &#x27;&#x27; };
+
+  // ---------- Base de cartes ----------
+  function setDb(db) {
+    if (!db || !db.cards) return;
+    st.db = db; st.idx = Core.ygoIndex(db);
+  }
+  async function loadDb() {
+    try { setDb(await window.coffre.ygoDb()); } catch (e) { /* pas encore téléchargée */ }
+    render();
+    // Mise à jour discrète toutes les deux semaines (nouvelles extensions)
+    if (st.db &amp;&amp; now() - (st.db.at || 0) &gt; 14 * 864e5) refreshDb(true);
+  }
+  async function refreshDb(silent) {
+    if (st.loading) return;
+    st.loading = true; st.error = &#x27;&#x27;;
+    if (!silent) render();
+    try { setDb(await window.coffre.ygoRefresh()); if (!silent) App.toast(&#x27;Base de cartes à jour&#x27;); }
+    catch (e) { st.error = &quot;Impossible de télécharger la base de cartes : &quot; + String(e.message || e).replace(/^Error invoking remote method &#x27;[^&#x27;]+&#x27;: (Error: )?/, &#x27;&#x27;); }
+    st.loading = false;
+    render();
+  }
+
+  const card = id =&gt; st.idx &amp;&amp; st.idx.byId.has(id) ? st.db.cards[st.idx.byId.get(id)] : null;
+  const setName = i =&gt; (st.db.sets[i] || [&#x27;&#x27;])[0];
+  const label = c =&gt; c.f || c.n;                       // nom français si connu
+  const sub = c =&gt; c.f ? c.n : &#x27;&#x27;;                     // nom anglais en dessous
+  const isExtra = c =&gt; EXTRA.test(c.t || &#x27;&#x27;);
+  const gal = () =&gt; App.data.settings.ygoLayout !== &#x27;list&#x27;;
+  const layoutSeg = id =&gt; `&lt;div class=&quot;seg&quot; id=&quot;${id}&quot;&gt;&lt;button data-v=&quot;gal&quot; aria-pressed=&quot;${gal()}&quot;&gt;Galerie&lt;/button&gt;&lt;button data-v=&quot;list&quot; aria-pressed=&quot;${!gal()}&quot;&gt;Liste&lt;/button&gt;&lt;/div&gt;`;
+  function setLayout(v) { App.data.settings.ygoLayout = v; App.scheduleSave(); render(); }
+
+  // ---------- Images (téléchargées une fois, puis gardées sur l&#x27;appareil) ----------
+  const imgTag = (id, cls = &#x27;&#x27;) =&gt; `&lt;img class=&quot;yimg ${cls}&quot; data-ygo=&quot;${id}&quot; alt=&quot;&quot; src=&quot;data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7&quot;&gt;`;
+  let io = null;
+  function loadImages(root) {
+    const imgs = (root || document).querySelectorAll(&#x27;img[data-ygo]:not([data-done])&#x27;);
+    const go = img =&gt; {
+      img.dataset.done = &#x27;1&#x27;;
+      window.coffre.ygoImg(img.dataset.ygo, img.classList.contains(&#x27;big&#x27;)).then(u =&gt; { if (u) img.src = u; else img.classList.add(&#x27;missing&#x27;); });
+    };
+    if (!(&#x27;IntersectionObserver&#x27; in window)) { imgs.forEach(go); return; }
+    if (!io) io = new IntersectionObserver(es =&gt; es.forEach(e =&gt; { if (e.isIntersecting) { io.unobserve(e.target); go(e.target); } }), { rootMargin: &#x27;300px&#x27; });
+    imgs.forEach(img =&gt; io.observe(img));
+  }
+
+  // ---------- Collection ----------
+  // data.ygo[clé] = { id, code, r, qty, mt }   clé = « CODE|RARETÉ » ou « id|* » (peu importe l&#x27;extension)
+  const col = () =&gt; App.data.ygo || (App.data.ygo = {});
+  function ownedOf(id) {
+    let n = 0;
+    for (const e of Object.values(col())) if (e &amp;&amp; e.id === id) n += e.qty || 0;
+    return n;
+  }
+  function changeEntry(key, base, delta) {
+    const e = { ...(col()[key] || base) };
+    e.qty = Math.max(0, (e.qty || 0) + delta);
+    e.mt = now();
+    col()[key] = e;
+    App.scheduleSave();
+    return e.qty;
+  }
+  function addPrinting(ci, pi, delta = 1) {
+    const c = st.db.cards[ci], p = c.p[pi];
+    return changeEntry(Core.ygoKey(p[1], p[2]), { id: c.i, code: p[1], r: p[2] }, delta);
+  }
+  function addGeneric(id, delta = 1) { return changeEntry(`${id}|*`, { id, code: &#x27;&#x27;, r: &#x27;&#x27; }, delta); }
+
+  function stats() {
+    let cards = 0, copies = 0; const ids = new Set();
+    for (const e of Object.values(col())) if (e &amp;&amp; e.qty &gt; 0) { copies += e.qty; ids.add(e.id); }
+    cards = ids.size;
+    $(&#x27;ygoStats&#x27;).innerHTML = `&lt;b&gt;${cards}&lt;/b&gt; cartes · ${copies} exemplaires · ${Object.values(App.data.decks || {}).filter(d =&gt; d &amp;&amp; !d.deleted).length} decks`;
+    $(&#x27;tabYgoCount&#x27;).textContent = cards;
+  }
+
+  // ---------- Rendu de l&#x27;onglet ----------
+  function toolsHtml() {
+    if (st.view === &#x27;decks&#x27;) return `&lt;button class=&quot;primary&quot; data-y=&quot;newDeck&quot;&gt;Nouveau deck&lt;/button&gt;`;
+    return `&lt;button class=&quot;primary&quot; data-y=&quot;add&quot;&gt;Ajouter des cartes&lt;/button&gt;
+      &lt;input type=&quot;search&quot; id=&quot;ygoQ&quot; placeholder=&quot;Filtrer ma collection (nom, code)…&quot; value=&quot;${esc(st.q)}&quot;&gt;
+      ${layoutSeg(&#x27;ygoLayout&#x27;)}
+      &lt;select id=&quot;ygoSort&quot; aria-label=&quot;Trier&quot;&gt;&lt;option value=&quot;name&quot;&gt;Par nom&lt;/option&gt;&lt;option value=&quot;added&quot;&gt;Derniers ajouts&lt;/option&gt;&lt;option value=&quot;code&quot;&gt;Par code&lt;/option&gt;&lt;/select&gt;`;
+  }
+
+  function render() {
+    if (!$(&#x27;ygoList&#x27;) || !App.data) return;
+    stats();
+    $(&#x27;ygoView&#x27;).querySelectorAll(&#x27;button&#x27;).forEach(b =&gt; b.setAttribute(&#x27;aria-pressed&#x27;, String(b.dataset.v === st.view)));
+    const tools = $(&#x27;ygoTools&#x27;);
+    if (tools.dataset.view !== st.view) {
+      tools.innerHTML = toolsHtml(); tools.dataset.view = st.view;
+      const s = $(&#x27;ygoSort&#x27;); if (s) s.value = st.sort;
+    }
+    const ls = $(&#x27;ygoLayout&#x27;); if (ls) ls.querySelectorAll(&#x27;button&#x27;).forEach(b =&gt; b.setAttribute(&#x27;aria-pressed&#x27;, String((b.dataset.v === &#x27;gal&#x27;) === gal())));
+    const list = $(&#x27;ygoList&#x27;);
+    if (!st.db) {
+      list.innerHTML = `&lt;div class=&quot;empty&quot;&gt;
+        &lt;p&gt;Pour voir toutes les cartes Yu-Gi-Oh, Coffre doit d&#x27;abord télécharger la base de cartes (YGOPRODeck, gratuite : environ 13 000 cartes avec toutes leurs extensions). Ça se fait une seule fois, puis elle se met à jour toute seule.&lt;/p&gt;
+        ${st.loading ? `&lt;p&gt;&lt;b&gt;Téléchargement en cours…&lt;/b&gt; (une minute environ)&lt;/p&gt;` : `&lt;button class=&quot;primary&quot; data-y=&quot;dl&quot;&gt;Télécharger la base de cartes&lt;/button&gt;`}
+        ${st.error ? `&lt;p class=&quot;error&quot;&gt;${esc(st.error)}&lt;/p&gt;` : &#x27;&#x27;}&lt;/div&gt;`;
+      return;
+    }
+    list.innerHTML = st.view === &#x27;decks&#x27; ? decksHtml() : collectionHtml();
+    loadImages(list);
+    refreshOpenModal();
+  }
+
+  function collectionHtml() {
+    const q = st.q.trim().toLowerCase();
+    const rows = [];
+    for (const [key, e] of Object.entries(col())) {
+      if (!e || !(e.qty &gt; 0)) continue;
+      const c = card(e.id); if (!c) continue;
+      if (q &amp;&amp; !(c.s.includes(q) || (e.code || &#x27;&#x27;).toLowerCase().includes(q))) continue;
+      const p = e.code ? c.p.find(x =&gt; x[1] === e.code &amp;&amp; x[2] === e.r) : null;
+      rows.push({ key, e, c, p });
+    }
+    if (!rows.length) {
+      return `&lt;div class=&quot;empty&quot;&gt;${Object.keys(col()).length &amp;&amp; q ? &#x27;Aucune carte ne correspond.&#x27; : &quot;Ta collection est vide. Touche « Ajouter des cartes » pour chercher dans toutes les cartes du jeu&quot; + (App.info.platform === &#x27;mobile&#x27; ? &#x27;, ou scanne le code imprimé sous l\&#x27;illustration (ex. SGX1-FRA18).&#x27; : &#x27;.&#x27;)}&lt;/div&gt;`;
+    }
+    const by = { name: (a, b) =&gt; label(a.c).localeCompare(label(b.c), &#x27;fr&#x27;), added: (a, b) =&gt; (b.e.mt || 0) - (a.e.mt || 0), code: (a, b) =&gt; (a.e.code || &#x27;~&#x27;).localeCompare(b.e.code || &#x27;~&#x27;) };
+    rows.sort(by[st.sort] || by.name);
+    if (gal()) return `&lt;div class=&quot;gal&quot;&gt;` + rows.map(({ key, e, c, p }) =&gt; `&lt;div class=&quot;gcard own&quot; data-key=&quot;${esc(key)}&quot; data-id=&quot;${c.i}&quot;&gt;
+        &lt;button class=&quot;pic&quot; data-y=&quot;card&quot; aria-label=&quot;Détails de ${esc(label(c))}&quot;&gt;${imgTag(c.i)}&lt;span class=&quot;badge&quot;&gt;×${e.qty}&lt;/span&gt;&lt;/button&gt;
+        &lt;div class=&quot;cap&quot;&gt;&lt;span class=&quot;num&quot;&gt;${esc(e.code || &quot;toute extension&quot;)}${p ? &#x27; · &#x27; + esc(p[2]) : &#x27;&#x27;}&lt;/span&gt;${esc(label(c))}&lt;/div&gt;${App.qtyHtml(e.qty)}&lt;/div&gt;`).join(&#x27;&#x27;) + `&lt;/div&gt;`;
+    return rows.map(({ key, e, c, p }) =&gt; `&lt;div class=&quot;yrow&quot; data-key=&quot;${esc(key)}&quot; data-id=&quot;${c.i}&quot;&gt;
+        &lt;button class=&quot;ypic&quot; data-y=&quot;card&quot;&gt;${imgTag(c.i)}&lt;/button&gt;
+        &lt;div class=&quot;yinfo&quot;&gt;&lt;button class=&quot;nm&quot; data-y=&quot;card&quot;&gt;${esc(label(c))}&lt;/button&gt;${sub(c) ? `&lt;span class=&quot;en&quot;&gt;${esc(sub(c))}&lt;/span&gt;` : &#x27;&#x27;}
+          &lt;span class=&quot;meta&quot;&gt;${e.code ? `&lt;span class=&quot;code&quot;&gt;${esc(e.code)}&lt;/span&gt;&lt;span&gt;${esc(p ? p[3] : e.r)}&lt;/span&gt;&lt;span&gt;${esc(p ? setName(p[0]) : &#x27;&#x27;)}&lt;/span&gt;` : `&lt;span class=&quot;tag&quot;&gt;peu importe l&#x27;extension&lt;/span&gt;`}&lt;/span&gt;&lt;/div&gt;
+        ${App.qtyHtml(e.qty)}&lt;/div&gt;`).join(&#x27;&#x27;);
+  }
+
+  // ---------- Decks ----------
+  const decks = () =&gt; App.data.decks || (App.data.decks = {});
+  const liveDecks = () =&gt; Object.entries(decks()).filter(([, d]) =&gt; d &amp;&amp; !d.deleted);
+  function deckCounts(d) {
+    let total = 0, missing = 0;
+    for (const [id, q] of Object.entries(d.cards || {})) {
+      total += q; missing += Math.max(0, q - ownedOf(Number(id)));
+    }
+    return { total, missing };
+  }
+  function decksHtml() {
+    const ds = liveDecks().sort((a, b) =&gt; (b[1].mt || 0) - (a[1].mt || 0));
+    if (!ds.length) return `&lt;div class=&quot;empty&quot;&gt;Aucun deck. Touche « Nouveau deck », puis ajoute des cartes, même celles que tu n&#x27;as pas encore : Coffre te dira lesquelles manquent.&lt;/div&gt;`;
+    return `&lt;div class=&quot;ydecks&quot;&gt;` + ds.map(([id, d]) =&gt; {
+      const { total, missing } = deckCounts(d);
+      const cover = Object.keys(d.cards || {})[0];
+      return `&lt;button class=&quot;ydeck&quot; data-y=&quot;deck&quot; data-deck=&quot;${id}&quot;&gt;
+        &lt;span class=&quot;ycover&quot;&gt;${cover ? imgTag(cover) : &#x27;&#x27;}&lt;/span&gt;
+        &lt;span class=&quot;t&quot;&gt;${esc(d.name || &#x27;Deck sans nom&#x27;)}&lt;/span&gt;
+        &lt;span class=&quot;a&quot;&gt;${total} cartes · ${missing ? `&lt;b class=&quot;miss&quot;&gt;${missing} manquante${missing &gt; 1 ? &#x27;s&#x27; : &#x27;&#x27;}&lt;/b&gt;` : &#x27;complet&#x27;}&lt;/span&gt;&lt;/button&gt;`;
+    }).join(&#x27;&#x27;) + `&lt;/div&gt;`;
+  }
+
+  function newDeck() {
+    const id = &#x27;d&#x27; + now().toString(36) + Math.random().toString(36).slice(2, 6);
+    decks()[id] = { name: &#x27;Nouveau deck&#x27;, cards: {}, created: now(), mt: now() };
+    App.scheduleSave();
+    render();
+    openDeck(id);
+  }
+  function touchDeck(d) { d.mt = now(); App.scheduleSave(); }
+
+  // Recherche dans toutes les cartes du jeu (nom français ou anglais, code)
+  function searchCards(q, max = 60) {
+    q = q.trim().toLowerCase();
+    if (!q || !st.db) return [];
+    const nq = Core.ygoNormCode(q.toUpperCase());
+    const out = [];
+    if (st.idx.byNorm.has(nq)) for (const [ci] of st.idx.byNorm.get(nq)) out.push(st.db.cards[ci]);
+    const words = q.split(/\s+/);
+    const starts = [], contains = [];
+    for (const c of st.db.cards) {
+      if (out.includes(c)) continue;
+      if (!words.every(w =&gt; c.s.includes(w))) continue;
+      ((c.f || &#x27;&#x27;).toLowerCase().startsWith(q) || c.n.toLowerCase().startsWith(q) ? starts : contains).push(c);
+      if (starts.length &gt;= max) break;
+    }
+    return out.concat(starts, contains).slice(0, max);
+  }
+  const resultHtml = (c, act) =&gt; `&lt;div class=&quot;yres&quot; data-id=&quot;${c.i}&quot;&gt;
+      &lt;button class=&quot;ypic&quot; data-y=&quot;card&quot;&gt;${imgTag(c.i)}&lt;/button&gt;
+      &lt;div class=&quot;yinfo&quot;&gt;&lt;button class=&quot;nm&quot; data-y=&quot;card&quot;&gt;${esc(label(c))}&lt;/button&gt;${sub(c) ? `&lt;span class=&quot;en&quot;&gt;${esc(sub(c))}&lt;/span&gt;` : &#x27;&#x27;}
+        &lt;span class=&quot;meta&quot;&gt;&lt;span&gt;${esc(c.ty)}&lt;/span&gt;${c.k !== &#x27;&#x27; ? `&lt;span&gt;${c.k}/${c.d === &#x27;&#x27; ? &#x27;—&#x27; : c.d}&lt;/span&gt;` : &#x27;&#x27;}${ownedOf(c.i) ? `&lt;span class=&quot;own&quot;&gt;${ownedOf(c.i)} dans ta collection&lt;/span&gt;` : &#x27;&#x27;}&lt;/span&gt;&lt;/div&gt;
+      ${act}&lt;/div&gt;`;
+
+  function openDeck(id, keep) {
+    if (!keep) { st.deckQ = &#x27;&#x27;; st.deckView = &#x27;all&#x27;; }
+    st.deckId = id;
+    App.openModal(`&lt;div id=&quot;ydeckSheet&quot;&gt;&lt;/div&gt;`, &#x27;ygo wide&#x27;, &#x27;ygo-deck&#x27;);
+    renderDeck();
+  }
+  function renderDeck(keepFocus) {
+    const box = $(&#x27;ydeckSheet&#x27;); if (!box) return;
+    const d = decks()[st.deckId]; if (!d || d.deleted) { App.closeModal(); return; }
+    const entries = Object.entries(d.cards || {}).map(([id, q]) =&gt; ({ c: card(Number(id)), q, owned: ownedOf(Number(id)) })).filter(x =&gt; x.c);
+    const missingList = entries.filter(x =&gt; x.q &gt; x.owned);
+    const shown = st.deckView === &#x27;miss&#x27; ? missingList : entries;
+    const dq = q =&gt; `&lt;div class=&quot;qty&quot;&gt;&lt;button data-y=&quot;dq&quot; data-d=&quot;-1&quot; aria-label=&quot;Retirer du deck&quot;&gt;−&lt;/button&gt;&lt;output&gt;${q}&lt;/output&gt;&lt;button data-y=&quot;dq&quot; data-d=&quot;1&quot; aria-label=&quot;Ajouter au deck&quot;&gt;+&lt;/button&gt;&lt;/div&gt;`;
+    const tile = ({ c, q, owned }) =&gt; `&lt;div class=&quot;gcard${owned &gt;= q ? &#x27; own&#x27; : &#x27; short&#x27;}&quot; data-id=&quot;${c.i}&quot;&gt;
+        &lt;button class=&quot;pic&quot; data-y=&quot;card&quot; aria-label=&quot;Détails de ${esc(label(c))}&quot;&gt;${imgTag(c.i)}&lt;span class=&quot;badge&quot;&gt;×${q}&lt;/span&gt;&lt;/button&gt;
+        &lt;div class=&quot;cap&quot;&gt;&lt;span class=&quot;num&quot;&gt;${owned &gt;= q ? `&lt;span class=&quot;own&quot;&gt;${owned} possédée${owned &gt; 1 ? &#x27;s&#x27; : &#x27;&#x27;}&lt;/span&gt;` : `&lt;span class=&quot;miss&quot;&gt;il en manque ${q - owned}&lt;/span&gt;`}&lt;/span&gt;${esc(label(c))}&lt;/div&gt;${dq(q)}&lt;/div&gt;`;
+    const group = (title, arr) =&gt; arr.length ? `&lt;h4&gt;${title} &lt;span class=&quot;num&quot;&gt;${arr.reduce((a, x) =&gt; a + x.q, 0)}&lt;/span&gt;&lt;/h4&gt;` + (gal() ? `&lt;div class=&quot;gal&quot;&gt;${arr.sort((a, b) =&gt; label(a.c).localeCompare(label(b.c), &#x27;fr&#x27;)).map(tile).join(&#x27;&#x27;)}&lt;/div&gt;` : arr.sort((a, b) =&gt; label(a.c).localeCompare(label(b.c), &#x27;fr&#x27;)).map(({ c, q, owned }) =&gt; `
+      &lt;div class=&quot;yrow${owned &gt;= q ? &#x27; ok&#x27; : &#x27; short&#x27;}&quot; data-id=&quot;${c.i}&quot;&gt;
+        &lt;button class=&quot;ypic&quot; data-y=&quot;card&quot;&gt;${imgTag(c.i)}&lt;/button&gt;
+        &lt;div class=&quot;yinfo&quot;&gt;&lt;button class=&quot;nm&quot; data-y=&quot;card&quot;&gt;${esc(label(c))}&lt;/button&gt;${sub(c) ? `&lt;span class=&quot;en&quot;&gt;${esc(sub(c))}&lt;/span&gt;` : &#x27;&#x27;}
+          &lt;span class=&quot;meta&quot;&gt;${owned &gt;= q ? `&lt;span class=&quot;own&quot;&gt;${owned} possédée${owned &gt; 1 ? &#x27;s&#x27; : &#x27;&#x27;}&lt;/span&gt;` : `&lt;span class=&quot;miss&quot;&gt;il en manque ${q - owned}&lt;/span&gt;&lt;span&gt;(${owned} possédée${owned &gt; 1 ? &#x27;s&#x27; : &#x27;&#x27;})&lt;/span&gt;`}&lt;/span&gt;&lt;/div&gt;
+        ${dq(q)}&lt;/div&gt;`).join(&#x27;&#x27;)) : &#x27;&#x27;;
+    const main = shown.filter(x =&gt; !isExtra(x.c)), extra = shown.filter(x =&gt; isExtra(x.c));
+    const mainCount = entries.filter(x =&gt; !isExtra(x.c)).reduce((a, x) =&gt; a + x.q, 0);
+    const extraCount = entries.filter(x =&gt; isExtra(x.c)).reduce((a, x) =&gt; a + x.q, 0);
+    const results = searchCards(st.deckQ, 30);
+    const cm = missingList.map(x =&gt; Core.cmLine(x.q - x.owned, x.c.n)).join(&#x27;\n&#x27;);
+    const q = $(&#x27;ydQ&#x27;), hadFocus = q &amp;&amp; document.activeElement === q, caret = q ? q.selectionStart : 0;
+    box.innerHTML = `
+      &lt;div class=&quot;sheet-head&quot;&gt;&lt;input id=&quot;ydName&quot; class=&quot;dname&quot; value=&quot;${esc(d.name || &#x27;&#x27;)}&quot; aria-label=&quot;Nom du deck&quot;&gt;
+        &lt;button class=&quot;close&quot; data-y=&quot;close&quot;&gt;Fermer&lt;/button&gt;&lt;/div&gt;
+      &lt;p class=&quot;hint&quot;&gt;${mainCount} cartes dans le Main Deck${extraCount ? ` · ${extraCount} dans l&#x27;Extra Deck` : &#x27;&#x27;} · ${missingList.length ? `&lt;b class=&quot;miss&quot;&gt;${missingList.reduce((a, x) =&gt; a + x.q - x.owned, 0)} carte(s) manquante(s)&lt;/b&gt;` : &#x27;tu as toutes les cartes&#x27;}&lt;/p&gt;
+      &lt;div class=&quot;ydeckbar&quot;&gt;
+        &lt;input type=&quot;search&quot; id=&quot;ydQ&quot; placeholder=&quot;Ajouter une carte : nom (français ou anglais) ou code…&quot; value=&quot;${esc(st.deckQ)}&quot;&gt;
+        &lt;div class=&quot;seg&quot; id=&quot;ydView&quot;&gt;&lt;button data-v=&quot;all&quot; aria-pressed=&quot;${st.deckView === &#x27;all&#x27;}&quot;&gt;Toutes&lt;/button&gt;&lt;button data-v=&quot;miss&quot; aria-pressed=&quot;${st.deckView === &#x27;miss&#x27;}&quot;&gt;Manquantes&lt;/button&gt;&lt;/div&gt;
+        ${layoutSeg(&#x27;ydLayout&#x27;)}
+      &lt;/div&gt;
+      ${st.deckQ ? `&lt;div class=&quot;yresults&quot;&gt;${results.length ? results.map(c =&gt; resultHtml(c, `&lt;button class=&quot;primary&quot; data-y=&quot;dadd&quot;&gt;+ Deck&lt;/button&gt;`)).join(&#x27;&#x27;) : &#x27;&lt;p class=&quot;hint&quot;&gt;Aucune carte trouvée.&lt;/p&gt;&#x27;}&lt;/div&gt;` : &#x27;&#x27;}
+      &lt;div class=&quot;ydecklist&quot;&gt;${group(&#x27;Main Deck&#x27;, main)}${group(&#x27;Extra Deck&#x27;, extra)}${!shown.length ? `&lt;p class=&quot;hint&quot;&gt;${st.deckView === &#x27;miss&#x27; ? &#x27;Aucune carte manquante.&#x27; : &#x27;Deck vide : cherche une carte au-dessus pour l\&#x27;ajouter.&#x27;}&lt;/p&gt;` : &#x27;&#x27;}&lt;/div&gt;
+      ${missingList.length ? `&lt;div class=&quot;ycm&quot;&gt;&lt;h4&gt;Manquantes pour ta wishlist Cardmarket&lt;/h4&gt;
+        &lt;textarea id=&quot;ydCm&quot; readonly rows=&quot;${Math.min(8, missingList.length)}&quot;&gt;${esc(cm)}&lt;/textarea&gt;
+        &lt;div class=&quot;actions&quot;&gt;&lt;span class=&quot;hint grow&quot;&gt;Cardmarket → Wishlist → « Ajouter des cartes » : colle la liste (une carte par ligne).&lt;/span&gt;&lt;button class=&quot;primary&quot; data-y=&quot;copy&quot;&gt;Copier la liste&lt;/button&gt;&lt;/div&gt;&lt;/div&gt;` : &#x27;&#x27;}
+      &lt;div class=&quot;actions&quot;&gt;&lt;button class=&quot;danger&quot; data-y=&quot;delDeck&quot;&gt;Supprimer ce deck&lt;/button&gt;&lt;/div&gt;`;
+    if (hadFocus || keepFocus) { const n = $(&#x27;ydQ&#x27;); n.focus(); try { n.setSelectionRange(caret, caret); } catch (e) { /* rien */ } }
+    loadImages(box);
+  }
+
+  // ---------- Fiche d&#x27;une carte (toutes ses impressions) ----------
+  let cardBack = null;
+  function openCard(id, back) {
+    const c = card(id); if (!c) return;
+    cardBack = back || null;
+    App.openModal(`&lt;div id=&quot;ycardSheet&quot; data-id=&quot;${id}&quot;&gt;&lt;/div&gt;`, &#x27;ygo wide&#x27;, &#x27;ygo-card&#x27;);
+    renderCard();
+  }
+  function renderCard() {
+    const box = $(&#x27;ycardSheet&#x27;); if (!box) return;
+    const c = card(Number(box.dataset.id)); if (!c) return;
+    const gen = col()[`${c.i}|*`];
+    const prints = c.p.map((p, pi) =&gt; ({ p, pi, e: col()[Core.ygoKey(p[1], p[2])] }))
+      .sort((a, b) =&gt; ((b.e &amp;&amp; b.e.qty) || 0) - ((a.e &amp;&amp; a.e.qty) || 0) || a.p[1].localeCompare(b.p[1]));
+    const ds = liveDecks();
+    box.innerHTML = `
+      &lt;div class=&quot;sheet-head&quot;&gt;&lt;div&gt;&lt;h3&gt;${esc(label(c))}&lt;/h3&gt;${sub(c) ? `&lt;div class=&quot;meta&quot;&gt;${esc(sub(c))}&lt;/div&gt;` : &#x27;&#x27;}&lt;/div&gt;
+        &lt;button data-y=&quot;${cardBack ? &#x27;back&#x27; : &#x27;close&#x27;}&quot;&gt;${cardBack ? &#x27;← Retour&#x27; : &#x27;Fermer&#x27;}&lt;/button&gt;&lt;/div&gt;
+      &lt;div class=&quot;split&quot;&gt;
+        &lt;div&gt;${imgTag(c.i, &#x27;big&#x27;)}&lt;/div&gt;
+        &lt;div style=&quot;display:flex;flex-direction:column;gap:12px;min-width:0&quot;&gt;
+          &lt;dl class=&quot;kv&quot;&gt;&lt;dt&gt;Type&lt;/dt&gt;&lt;dd&gt;${esc(c.ty)}${c.r ? &#x27; · &#x27; + esc(c.r) : &#x27;&#x27;}${c.a ? &#x27; · &#x27; + esc(c.a) : &#x27;&#x27;}&lt;/dd&gt;
+            ${c.l !== &#x27;&#x27; ? `&lt;dt&gt;${/link/.test(c.t) ? &#x27;Lien&#x27; : /xyz/.test(c.t) ? &#x27;Rang&#x27; : &#x27;Niveau&#x27;}&lt;/dt&gt;&lt;dd&gt;${c.l}&lt;/dd&gt;` : &#x27;&#x27;}
+            ${c.k !== &#x27;&#x27; ? `&lt;dt&gt;ATK / DEF&lt;/dt&gt;&lt;dd&gt;${c.k} / ${c.d === &#x27;&#x27; ? &#x27;—&#x27; : c.d}&lt;/dd&gt;` : &#x27;&#x27;}
+            &lt;dt&gt;Dans ta collection&lt;/dt&gt;&lt;dd&gt;&lt;b&gt;${ownedOf(c.i)}&lt;/b&gt;&lt;/dd&gt;&lt;/dl&gt;
+          &lt;div class=&quot;actions&quot; style=&quot;justify-content:flex-start&quot;&gt;
+            ${ds.length ? `&lt;select id=&quot;ycDeck&quot;&gt;${ds.map(([id, d]) =&gt; `&lt;option value=&quot;${id}&quot;&gt;${esc(d.name || &#x27;Deck&#x27;)}&lt;/option&gt;`).join(&#x27;&#x27;)}&lt;/select&gt;&lt;button data-y=&quot;toDeck&quot;&gt;Ajouter au deck&lt;/button&gt;` : &#x27;&#x27;}
+            &lt;a data-y=&quot;cm&quot;&gt;Voir sur Cardmarket ↗&lt;/a&gt;&lt;/div&gt;
+          &lt;h4&gt;Ajouter à ma collection&lt;/h4&gt;
+          &lt;div class=&quot;yprints&quot;&gt;
+            &lt;div class=&quot;yprint&quot; data-gen=&quot;1&quot;&gt;&lt;div&gt;&lt;b&gt;Peu importe l&#x27;extension&lt;/b&gt;&lt;/div&gt;${App.qtyHtml((gen &amp;&amp; gen.qty) || 0)}&lt;/div&gt;
+            ${prints.map(({ p, pi, e }) =&gt; `&lt;div class=&quot;yprint${e &amp;&amp; e.qty ? &#x27; own&#x27; : &#x27;&#x27;}&quot; data-pi=&quot;${pi}&quot;&gt;
+              &lt;div&gt;&lt;span class=&quot;code&quot;&gt;${esc(p[1])}&lt;/span&gt; &lt;span class=&quot;tag&quot;&gt;${esc(p[3] || p[2])}&lt;/span&gt;&lt;div class=&quot;hint&quot;&gt;${esc(setName(p[0]))}&lt;/div&gt;&lt;/div&gt;
+              ${App.qtyHtml((e &amp;&amp; e.qty) || 0)}&lt;/div&gt;`).join(&#x27;&#x27;)}
+          &lt;/div&gt;
+        &lt;/div&gt;&lt;/div&gt;`;
+    loadImages(box);
+  }
+
+  // ---------- Ajout de cartes à la collection ----------
+  function openAdd() {
+    App.openModal(`
+      &lt;div class=&quot;sheet-head&quot;&gt;&lt;h3&gt;Ajouter des cartes&lt;/h3&gt;&lt;button class=&quot;close&quot; data-y=&quot;close&quot;&gt;Fermer&lt;/button&gt;&lt;/div&gt;
+      &lt;input type=&quot;search&quot; id=&quot;yaQ&quot; placeholder=&quot;Nom de carte (français ou anglais), code (SGX1-FRA18) ou extension…&quot; value=&quot;${esc(st.addQ)}&quot; autofocus&gt;
+      &lt;div class=&quot;yresults&quot; id=&quot;yaRes&quot;&gt;&lt;/div&gt;`, &#x27;ygo wide&#x27;, &#x27;ygo-add&#x27;);
+    renderAdd();
+  }
+  // ---------- Extensions : toutes les cartes d&#x27;une extension, pour la compléter ----------
+  function searchSets(q, max = 8) {
+    q = q.trim().toLowerCase(); if (q.length &lt; 2) return [];
+    const words = q.split(/\s+/), uq = q.toUpperCase();
+    const out = [];
+    st.db.sets.forEach((x, i) =&gt; {
+      if (!st.idx.bySet.has(i)) return;
+      const name = x[0].toLowerCase();
+      if (words.every(w =&gt; name.includes(w)) || (x[1] &amp;&amp; x[1].toUpperCase() === uq)) out.push(i);
+    });
+    return out.sort((a, b) =&gt; (st.db.sets[b][2] || &#x27;&#x27;).localeCompare(st.db.sets[a][2] || &#x27;&#x27;)).slice(0, max);
+  }
+  function setPrints(i) {
+    return (st.idx.bySet.get(i) || []).map(([ci, pi]) =&gt; ({ ci, pi, c: st.db.cards[ci], p: st.db.cards[ci].p[pi] }))
+      .sort((a, b) =&gt; a.p[1].localeCompare(b.p[1], &#x27;en&#x27;, { numeric: true }) || a.p[2].localeCompare(b.p[2]));
+  }
+  const qtyOf = (code, r) =&gt; { const e = col()[Core.ygoKey(code, r)]; return (e &amp;&amp; e.qty) || 0; };
+  // Progression : un numéro de carte compte comme possédé si tu as au moins une de ses raretés
+  function setProgress(i) {
+    const codes = new Map();
+    for (const x of setPrints(i)) codes.set(x.p[1], (codes.get(x.p[1]) || 0) + qtyOf(x.p[1], x.p[2]));
+    let own = 0; for (const q of codes.values()) if (q &gt; 0) own++;
+    return { own, total: codes.size };
+  }
+  const rarName = p =&gt; p[3] || p[2];
+  // Manquantes : sans filtre, un numéro manque si tu n&#x27;en as aucune rareté ;
+  // avec une rareté choisie, chaque version de cette rareté compte à part.
+  function setMissing(i) {
+    const all = setPrints(i), r = st.setRarity;
+    if (r) return all.filter(y =&gt; rarName(y.p) === r &amp;&amp; !qtyOf(y.p[1], y.p[2]));
+    return all.filter(y =&gt; !all.some(z =&gt; z.p[1] === y.p[1] &amp;&amp; qtyOf(z.p[1], z.p[2]) &gt; 0));
+  }
+  function setMissingText(i) {
+    const seen = new Set(), lines = [];
+    for (const x of setMissing(i)) {
+      if (seen.has(x.p[1] + &#x27;|&#x27; + (st.setRarity ? x.p[2] : &#x27;&#x27;))) continue;
+      seen.add(x.p[1] + &#x27;|&#x27; + (st.setRarity ? x.p[2] : &#x27;&#x27;));
+      lines.push(`1 ${x.c.n} (${setName(i)})`);
+    }
+    return lines.join(&#x27;\n&#x27;);
+  }
+  // Progression par rareté : nombre de versions possédées / nombre de versions de cette rareté
+  function rarityProgress(i) {
+    const m = new Map();
+    for (const x of setPrints(i)) {
+      const k = rarName(x.p); const v = m.get(k) || { own: 0, total: 0 };
+      v.total++; if (qtyOf(x.p[1], x.p[2]) &gt; 0) v.own++; m.set(k, v);
+    }
+    return [...m.entries()].sort((a, b) =&gt; b[1].total - a[1].total || a[0].localeCompare(b[0]));
+  }
+  function renderSet(el) {
+    const i = st.addSet, x = st.db.sets[i];
+    const { own, total } = setProgress(i);
+    const rars = rarityProgress(i);
+    if (st.setRarity &amp;&amp; !rars.some(([k]) =&gt; k === st.setRarity)) st.setRarity = null;
+    const allV = rars.reduce((a, [, v]) =&gt; ({ own: a.own + v.own, total: a.total + v.total }), { own: 0, total: 0 });
+    let rows = setPrints(i);
+    if (st.setRarity) rows = rows.filter(y =&gt; rarName(y.p) === st.setRarity);
+    if (st.setView === &#x27;miss&#x27;) { const m = new Set(setMissing(i)); rows = rows.filter(y =&gt; m.has(y) || [...m].some(z =&gt; z.ci === y.ci &amp;&amp; z.pi === y.pi)); }
+    const miss = setMissingText(i);
+    const cur = st.setRarity ? rars.find(([k]) =&gt; k === st.setRarity)[1] : null;
+    el.innerHTML = `&lt;div class=&quot;yset-head&quot;&gt;
+        &lt;button data-y=&quot;unset&quot;&gt;← Retour&lt;/button&gt;
+        &lt;div class=&quot;grow&quot;&gt;&lt;b&gt;${esc(x[0])}&lt;/b&gt; &lt;span class=&quot;code&quot;&gt;${esc(x[1] || &#x27;&#x27;)}&lt;/span&gt;${x[2] ? ` &lt;span class=&quot;hint&quot;&gt;${esc(x[2].slice(0, 4))}&lt;/span&gt;` : &#x27;&#x27;}
+          &lt;div class=&quot;bar&quot;&gt;&lt;i style=&quot;width:${(cur ? (cur.total ? cur.own / cur.total : 0) : (total ? own / total : 0)) * 100}%&quot;&gt;&lt;/i&gt;&lt;/div&gt;
+          &lt;span class=&quot;hint&quot;&gt;${cur ? `&lt;b&gt;${cur.own}&lt;/b&gt; / ${cur.total} en ${esc(st.setRarity)}` : `&lt;b&gt;${own}&lt;/b&gt; / ${total} cartes de l&#x27;extension · ${allV.own} / ${allV.total} versions (toutes raretés)`}&lt;/span&gt;&lt;/div&gt;
+        &lt;div class=&quot;seg&quot; id=&quot;ysView&quot;&gt;&lt;button data-sv=&quot;all&quot; aria-pressed=&quot;${st.setView === &#x27;all&#x27;}&quot;&gt;Toutes&lt;/button&gt;&lt;button data-sv=&quot;miss&quot; aria-pressed=&quot;${st.setView === &#x27;miss&#x27;}&quot;&gt;Manquantes&lt;/button&gt;&lt;/div&gt;
+        ${miss ? `&lt;button data-y=&quot;copySet&quot; title=&quot;Format wishlist Cardmarket : 1 Nom (Extension)&quot;&gt;Copier les manquantes&lt;/button&gt;` : &#x27;&#x27;}
+        ${rars.length &gt; 1 ? `&lt;div class=&quot;yrars&quot;&gt;&lt;button class=&quot;chip&quot; data-rar=&quot;&quot; aria-pressed=&quot;${!st.setRarity}&quot;&gt;Toutes raretés&lt;/button&gt;${rars.map(([k, v]) =&gt; `&lt;button class=&quot;chip${v.own === v.total ? &#x27; done&#x27; : &#x27;&#x27;}&quot; data-rar=&quot;${esc(k)}&quot; aria-pressed=&quot;${st.setRarity === k}&quot;&gt;${esc(k)} &lt;b&gt;${v.own}/${v.total}&lt;/b&gt;&lt;/button&gt;`).join(&#x27;&#x27;)}&lt;/div&gt;` : &#x27;&#x27;}&lt;/div&gt;
+      &lt;textarea id=&quot;ysCm&quot; hidden readonly&gt;${esc(miss)}&lt;/textarea&gt;
+      ${rows.length ? rows.map(({ ci, pi, c, p }) =&gt; { const q = qtyOf(p[1], p[2]); return `&lt;div class=&quot;yres${q ? &#x27; owned&#x27; : &#x27;&#x27;}&quot; data-id=&quot;${c.i}&quot;&gt;
+        &lt;button class=&quot;ypic&quot; data-y=&quot;card&quot;&gt;${imgTag(c.i)}&lt;/button&gt;
+        &lt;div class=&quot;yinfo&quot;&gt;&lt;button class=&quot;nm&quot; data-y=&quot;card&quot;&gt;${esc(label(c))}&lt;/button&gt;${sub(c) ? `&lt;span class=&quot;en&quot;&gt;${esc(sub(c))}&lt;/span&gt;` : &#x27;&#x27;}
+          &lt;span class=&quot;meta&quot;&gt;&lt;span class=&quot;code&quot;&gt;${esc(p[1])}&lt;/span&gt;&lt;span class=&quot;rar&quot;&gt;${esc(rarName(p))}&lt;/span&gt;&lt;/span&gt;&lt;/div&gt;
+        &lt;div class=&quot;yquick&quot; data-ci=&quot;${ci}&quot; data-pi=&quot;${pi}&quot;&gt;${App.qtyHtml(q)}&lt;/div&gt;&lt;/div&gt;`; }).join(&#x27;&#x27;) : `&lt;p class=&quot;hint&quot;&gt;${st.setView === &#x27;miss&#x27; ? &#x27;Rien ne manque ici.&#x27; : &#x27;Aucune carte.&#x27;}&lt;/p&gt;`}`;
+    loadImages(el);
+  }
+
+  function renderAdd() {
+    const el = $(&#x27;yaRes&#x27;); if (!el) return;
+    if (st.addSet != null) return renderSet(el);
+    const q = st.addQ.trim();
+    if (!q) { el.innerHTML = `&lt;p class=&quot;hint&quot;&gt;Tape quelques lettres : la recherche porte sur les ${st.db.cards.length.toLocaleString(&#x27;fr-FR&#x27;)} cartes du jeu.&lt;/p&gt;`; return; }
+    const nq = Core.ygoNormCode(q.toUpperCase());
+    const exact = st.idx.byNorm.get(nq) || [];
+    const res = searchCards(q);
+    const sets = searchSets(q);
+    el.innerHTML = (sets.length ? `&lt;h4&gt;Extensions&lt;/h4&gt;&lt;div class=&quot;ysets&quot;&gt;${sets.map(i =&gt; { const { own, total } = setProgress(i); const x = st.db.sets[i];
+      return `&lt;button class=&quot;yset&quot; data-y=&quot;set&quot; data-set=&quot;${i}&quot;&gt;&lt;b&gt;${esc(x[0])}&lt;/b&gt;&lt;span class=&quot;hint&quot;&gt;${esc(x[1] || &#x27;&#x27;)}${x[2] ? &#x27; · &#x27; + esc(x[2].slice(0, 4)) : &#x27;&#x27;} · ${own}/${total}&lt;/span&gt;&lt;/button&gt;`; }).join(&#x27;&#x27;)}&lt;/div&gt;${res.length || exact.length ? &#x27;&lt;h4&gt;Cartes&lt;/h4&gt;&#x27; : &#x27;&#x27;}` : &#x27;&#x27;) + (exact.length ? exact.map(([ci, pi]) =&gt; {
+      const c = st.db.cards[ci], p = c.p[pi], e = col()[Core.ygoKey(p[1], p[2])];
+      return resultHtml(c, `&lt;div class=&quot;yquick&quot; data-ci=&quot;${ci}&quot; data-pi=&quot;${pi}&quot;&gt;&lt;span class=&quot;code&quot;&gt;${esc(p[1])}&lt;/span&gt; &lt;span class=&quot;tag&quot;&gt;${esc(p[3] || p[2])}&lt;/span&gt;${App.qtyHtml((e &amp;&amp; e.qty) || 0)}&lt;/div&gt;`);
+    }).join(&#x27;&#x27;) : &#x27;&#x27;) + (res.length ? res.map(c =&gt; resultHtml(c, `&lt;button data-y=&quot;card&quot;&gt;Choisir l&#x27;extension&lt;/button&gt;`)).join(&#x27;&#x27;) : (exact.length || sets.length ? &#x27;&#x27; : &#x27;&lt;p class=&quot;hint&quot;&gt;Aucune carte ni extension trouvée.&lt;/p&gt;&#x27;));
+    loadImages(el);
+  }
+
+  function refreshOpenModal() {
+    const k = App.modalKind;
+    if (k === &#x27;ygo-deck&#x27;) renderDeck();
+    else if (k === &#x27;ygo-card&#x27;) renderCard();
+    else if (k === &#x27;ygo-add&#x27;) renderAdd();
+  }
+
+  // ---------- Événements ----------
+  $(&#x27;ygoView&#x27;).addEventListener(&#x27;click&#x27;, e =&gt; {
+    const b = e.target.closest(&#x27;button&#x27;); if (!b) return;
+    st.view = b.dataset.v; App.data.settings.ygoView = st.view; App.scheduleSave(); render();
+  });
+  $(&#x27;ygoTools&#x27;).addEventListener(&#x27;click&#x27;, e =&gt; {
+    const b = e.target.closest(&#x27;[data-y]&#x27;); if (!b) return;
+    if (b.dataset.y === &#x27;add&#x27;) return st.db ? openAdd() : refreshDb();
+    if (b.dataset.y === &#x27;newDeck&#x27;) return st.db ? newDeck() : refreshDb();
+  });
+  $(&#x27;ygoTools&#x27;).addEventListener(&#x27;click&#x27;, e =&gt; { const b = e.target.closest(&#x27;#ygoLayout button&#x27;); if (b) setLayout(b.dataset.v); });
+  $(&#x27;ygoTools&#x27;).addEventListener(&#x27;input&#x27;, e =&gt; { if (e.target.id === &#x27;ygoQ&#x27;) { st.q = e.target.value; render(); } });
+  $(&#x27;ygoTools&#x27;).addEventListener(&#x27;change&#x27;, e =&gt; { if (e.target.id === &#x27;ygoSort&#x27;) { st.sort = e.target.value; render(); } });
+  $(&#x27;ygoList&#x27;).addEventListener(&#x27;click&#x27;, e =&gt; {
+    const b = e.target.closest(&#x27;[data-y],[data-act]&#x27;); if (!b) return;
+    if (b.dataset.y === &#x27;dl&#x27;) return refreshDb();
+    if (b.dataset.y === &#x27;deck&#x27;) return openDeck(b.dataset.deck);
+    const row = b.closest(&#x27;[data-id]&#x27;);
+    if (b.dataset.y === &#x27;card&#x27; &amp;&amp; row) return openCard(Number(row.dataset.id));
+    if (b.dataset.act &amp;&amp; row &amp;&amp; row.dataset.key) {
+      const key = row.dataset.key;
+      changeEntry(key, col()[key], b.dataset.act === &#x27;inc&#x27; ? 1 : -1);
+      render();
+    }
+  });
+
+  let addTimer = null, deckTimer = null;
+  $(&#x27;sheet&#x27;).addEventListener(&#x27;input&#x27;, e =&gt; {
+    if (e.target.id === &#x27;yaQ&#x27;) { st.addQ = e.target.value; st.addSet = null; clearTimeout(addTimer); addTimer = setTimeout(renderAdd, 150); }
+    if (e.target.id === &#x27;ydQ&#x27;) { st.deckQ = e.target.value; clearTimeout(deckTimer); deckTimer = setTimeout(() =&gt; renderDeck(true), 200); }
+  });
+  $(&#x27;sheet&#x27;).addEventListener(&#x27;change&#x27;, e =&gt; {
+    if (e.target.id === &#x27;ydName&#x27;) { const d = decks()[st.deckId]; if (d) { d.name = e.target.value.trim() || &#x27;Deck sans nom&#x27;; touchDeck(d); render(); } }
+  });
+  $(&#x27;sheet&#x27;).addEventListener(&#x27;click&#x27;, async e =&gt; {
+    const k = App.modalKind; if (!k || !k.startsWith(&#x27;ygo&#x27;)) return;
+    const b = e.target.closest(&#x27;[data-y],[data-act],[data-v],[data-sv],[data-rar]&#x27;); if (!b) return;
+    const y = b.dataset.y;
+    if (y === &#x27;close&#x27;) return App.closeModal();
+    if (y === &#x27;back&#x27;) { const back = cardBack; cardBack = null; return back &amp;&amp; back(); }
+    const row = b.closest(&#x27;[data-id]&#x27;);
+    if (y === &#x27;card&#x27; &amp;&amp; row) {
+      const back = k === &#x27;ygo-add&#x27; ? openAdd : k === &#x27;ygo-deck&#x27; ? (() =&gt; openDeck(st.deckId, true)) : null;
+      return openCard(Number(row.dataset.id), back);
+    }
+    // fiche carte : quantités par impression
+    if (k === &#x27;ygo-card&#x27; &amp;&amp; b.dataset.act) {
+      const id = Number($(&#x27;ycardSheet&#x27;).dataset.id), pr = b.closest(&#x27;.yprint&#x27;);
+      const delta = b.dataset.act === &#x27;inc&#x27; ? 1 : -1;
+      if (pr.dataset.gen) addGeneric(id, delta); else addPrinting(st.idx.byId.get(id), Number(pr.dataset.pi), delta);
+      renderCard(); render(); return;
+    }
+    if (k === &#x27;ygo-card&#x27; &amp;&amp; y === &#x27;toDeck&#x27;) {
+      const d = decks()[$(&#x27;ycDeck&#x27;).value]; const id = Number($(&#x27;ycardSheet&#x27;).dataset.id);
+      if (d) { d.cards = d.cards || {}; d.cards[id] = (d.cards[id] || 0) + 1; touchDeck(d); App.toast(`Ajoutée à ${d.name}`); render(); }
+      return;
+    }
+    if (k === &#x27;ygo-card&#x27; &amp;&amp; y === &#x27;cm&#x27;) {
+      const c = card(Number($(&#x27;ycardSheet&#x27;).dataset.id));
+      return window.coffre.openExternal(`https://www.cardmarket.com/fr/YuGiOh/Products/Search?searchString=${encodeURIComponent(c.n)}`);
+    }
+    // ajout rapide par code exact
+    if (k === &#x27;ygo-add&#x27; &amp;&amp; b.dataset.rar != null) { st.setRarity = b.dataset.rar || null; return renderAdd(); }
+    if (k === &#x27;ygo-add&#x27; &amp;&amp; y === &#x27;set&#x27;) { st.addSet = Number(b.dataset.set); st.setView = &#x27;all&#x27;; st.setRarity = null; $(&#x27;yaRes&#x27;).scrollTop = 0; return renderAdd(); }
+    if (k === &#x27;ygo-add&#x27; &amp;&amp; y === &#x27;unset&#x27;) { st.addSet = null; return renderAdd(); }
+    if (k === &#x27;ygo-add&#x27; &amp;&amp; b.dataset.sv) { st.setView = b.dataset.sv; return renderAdd(); }
+    if (k === &#x27;ygo-add&#x27; &amp;&amp; y === &#x27;copySet&#x27;) {
+      const text = $(&#x27;ysCm&#x27;).value; let ok = false;
+      try { await navigator.clipboard.writeText(text); ok = true; } catch (err) { ok = false; }
+      App.toast(ok ? &#x27;Manquantes copiées : colle-les dans ta wishlist Cardmarket&#x27; : &#x27;Copie impossible sur cet appareil&#x27;);
+      return;
+    }
+    if (k === &#x27;ygo-add&#x27; &amp;&amp; b.dataset.act) {
+      const q = b.closest(&#x27;.yquick&#x27;);
+      addPrinting(Number(q.dataset.ci), Number(q.dataset.pi), b.dataset.act === &#x27;inc&#x27; ? 1 : -1);
+      renderAdd(); render(); return;
+    }
+    // deck
+    if (k === &#x27;ygo-deck&#x27;) {
+      const d = decks()[st.deckId]; if (!d) return;
+      d.cards = d.cards || {};
+      if (b.dataset.v &amp;&amp; b.closest(&#x27;#ydLayout&#x27;)) { setLayout(b.dataset.v); return renderDeck(); }
+      if (b.dataset.v) { st.deckView = b.dataset.v; return renderDeck(); }
+      if (y === &#x27;dadd&#x27; &amp;&amp; row) { const id = Number(row.dataset.id); d.cards[id] = (d.cards[id] || 0) + 1; touchDeck(d); renderDeck(); render(); return; }
+      if (y === &#x27;dq&#x27; &amp;&amp; row) {
+        const id = Number(row.dataset.id); const n = (d.cards[id] || 0) + Number(b.dataset.d);
+        if (n &gt; 0) d.cards[id] = n; else delete d.cards[id];
+        touchDeck(d); renderDeck(); render(); return;
+      }
+      if (y === &#x27;copy&#x27;) {
+        const text = $(&#x27;ydCm&#x27;).value;
+        let ok = false;
+        try { await navigator.clipboard.writeText(text); ok = true; } catch (err) { /* repli ci-dessous */ }
+        if (!ok) { const t = $(&#x27;ydCm&#x27;); t.removeAttribute(&#x27;readonly&#x27;); t.select(); try { ok = document.execCommand(&#x27;copy&#x27;); } catch (err) { ok = false; } t.setAttribute(&#x27;readonly&#x27;, &#x27;&#x27;); }
+        App.toast(ok ? &#x27;Liste copiée : colle-la dans ta wishlist Cardmarket&#x27; : &#x27;Sélectionne le texte et copie-le à la main&#x27;);
+        return;
+      }
+      if (y === &#x27;delDeck&#x27;) {
+        if (b.dataset.sure) { decks()[st.deckId] = { deleted: true, mt: now() }; App.scheduleSave(); App.closeModal(); render(); App.toast(&#x27;Deck supprimé&#x27;); }
+        else { b.dataset.sure = &#x27;1&#x27;; b.textContent = &#x27;Confirmer la suppression&#x27;; }
+      }
+    }
+  });
+
+  // ---------- Pour le scan (appli Android) ----------
+  // Cherche les impressions correspondant aux codes lus sur une carte (ex. SGX1-FRA18 → SGX1-ENA18).
+  function lookupCodes(codes) {
+    if (!st.idx) return [];
+    const out = [];
+    for (const code of codes) {
+      const hit = st.idx.byNorm.get(Core.ygoNormCode(code));
+      if (hit) { out.push({ code, prints: hit.map(([ci, pi]) =&gt; ({ ci, pi, card: st.db.cards[ci], p: st.db.cards[ci].p[pi] })) }); }
+    }
+    return out;
+  }
+
+  window.CoffreYgo = {
+    render, refreshDb, lookupCodes, addPrinting, openCard, label,
+    get ready() { return !!st.db; },
+    imgTag, loadImages,
+    ownedOf
+  };
+  const start = () =&gt; { st.view = App.data.settings.ygoView === &#x27;decks&#x27; ? &#x27;decks&#x27; : &#x27;col&#x27;; render(); loadDb(); };
+  if (window.coffreReady) start(); else document.addEventListener(&#x27;coffre:ready&#x27;, start, { once: true });
+})();
+</pre></details>
+<details><summary><code>src/renderer/styles.css</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ .yrars, .yrars .chip { … }   /* pastilles de rareté */</span></pre></details>
+<details><summary><code>package.json, mobile/package.json</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ &quot;version&quot;: &quot;1.3.5&quot;,</span></pre></details>
 <h2>v1.3.4 <span class="d">— 16/10/2026</span></h2>
 <ul><li>Yu-Gi-Oh : dans « Ajouter des cartes », la recherche trouve aussi les <b>extensions</b> (par nom ou par code, ex. « LOB »). Une extension affiche toutes ses cartes avec ta progression, le filtre Manquantes et l’ajout direct (+ / −).</li><li><b>Copier les manquantes</b> d’une extension au format wishlist Cardmarket : « 1 Dark Magician (Legend of Blue Eyes White Dragon) ».</li></ul>
 <details><summary><code>src/renderer/ygo.js</code> <span class="mod">modifié</span></summary><pre>// Coffre — onglet Yu-Gi-Oh : toutes les cartes du jeu (base YGOPRODeck),
