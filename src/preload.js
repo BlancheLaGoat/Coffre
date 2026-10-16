@@ -17,6 +17,10 @@ contextBridge.exposeInMainWorld('coffre', {
   checkUpdate: () => ipcRenderer.invoke('update:check'),
   installUpdate: () => ipcRenderer.invoke('update:install'),
   onUpdate: cb => ipcRenderer.on('update:status', (_e, s) => cb(s)),
+  // Yu-Gi-Oh : base de cartes et images
+  ygoDb: () => ipcRenderer.invoke('ygo:db'),
+  ygoRefresh: () => ipcRenderer.invoke('ygo:refresh'),
+  ygoImg: (id, big) => ipcRenderer.invoke('ygo:img', id, big),
   // Synchronisation avec l'appli Android
   syncInfo: () => ipcRenderer.invoke('sync:info'),
   syncReset: () => ipcRenderer.invoke('sync:reset'),

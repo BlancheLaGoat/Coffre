@@ -20,12 +20,16 @@
     return out;
   }
 
-  function mergeCollections(base, inc) {
-    return { fm: mergeMaps(base.fm, inc.fm), vinyls: mergeMaps(base.vinyls, inc.vinyls) };
+  // Ce qui se synchronise : cartes FM, vinyles, collection Yu-Gi-Oh et decks (chaque entrée porte « mt »)
+  const PARTS = ['fm', 'vinyls', 'ygo', 'decks'];
+  function pickCollections(d) {
+    const o = {}; for (const k of PARTS) o[k] = (d && d[k]) || {}; return o;
   }
-
+  function mergeCollections(base, inc) {
+    const o = {}; for (const k of PARTS) o[k] = mergeMaps(base && base[k], inc && inc[k]); return o;
+  }
   function sameCollections(a, b) {
-    return JSON.stringify(a.fm || {}) === JSON.stringify(b.fm || {}) && JSON.stringify(a.vinyls || {}) === JSON.stringify(b.vinyls || {});
+    return PARTS.every(k => JSON.stringify((a && a[k]) || {}) === JSON.stringify((b && b[k]) || {}));
   }
 
   // ---------- Recherche de vinyles ----------
@@ -132,5 +136,96 @@
     };
   }
 
-  return { mergeMaps, mergeCollections, sameCollections, createVinylApi };
+  // ---------- Base de cartes Yu-Gi-Oh (YGOPRODeck) ----------
+  const YGO_API = 'https://db.ygoprodeck.com/api/v7/';
+  const YGO_URLS = {
+    en: YGO_API + 'cardinfo.php',
+    fr: YGO_API + 'cardinfo.php?language=fr',
+    sets: YGO_API + 'cardsets.php'
+  };
+  const ygoImgUrl = (id, big) => `https://images.ygoprodeck.com/images/${big ? 'cards' : 'cards_small'}/${id}.jpg`;
+
+  // Garde seulement ce dont l'appli a besoin (quelques Mo au lieu de plusieurs dizaines).
+  // Carte : { i: id, n: nom anglais, f: nom français, t: cadre, ty: type, r: race, a: attribut,
+  //           l: niveau/lien, k: ATK, d: DEF, im: [ids d'images], p: [[n° extension, code, rareté courte, rareté]] }
+  function ygoCompact(en, fr, sets) {
+    const frName = new Map(((fr && fr.data) || []).map(c => [c.id, c.name]));
+    const info = new Map((Array.isArray(sets) ? sets : []).map(x => [x.set_name, x]));
+    const setIdx = new Map(); const setList = [];
+    const cards = [];
+    for (const c of (en && en.data) || []) {
+      const p = [];
+      for (const x of c.card_sets || []) {
+        let i = setIdx.get(x.set_name);
+        if (i === undefined) {
+          i = setList.length; setIdx.set(x.set_name, i);
+          const inf = info.get(x.set_name) || {};
+          setList.push([x.set_name, inf.set_code || String(x.set_code || '').split('-')[0], inf.tcg_date || '']);
+        }
+        const short = String(x.set_rarity_code || '').replace(/[()]/g, '') || String(x.set_rarity || '?').replace(/[^A-Z]/g, '') || '?';
+        p.push([i, String(x.set_code || ''), short, String(x.set_rarity || '')]);
+      }
+      const frn = frName.get(c.id);
+      cards.push({
+        i: c.id, n: c.name, f: frn && frn !== c.name ? frn : '', t: c.frameType || '', ty: c.humanReadableCardType || c.type || '',
+        r: c.race || '', a: c.attribute || '', l: c.level != null ? c.level : (c.linkval != null ? c.linkval : ''),
+        k: c.atk != null ? c.atk : '', d: c.def != null ? c.def : '',
+        im: (c.card_images || []).map(x => x.id), p
+      });
+    }
+    return { v: 1, at: Date.now(), cards, sets: setList };
+  }
+
+  // Clé d'une impression dans la collection : « SGX1-ENA18|C »
+  const ygoKey = (code, rarity) => `${code}|${rarity}`;
+
+  // Code sans la langue : SGX1-ENA18 et SGX1-FRA18 → SGX1-A18 (même carte, même extension)
+  function ygoNormCode(code) {
+    const c = String(code || '').toUpperCase().replace(/\s+/g, '');
+    const m = c.match(/^([A-Z0-9]{2,5})-([A-Z0-9]+)$/);
+    if (!m) return c;
+    const rest = m[2].replace(/^(EN|FR|DE|IT|SP|ES|PT|JP|JA|KR|AE|SC|TC|E|F|G|I|S|P|K|J)(?=[A-Z]?\d)/, '');
+    return m[1] + '-' + rest;
+  }
+
+  // Codes de carte trouvés dans un texte lu par l'appareil photo, avec variantes pour les erreurs de lecture
+  function ygoCodesInText(text) {
+    const t = String(text || '').toUpperCase().replace(/[‐-―−]/g, '-');
+    const out = [];
+    const re = /\b([A-Z0-9]{2,5})\s?-\s?([A-Z]{0,3}[0-9OILSZBG]{2,3})\b/g;
+    let m;
+    while ((m = re.exec(t))) {
+      out.push(m[1] + '-' + m[2]);
+      // Dans la partie numérique, la lecture confond parfois O/0, I/1, S/5…
+      const tail = m[2].match(/^([A-Z]{0,3}?)([0-9OILSZBG]{2,3})$/);
+      if (tail) {
+        const fixed = tail[2].replace(/O/g, '0').replace(/[IL]/g, '1').replace(/S/g, '5').replace(/Z/g, '2').replace(/B/g, '8').replace(/G/g, '6');
+        if (fixed !== tail[2]) out.push(m[1] + '-' + tail[1] + fixed);
+      }
+    }
+    return [...new Set(out)];
+  }
+
+  // Index utiles à l'interface (calculés une fois)
+  function ygoIndex(db) {
+    const byId = new Map(); const byNorm = new Map(); const bySet = new Map();
+    db.cards.forEach((c, ci) => {
+      byId.set(c.i, ci);
+      c.s = (c.n + ' ' + c.f + ' ' + c.p.map(x => x[1]).join(' ')).toLowerCase();
+      c.p.forEach((x, pi) => {
+        const nk = ygoNormCode(x[1]);
+        if (!byNorm.has(nk)) byNorm.set(nk, []);
+        byNorm.get(nk).push([ci, pi]);
+        if (!bySet.has(x[0])) bySet.set(x[0], []);
+        bySet.get(x[0]).push([ci, pi]);
+      });
+    });
+    return { byId, byNorm, bySet };
+  }
+
+  // Ligne pour la wishlist Cardmarket : « 2 Dark Magician »
+  const cmLine = (qty, name) => `${qty} ${name}`;
+
+  return { PARTS, pickCollections, mergeMaps, mergeCollections, sameCollections, createVinylApi,
+    YGO_URLS, ygoImgUrl, ygoCompact, ygoKey, ygoNormCode, ygoCodesInText, ygoIndex, cmLine };
 });

@@ -12,6 +12,7 @@
       <h1>Coffre de Blanche</h1>
       <nav class="tabs" id="tabs" role="tablist">
         <button role="tab" data-tab="fm"><span class="k fm-k">◆</span> Cartes FM <span class="count" id="tabFmCount"></span></button>
+        <button role="tab" data-tab="ygo"><span class="k ygo-k">★</span> Yu-Gi-Oh <span class="count" id="tabYgoCount"></span></button>
         <button role="tab" data-tab="vin"><span class="k vin-k">●</span> Vinyles <span class="count" id="tabVinCount"></span></button>
       </nav>
     </div>
@@ -57,6 +58,24 @@
       <div class="list" id="fmList"></div>
     </section>
 
+    <!-- ===== YU-GI-OH (toutes les cartes du jeu) ===== -->
+    <section class="shelf ygo">
+      <div class="shelf-head">
+        <div class="title-row">
+          <h2><span class="k">★</span> Yu-Gi-Oh</h2>
+          <span class="big" id="ygoStats"></span>
+        </div>
+        <div class="tools">
+          <div class="seg" id="ygoView">
+            <button data-v="col">Ma collection</button>
+            <button data-v="decks">Decks</button>
+          </div>
+        </div>
+        <div class="tools" id="ygoTools"></div>
+      </div>
+      <div class="list" id="ygoList"></div>
+    </section>
+
     <!-- ===== VINYLES ===== -->
     <section class="shelf vin">
       <div class="shelf-head">
@@ -89,7 +108,9 @@
   <!-- Fenêtres -->
   <div class="overlay" id="modal" hidden><div class="sheet" id="sheet" role="dialog" aria-modal="true"></div></div>
 
+  <script src="../shared/coffre-core.js"></script>
   <script src="fm-data.js"></script>
   <script src="app.js"></script>
+  <script src="ygo.js"></script>
 </body>
 </html>

@@ -25,6 +25,8 @@ const DATA_FILE = path.join(DATA_DIR, 'coffre.json');
 const PREV_FILE = path.join(DATA_DIR, 'coffre.precedent.json');
 const COVERS_DIR = path.join(DATA_DIR, 'pochettes');
 const SYNC_FILE = path.join(DATA_DIR, 'synchro.json');
+const YGO_FILE = path.join(DATA_DIR, 'yugioh-cartes.json');     // base de cartes (YGOPRODeck), retéléchargeable
+const YGO_IMG_DIR = path.join(DATA_DIR, 'yugioh-images');       // images des cartes, téléchargées à la demande
 
 function ensureDirs() {
   fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -32,7 +34,7 @@ function ensureDirs() {
 }
 
 function defaultData() {
-  return { version: 1, fm: {}, vinyls: {}, settings: { source: 'musicbrainz', discogsToken: '', discogsKey: '', discogsSecret: '', layout: 'gal' } };
+  return { version: 1, fm: {}, vinyls: {}, ygo: {}, decks: {}, settings: { source: 'musicbrainz', discogsToken: '', discogsKey: '', discogsSecret: '', layout: 'gal' } };
 }
 
 function loadData() {
@@ -168,7 +170,7 @@ async function handleSync(req, res) {
     if (url.pathname === '/api/sync' && req.method === 'POST') {
       const inc = JSON.parse((await readBody(req, 20 * 1024 * 1024)).toString('utf8'));
       const cur = loadData();
-      const merged = Core.mergeCollections(cur, { fm: inc.fm || {}, vinyls: inc.vinyls || {} });
+      const merged = Core.mergeCollections(cur, Core.pickCollections(inc));
       if (!Core.sameCollections(merged, cur)) {
         writeData({ ...cur, ...merged });
         notifyDataChanged(merged);
@@ -176,6 +178,12 @@ async function handleSync(req, res) {
       const s = loadSync(); s.lastSync = { device: String(inc.device || 'Téléphone').slice(0, 60), at: Date.now() }; saveSync(s);
       if (win && !win.isDestroyed()) win.webContents.send('sync:status', s.lastSync);
       return sendJson(res, 200, { ...merged, covers: listCovers(), name: os.hostname() });
+    }
+    if (url.pathname === '/api/ygodb' && req.method === 'GET') {
+      const txt = ygoRead();
+      if (!txt) return sendJson(res, 404, { error: 'base de cartes absente sur le PC' });
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      return res.end(txt);
     }
     if (url.pathname === '/api/cover') {
       const p = safeCoverPath(url.searchParams.get('name'));
@@ -217,6 +225,49 @@ async function syncInfo() {
   let qr = '';
   if (QRCode) { try { qr = await QRCode.toDataURL(payload, { margin: 1, width: 320, errorCorrectionLevel: 'M' }); } catch (e) { qr = ''; } }
   return { ips, port: SYNC_PORT, code: s.token.slice(0, 8).toUpperCase(), token: s.token, qr, lastSync: s.lastSync, running: !!(syncServer && syncServer.listening), error: syncError };
+}
+
+// ---------- Base de cartes Yu-Gi-Oh ----------
+// Téléchargée depuis YGOPRODeck (gratuit), compactée puis gardée dans %AppData%\Coffre.
+let ygoBusy = null;
+function ygoRead() {
+  try { return fs.existsSync(YGO_FILE) ? fs.readFileSync(YGO_FILE, 'utf8') : ''; } catch (e) { return ''; }
+}
+function ygoDownload() {
+  if (ygoBusy) return ygoBusy;
+  ygoBusy = (async () => {
+    const [en, fr, sets] = await Promise.all([
+      getJson(Core.YGO_URLS.en),
+      getJson(Core.YGO_URLS.fr).catch(() => null),
+      getJson(Core.YGO_URLS.sets).catch(() => [])
+    ]);
+    const db = Core.ygoCompact(en, fr, sets);
+    if (!db.cards.length) throw new Error('La base de cartes reçue est vide.');
+    ensureDirs();
+    fs.writeFileSync(YGO_FILE + '.tmp', JSON.stringify(db));
+    fs.renameSync(YGO_FILE + '.tmp', YGO_FILE);
+    return db;
+  })().finally(() => { ygoBusy = null; });
+  return ygoBusy;
+}
+
+// Image d'une carte : téléchargée une fois, puis lue depuis le disque
+const ygoImgJobs = new Map();
+function ygoImage(id, big) {
+  id = parseInt(id, 10);
+  if (!id) return Promise.resolve('');
+  const file = path.join(YGO_IMG_DIR, `${id}${big ? '-grand' : ''}.jpg`);
+  if (fs.existsSync(file)) return Promise.resolve(pathToFileURL(file).href);
+  if (ygoImgJobs.has(file)) return ygoImgJobs.get(file);
+  const job = (async () => {
+    const res = await fetch(Core.ygoImgUrl(id, big), { headers: { 'User-Agent': USER_AGENT } });
+    if (!res.ok) return '';
+    fs.mkdirSync(YGO_IMG_DIR, { recursive: true });
+    fs.writeFileSync(file, Buffer.from(await res.arrayBuffer()));
+    return pathToFileURL(file).href;
+  })().catch(() => '').finally(() => ygoImgJobs.delete(file));
+  ygoImgJobs.set(file, job);
+  return job;
 }
 
 // ---------- Fenêtre ----------
@@ -337,7 +388,7 @@ ipcMain.handle('backup:import', async () => {
   if (r.canceled || !r.filePaths[0]) return { ok: false };
   const b = JSON.parse(fs.readFileSync(r.filePaths[0], 'utf8'));
   const data = b.format === 'coffre-backup' ? b.data : b;
-  if (!data || typeof data !== 'object' || (!data.fm && !data.vinyls)) throw new Error("Ce fichier n'est pas une sauvegarde Coffre.");
+  if (!data || typeof data !== 'object' || (!data.fm && !data.vinyls && !data.ygo && !data.decks)) throw new Error("Ce fichier n'est pas une sauvegarde Coffre.");
   ensureDirs();
   for (const [name, b64] of Object.entries(b.covers || {})) {
     const p = safeCoverPath(name);
@@ -347,11 +398,15 @@ ipcMain.handle('backup:import', async () => {
   const now = Date.now();
   const restamp = m => Object.fromEntries(Object.entries(m || {}).map(([k, v]) => [k, { ...v, mt: now }]));
   const cur = loadData();
-  const merged = Core.mergeCollections(cur, { fm: restamp(data.fm), vinyls: restamp(data.vinyls) });
+  const merged = Core.mergeCollections(cur, { fm: restamp(data.fm), vinyls: restamp(data.vinyls), ygo: restamp(data.ygo), decks: restamp(data.decks) });
   const out = { ...cur, ...merged };
   writeData(out);
   return { ok: true, data: out };
 });
+
+ipcMain.handle('ygo:db', () => { const t = ygoRead(); return t ? JSON.parse(t) : null; });
+ipcMain.handle('ygo:refresh', () => ygoDownload());
+ipcMain.handle('ygo:img', (_e, id, big) => ygoImage(id, big));
 
 ipcMain.handle('open:external', (_e, url) => { if (/^https?:\/\//.test(url)) shell.openExternal(url); });
 ipcMain.handle('open:dataDir', () => shell.openPath(DATA_DIR));

@@ -94,7 +94,7 @@
   }
 
   // ---------- Données ----------
-  const defaultData = () => ({ version: 1, fm: {}, vinyls: {}, settings: { source: 'musicbrainz', discogsToken: '', layout: 'gal' } });
+  const defaultData = () => ({ version: 1, fm: {}, vinyls: {}, ygo: {}, decks: {}, settings: { source: 'musicbrainz', discogsToken: '', layout: 'gal' } });
   let coversUrl = '';
   let lastSyncedJson = '';
 
@@ -135,7 +135,7 @@
     async load() {
       try { await FS.mkdir({ path: 'pochettes', directory: DATA, recursive: true }); } catch (e) { /* existe déjà */ }
       const d = await readJson('coffre.json', null) || await readJson('coffre.precedent.json', null) || defaultData();
-      d.fm = d.fm || {}; d.vinyls = d.vinyls || {}; d.settings = { ...defaultData().settings, ...(d.settings || {}) };
+      d.fm = d.fm || {}; d.vinyls = d.vinyls || {}; d.ygo = d.ygo || {}; d.decks = d.decks || {}; d.settings = { ...defaultData().settings, ...(d.settings || {}) };
       return d;
     },
     async save(d) {
@@ -143,7 +143,7 @@
       const prev = await readText('coffre.json');
       if (prev) await writeText('coffre.precedent.json', prev);
       await writeText('coffre.json', text);
-      if (JSON.stringify({ fm: d.fm, vinyls: d.vinyls }) !== lastSyncedJson) Sync.soon();
+      if (JSON.stringify(Core.pickCollections(d)) !== lastSyncedJson) Sync.soon();
       return true;
     },
     search: args => vinylApi.search(args),
@@ -188,12 +188,12 @@
       const f = await pickFile('.coffre,.json,application/json,application/octet-stream,*/*'); if (!f) return { ok: false };
       const b = JSON.parse(await f.text());
       const data = b.format === 'coffre-backup' ? b.data : b;
-      if (!data || typeof data !== 'object' || (!data.fm && !data.vinyls)) throw new Error("Ce fichier n'est pas une sauvegarde Coffre.");
+      if (!data || typeof data !== 'object' || (!data.fm && !data.vinyls && !data.ygo && !data.decks)) throw new Error("Ce fichier n'est pas une sauvegarde Coffre.");
       for (const [name, b64] of Object.entries(b.covers || {})) if (COVER_RE.test(name)) await writeB64('pochettes/' + name, b64);
       const now = Date.now();
       const restamp = m => Object.fromEntries(Object.entries(m || {}).map(([k, v]) => [k, { ...v, mt: now }]));
       const cur = window.CoffreApp.data;
-      const merged = Core.mergeCollections(cur, { fm: restamp(data.fm), vinyls: restamp(data.vinyls) });
+      const merged = Core.mergeCollections(cur, { fm: restamp(data.fm), vinyls: restamp(data.vinyls), ygo: restamp(data.ygo), decks: restamp(data.decks) });
       const out = { ...cur, ...merged };
       await window.coffre.save(out);
       return { ok: true, data: out };
@@ -204,10 +204,69 @@
       window.open(url, '_blank');
     },
     openDataDir() {},
+    // ---------- Yu-Gi-Oh : base de cartes et images ----------
+    async ygoDb() { return readJson('yugioh-cartes.json', null); },
+    async ygoRefresh() {
+      let db = null;
+      // 1. depuis le PC associé (rapide, déjà compactée)
+      if (Sync.pair) {
+        try { db = await Sync.reach(h => Sync.call(h, '/api/ygodb', { method: 'GET', readTimeout: 120000 })); } catch (e) { db = null; }
+        if (db && !(db.cards && db.cards.length)) db = null;
+      }
+      // 2. sinon directement depuis YGOPRODeck
+      if (!db) {
+        const get = async url => {
+          const res = await http({ url, headers: { 'User-Agent': UA, Accept: 'application/json' }, readTimeout: 180000 });
+          if (res.status < 200 || res.status >= 300) throw new Error(`YGOPRODeck a répondu ${res.status}.`);
+          return asJson(res.data);
+        };
+        const en = await get(Core.YGO_URLS.en);
+        const fr = await get(Core.YGO_URLS.fr).catch(() => null);
+        const sets = await get(Core.YGO_URLS.sets).catch(() => []);
+        db = Core.ygoCompact(en, fr, sets);
+      }
+      await writeText('yugioh-cartes.json', JSON.stringify(db));
+      return db;
+    },
+    ygoImg(id, big) { return ygoImage(id, big); },
     checkUpdate,
     installUpdate() { if (apkUrl) return window.coffre.openExternal(apkUrl); },
     onUpdate(cb) { updateCb = cb; }
   };
+
+  // Images des cartes Yu-Gi-Oh : téléchargées une fois puis gardées sur le téléphone
+  let ygoImgBase = null, ygoImgHave = null;
+  const ygoImgJobs = new Map(); let ygoImgRunning = 0; const ygoImgQueue = [];
+  async function ygoImgInit() {
+    if (ygoImgHave) return;
+    try { await FS.mkdir({ path: 'yugioh-images', directory: DATA, recursive: true }); } catch (e) { /* existe déjà */ }
+    const u = await FS.getUri({ path: 'yugioh-images', directory: DATA });
+    ygoImgBase = Cap.convertFileSrc(u.uri) + '/';
+    ygoImgHave = new Set();
+    try { const r = await FS.readdir({ path: 'yugioh-images', directory: DATA }); (r.files || []).forEach(f => ygoImgHave.add(typeof f === 'string' ? f : f.name)); } catch (e) { /* vide */ }
+  }
+  function ygoImage(id, big) {
+    id = parseInt(id, 10); if (!id) return Promise.resolve('');
+    const name = `${id}${big ? '-grand' : ''}.jpg`;
+    if (ygoImgJobs.has(name)) return ygoImgJobs.get(name);
+    const job = (async () => {
+      await ygoImgInit();
+      if (ygoImgHave.has(name)) return ygoImgBase + name;
+      // au plus 6 téléchargements en même temps
+      if (ygoImgRunning >= 6) await new Promise(r => ygoImgQueue.push(r));
+      ygoImgRunning++;
+      try {
+        const res = await http({ url: Core.ygoImgUrl(id, big), responseType: 'blob', headers: { 'User-Agent': UA } });
+        if (res.status < 200 || res.status >= 300 || !res.data) return '';
+        await writeB64('yugioh-images/' + name, res.data);
+        ygoImgHave.add(name);
+        return ygoImgBase + name;
+      } finally { ygoImgRunning--; const next = ygoImgQueue.shift(); if (next) next(); }
+    })().catch(() => '');
+    ygoImgJobs.set(name, job);
+    job.then(u => { if (!u) ygoImgJobs.delete(name); });
+    return job;
+  }
 
   // ============================================================
   //  SYNCHRONISATION AVEC LE PC
@@ -221,7 +280,7 @@
     async init() {
       this.pair = await readJson('appairage.json', null);
       const app = window.CoffreApp.data;
-      lastSyncedJson = this.pair ? '' : JSON.stringify({ fm: app.fm, vinyls: app.vinyls });
+      lastSyncedJson = this.pair ? '' : JSON.stringify(Core.pickCollections(app));
       if (P.App) P.App.addListener('resume', () => this.run());
       document.addEventListener('visibilitychange', () => { if (!document.hidden) this.run(); });
       setInterval(() => { if (!document.hidden) this.run(); }, 45000);
@@ -260,16 +319,16 @@
       const App = window.CoffreApp;
       try {
         const d = App.data;
-        const sent = { fm: d.fm, vinyls: d.vinyls };
+        const sent = Core.pickCollections(d);
         const res = await this.reach(h => this.call(h, '/api/sync', { method: 'POST', data: { device: 'Téléphone', ...sent } }));
         // Fusion avec ce qui a pu changer sur le téléphone pendant l'échange
-        const merged = Core.mergeCollections({ fm: App.data.fm, vinyls: App.data.vinyls }, res);
+        const merged = Core.mergeCollections(App.data, res);
         if (!Core.sameCollections(merged, App.data)) {
           lastSyncedJson = JSON.stringify(merged);
           App.applyRemote(merged);
           App.scheduleSave();
         }
-        lastSyncedJson = JSON.stringify({ fm: merged.fm, vinyls: merged.vinyls });
+        lastSyncedJson = JSON.stringify(Core.pickCollections(merged));
         await this.syncCovers(merged, res.covers || []);
         this.pair.pcName = res.name || this.pair.pcName;
         this.pair.lastSync = Date.now(); this.pair.lastError = '';
@@ -277,7 +336,7 @@
         this.setStatus('');
         if (manual) App.toast('Synchronisé avec le PC');
         // Un changement fait pendant l'échange doit repartir vers le PC
-        if (JSON.stringify({ fm: App.data.fm, vinyls: App.data.vinyls }) !== lastSyncedJson) this.soon();
+        if (JSON.stringify(Core.pickCollections(App.data)) !== lastSyncedJson) this.soon();
         return true;
       } catch (e) {
         this.pair.lastError = e.message || String(e);

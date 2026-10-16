@@ -1,6 +1,6 @@
 # Coffre
 
-Appli Windows **et Android** pour gérer ta collection : les 722 cartes de **Yu-Gi-Oh! Forbidden Memories** (avec images) et tes **vinyles** (recherche en ligne avec pochettes via MusicBrainz ou Discogs). Sur le téléphone, l'appareil photo reconnaît les cartes par leur illustration et lit le code-barres des vinyles. Le PC et le téléphone se synchronisent sur le Wi-Fi.
+Appli Windows **et Android** pour gérer ta collection : les 722 cartes de **Yu-Gi-Oh! Forbidden Memories** (avec images), **toutes les cartes Yu-Gi-Oh** (collection par extension et decks) et tes **vinyles** (recherche en ligne avec pochettes via MusicBrainz ou Discogs). Sur le téléphone, l'appareil photo reconnaît les cartes par leur illustration et lit le code-barres des vinyles. Le PC et le téléphone se synchronisent sur le Wi-Fi.
 
 Tes données sont rangées dans `%AppData%\Coffre` (fichier `coffre.json` + dossier `pochettes`). Les mises à jour de l'appli n'y touchent jamais.
 
@@ -79,11 +79,21 @@ Ensuite, chaque tag de version (`v1.1.0`, `v1.1.1`…) produit aussi `Coffre-And
 ### Scanner
 - **Cartes FM** : onglet Cartes FM → **📷 Scanner des cartes**. Pose la carte bien à plat dans le cadre. Les 6 cartes les plus ressemblantes s'affichent en bas : touche la bonne pour l'ajouter. Avec **Ajout auto** coché, la carte est ajoutée toute seule quand l'appli est sûre d'elle ; retire-la du cadre et passe à la suivante. **Annuler** retire la dernière ajoutée.
   La reconnaissance regarde seulement l'illustration, donc les vieilles cartes japonaises sans code marchent aussi. 13 cartes n'ont pas d'image dans l'appli : celles-là, ajoute-les à la main.
-- **Vinyles** : onglet Vinyles → **📷 Scanner un vinyle**.
-  - S'il y a un code-barres, vise-le : la recherche se lance toute seule.
-  - Sinon, cadre la pochette (le recto, ou le dos s'il y a du texte) et touche **Reconnaître la pochette**. Coffre lit le texte imprimé, cherche avec, puis met en premier les disques dont la pochette ressemble à ta photo (« Même pochette »). Les mots lus s'affichent sous la recherche : touche-les pour les ajouter ou les retirer. Si la pochette n'a aucun texte, tape l'artiste ou l'album : les résultats seront quand même classés selon la photo.
-  - Touche le bon pressage puis **Ajouter au coffre**.
+- **Cartes Yu-Gi-Oh** : onglet Yu-Gi-Oh → **📷 Scanner des cartes**. Place la carte dans le cadre : Coffre lit le code imprimé sous l'illustration (ex. SGX1-FRA18) et ajoute la bonne impression à ta collection. Une carte française est reconnue comme sa version anglaise (même extension). Si plusieurs raretés existent pour ce code, touche la bonne.
+- **Vinyles** : onglet Vinyles → **📷 Scanner un code-barres** → vise le code-barres au dos. La recherche se lance toute seule ; touche le bon pressage puis **Ajouter au coffre**. Sans code-barres, cherche le disque à la main avec « Rechercher un vinyle ».
 - Quand tu fais défiler une liste, le haut de l'écran se replie pour tout laisser aux cartes ; remonte un peu pour le faire revenir. Le bouton rond 📷 permet de scanner sans remonter.
+
+---
+
+## 6. Yu-Gi-Oh (toutes les cartes du jeu)
+
+La première fois, l'onglet **Yu-Gi-Oh** propose de **télécharger la base de cartes** (YGOPRODeck, gratuite : environ 13 000 cartes avec toutes leurs extensions, noms anglais et français). Elle se met ensuite à jour toute seule toutes les deux semaines. Sur le téléphone associé, elle est récupérée depuis le PC. Les images des cartes se téléchargent au fur et à mesure, puis restent sur l'appareil.
+
+- **Ma collection** : seulement les cartes que tu as. **Ajouter des cartes** → tape un nom (français ou anglais) ou un code (ex. SGX1-FRA18) → choisis l'extension et la rareté, ou « Peu importe l'extension ».
+- **Decks** : **Nouveau deck**, donne-lui un nom, puis ajoute n'importe quelle carte du jeu, même si tu ne l'as pas. Chaque carte indique combien tu en possèdes ; le filtre **Manquantes** montre ce qu'il te faut.
+- **Wishlist Cardmarket** : dans un deck, **Copier la liste** copie les cartes manquantes au format Cardmarket (`2 Dark Magician`, une carte par ligne). Sur Cardmarket : Wishlist → ajouter des cartes → colle la liste.
+
+Tout se synchronise entre le PC et le téléphone, comme le reste.
 
 ---
 

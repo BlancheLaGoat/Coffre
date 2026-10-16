@@ -186,12 +186,12 @@
     view.dataset.mode = m;
     view.hidden = false;
     $('scanCands').innerHTML = ''; $('scanActions').innerHTML = '';
-    $('scanAutoWrap').hidden = m !== 'card';
+    $('scanAutoWrap').hidden = m !== 'card' && m !== 'ygo';
     $('scanAuto').checked = App.data.settings.scanAuto !== false;
-    $('scanTitle').textContent = m === 'card' ? 'Scanner des cartes' : m === 'vinyl' ? 'Scanner un vinyle' : 'QR code du PC';
-    if (m === 'vinyl') $('scanActions').innerHTML = `<button class="scan-shot" data-scan="cover">📸 Reconnaître la pochette</button>`;
+    $('scanTitle').textContent = m === 'card' ? 'Scanner des cartes FM' : m === 'ygo' ? 'Scanner des cartes Yu-Gi-Oh' : m === 'vinyl' ? 'Code-barres du vinyle' : 'QR code du PC';
+    Object.assign(yg, { busy: false, last: '', seen: 0, armed: true, missing: 0, hit: null, added: [] });
     cam.smooth = null; cam.lead = ''; cam.leadCount = 0; cam.armed = true; cam.lastAuto = ''; cam.added = [];
-    msg(m === 'card' ? 'Place la carte dans le cadre, bien à plat.' : m === 'vinyl' ? "Cadre la pochette et touche le bouton, ou vise un code-barres s'il y en a un." : 'Vise le QR code affiché dans les réglages de Coffre sur le PC.');
+    msg(m === 'card' ? 'Place la carte dans le cadre, bien à plat.' : m === 'vinyl' ? 'Vise le code-barres au dos de la pochette.' : m === 'ygo' ? (TextReader ? 'Place la carte dans le cadre : le code sous l\'illustration (ex. SGX1-FRA18) est lu tout seul.' : 'La lecture du code n\'est pas disponible sur cet appareil.') : 'Vise le QR code affiché dans les réglages de Coffre sur le PC.');
     layoutFrame();
     try {
       if (m === 'card') {
@@ -214,6 +214,7 @@
     stopCamera();
     const view = $('scanView'); if (view) view.hidden = true;
     if (qrResolve) { qrResolve(''); qrResolve = null; }
+    if (mode === 'ygo' && yg.added.length) App.toast(`${yg.added.length} carte${yg.added.length > 1 ? 's' : ''} Yu-Gi-Oh ajoutée${yg.added.length > 1 ? 's' : ''}`);
     if (mode === 'card' && cam.added.length) App.toast(`${cam.added.length} carte${cam.added.length > 1 ? 's' : ''} ajoutée${cam.added.length > 1 ? 's' : ''}`);
     mode = '';
   }
@@ -225,10 +226,10 @@
     const fr = $('scanFrame'); if (!fr) return;
     const W = window.innerWidth, H = window.innerHeight;
     let w, h;
-    if (mode === 'card') {
+    if (mode === 'card' || mode === 'ygo') {
       const maxH = H * 0.56, maxW = W * 0.78;
       h = Math.min(maxH, maxW / CARD_RATIO); w = h * CARD_RATIO;
-    } else if (mode === 'vinyl') { w = Math.min(W * 0.86, H * 0.48); h = w; }
+    } else if (mode === 'vinyl') { w = W * 0.86; h = Math.min(H * 0.22, w * 0.5); }
     else { w = Math.min(W * 0.7, H * 0.45); h = w; }
     fr.style.width = w + 'px'; fr.style.height = h + 'px';
     fr.style.left = (W - w) / 2 + 'px'; fr.style.top = Math.max(64, H * 0.40 - h / 2) + 'px';
@@ -252,11 +253,12 @@
     const t0 = performance.now();
     try {
       if (mode === 'card') tickCard();
+      else if (mode === 'ygo') tickYgo();
       else tickCode();
     } catch (e) { /* image pas prête */ }
     if (!stream) return;
     const spent = performance.now() - t0;
-    loopTimer = setTimeout(loop, Math.max(120, (mode === 'card' ? 380 : 220) - spent));
+    loopTimer = setTimeout(loop, Math.max(120, (mode === 'card' ? 380 : mode === 'ygo' ? 500 : 220) - spent));
   }
 
   // ---------- Cartes ----------
@@ -380,142 +382,76 @@
 
 
   // ============================================================
-  //  VINYLES SANS CODE-BARRES : photo de la pochette
-  //  1. on lit le texte de la pochette (artiste, titre, référence) sur le téléphone, sans internet ;
-  //  2. on cherche avec ces mots ;
-  //  3. on classe les résultats selon la ressemblance de leur pochette avec la photo.
+  //  YU-GI-OH : lecture du code imprimé sous l'illustration (ex. SGX1-FRA18)
+  //  par le module Android ML Kit, puis recherche de l'impression dans la base.
   // ============================================================
-  // Lecture du texte par le module Android (ML Kit) : rapide et sans internet.
   const TextReader = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.TextReader;
   const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('trop long')), ms))]);
+  const ycv = document.createElement('canvas');
+  const yg = { busy: false, last: '', seen: 0, armed: true, missing: 0, hit: null, added: [] };
 
-  // Lignes de texte lisibles, classées : gros texte d'abord (souvent l'artiste et le titre)
-  const JUNK = /^(stereo|mono|records?|recordings?|vinyl|vinyle|lp|ep|side|face|rpm|made|in|feat|ft|presents?|edition|remaster(ed)?|digital|music|inc|ltd|all|rights|reserved|the|and|et|de|la|le|les|of)$/i;
-  function cleanLine(text) {
-    return String(text || '').split(/\s+/)
-      .map(w => w.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ''))
-      .filter(w => w.length >= 2 && /\p{L}{2}|\p{N}{2}/u.test(w))
-      .join(' ');
+  async function tickYgo() {
+    if (yg.busy || !TextReader) return;
+    const Y = window.CoffreYgo;
+    if (!Y || !Y.ready) { msg("La base de cartes n'est pas encore téléchargée : ouvre l'onglet Yu-Gi-Oh."); return; }
+    const v = $('scanVideo'), r = frameInVideo(); if (!r) return;
+    // Bas de la carte (code et texte), en bonne résolution
+    const y0 = r.y + r.h * 0.55, h = r.h * 0.45;
+    const k = Math.min(2, 1100 / r.w);
+    ycv.width = Math.round(r.w * k); ycv.height = Math.round(h * k);
+    ycv.getContext('2d').drawImage(v, r.x, y0, r.w, h, 0, 0, ycv.width, ycv.height);
+    yg.busy = true;
+    try {
+      const res = await withTimeout(TextReader.read({ image: ycv.toDataURL('image/jpeg', 0.92).split(',')[1] }), 4000);
+      if (mode !== 'ygo') return;
+      const hits = Y.lookupCodes(window.CoffreCore.ygoCodesInText(res.text));
+      onYgoHit(hits[0] || null);
+    } catch (e) { /* lecture ratée : on réessaie à la prochaine image */ }
+    finally { yg.busy = false; }
   }
-  function linesFrom(raw) {
-    const seen = new Set();
-    return (raw || [])
-      .map(l => ({ t: cleanLine(l.text), h: l.h || 10 }))
-      .filter(l => l.t && l.t.length <= 48 && l.t.split(' ').some(w => !JUNK.test(w)))
-      .sort((a, b) => b.h - a.h)
-      .filter(l => { const k = l.t.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
-  }
-  // Plusieurs recherches courtes plutôt qu'une longue : un mot mal lu ne fait plus tout rater
-  function buildQueries(lines) {
-    const strip = t => t.split(' ').filter(w => !JUNK.test(w)).join(' ');
-    const big = lines.slice(0, 4).map(l => strip(l.t)).filter(Boolean);
-    const qs = [];
-    if (big[0] && big[1]) qs.push(big[0] + ' ' + big[1]);
-    big.slice(0, 3).forEach(t => qs.push(t));
-    if (big[0] && big[2]) qs.push(big[0] + ' ' + big[2]);
-    // Référence catalogue (ex. « SHVL 804 », « 7243 8 49606 »), très précise si elle est lue
-    for (const l of lines) {
-      const m = l.t.match(/\b[A-Z]{1,6}[ .-]?\d{2,6}(?:[ .-]?\d{1,4})?\b/);
-      if (m) { qs.push(m[0]); break; }
+
+  function onYgoHit(hit) {
+    if (!hit) {
+      yg.missing++;
+      if (yg.missing >= 2) { yg.armed = true; yg.last = ''; yg.seen = 0; }   // carte retirée : prêt pour la suivante
+      if (!yg.hit) msg('Vise le code sous l\'illustration (ex. SGX1-FRA18), bien net.');
+      return;
     }
-    return [...new Set(qs.map(q => q.trim()).filter(q => q.replace(/[^\p{L}\p{N}]/gu, '').length >= 3))].slice(0, 5);
-  }
-
-  const snapCanvas = document.createElement('canvas');
-  let reading = false;
-  async function recognizeCover() {
-    const v = $('scanVideo'), r = frameInVideo();
-    if (!r || !stream || reading) return;
-    reading = true;
-    // Photo carrée de la pochette ; on arrête la recherche de code-barres pendant la lecture
-    clearTimeout(loopTimer); loopTimer = null;
-    const k = Math.min(1, 1200 / r.w);
-    snapCanvas.width = Math.round(r.w * k); snapCanvas.height = Math.round(r.h * k);
-    snapCanvas.getContext('2d').drawImage(v, r.x, r.y, r.w, r.h, 0, 0, snapCanvas.width, snapCanvas.height);
-    v.pause();
-    if (navigator.vibrate) navigator.vibrate(30);
-    const btn = $('scanView').querySelector('[data-scan=cover]'); if (btn) btn.disabled = true;
-    const photo = describe(snapCanvas, 0, 0, snapCanvas.width, snapCanvas.height);
-    let words = [];
-    if (TextReader) {
-      try {
-        msg('Lecture du texte de la pochette…');
-        const b64 = snapCanvas.toDataURL('image/jpeg', 0.9).split(',')[1];
-        const res = await withTimeout(TextReader.read({ image: b64 }), 15000);
-        words = linesFrom(res.lines);
-      } catch (e) { words = []; }
+    yg.missing = 0;
+    const key = hit.prints.map(p => p.ci + ':' + p.pi).join(',');
+    if (key === yg.last) yg.seen++; else { yg.last = key; yg.seen = 1; if (yg.hit && !yg.armed) yg.armed = true; }
+    yg.hit = hit;
+    renderYgo();
+    // Ajout automatique : même code lu deux fois de suite, une seule rareté possible
+    if ($('scanAuto').checked && yg.armed && yg.seen >= 2 && hit.prints.length === 1) {
+      yg.armed = false;
+      addYgo(hit.prints[0], true);
     }
-    reading = false;
-    if (mode !== 'vinyl') return;
-    close();
-    App.showTab('vin');
-    openCoverSearch(words, photo);
   }
 
-  // Lignes lues sur la photo : touche une ligne pour chercher avec elle seule
-  let coverLines = [];
-  const coverHint = () => coverLines.length
-    ? `<span>Texte lu sur la pochette (touche une ligne pour chercher avec) :</span>` + coverLines.slice(0, 12).map(l => `<button type="button" class="chip" data-ocr="${esc(l.t)}">${esc(l.t)}</button>`).join('')
-    : `<span>Aucun texte lisible sur cette pochette : tape l'artiste ou l'album. Les résultats seront classés selon leur ressemblance avec ta photo.</span>`;
-
-  const wait = ms => new Promise(r => setTimeout(r, ms));
-  async function openCoverSearch(lines, photo) {
-    coverLines = lines;
-    const queries = buildQueries(lines);
-    App.presetSearch({ q: queries[0] || '', hint: coverHint(), rerank: list => rerankByCover(list, photo) });
-    if (!queries.length) { App.setResults([], { done: true }); return; }
-    // MusicBrainz accepte une requête par seconde ; Discogs est plus souple
-    const gap = App.searchSource === 'discogs' ? 300 : 1100;
-    const merged = []; const ids = new Set(); let lastErr = '';
-    for (let i = 0; i < queries.length; i++) {
-      if (i) await wait(gap);
-      try {
-        const r = await App.searchRaw(queries[i]);
-        for (const x of r.results || []) {
-          const k = x.source + ':' + x.id;
-          if (!ids.has(k)) { ids.add(k); merged.push(x); }
-        }
-      } catch (e) { lastErr = String(e.message || e); }
-      App.setResults(merged.slice(), { loading: i < queries.length - 1 });
-    }
-    App.setResults(merged, { done: true, error: merged.length ? '' : lastErr });
+  function renderYgo() {
+    const Y = window.CoffreYgo, hit = yg.hit;
+    if (!hit) return;
+    const c = hit.prints[0].card;
+    msg(hit.prints.length > 1 ? 'Plusieurs raretés existent pour ce code : touche la bonne.' : '');
+    $('scanCands').innerHTML = `<div class="ycand">${Y.imgTag(c.i)}<div><b>${esc(Y.label(c))}</b>${c.f ? `<span>${esc(c.n)}</span>` : ''}
+      <span class="code">${esc(hit.prints[0].p[1])}</span> · ${Y.ownedOf(c.i)} dans ta collection</div></div>
+      <div class="ychoices">${hit.prints.map((x, i) => `<button class="primary" data-scan="yadd" data-i="${i}">+ ${esc(x.p[3] || x.p[2])}</button>`).join('')}</div>`;
+    Y.loadImages($('scanCands'));
+    $('scanActions').innerHTML = yg.added.length
+      ? `<span>Ajoutées : <b>${yg.added.length}</b></span><button data-scan="yundo">Annuler</button>`
+      : `<span>${$('scanAuto').checked ? 'Ajout automatique dès que le code est lu deux fois.' : 'Touche la rareté pour ajouter la carte.'}</span>`;
   }
-  document.addEventListener('click', e => {
-    const b = e.target.closest('#sHint [data-ocr]'); if (!b) return;
-    App.rerunSearch(b.dataset.ocr);
-  });
 
-  // Ressemblance entre la photo et la pochette de chaque résultat
-  const thumbCache = new Map();
-  async function thumbDescriptor(url) {
-    if (thumbCache.has(url)) return thumbCache.get(url);
-    const p = (async () => {
-      const b64 = await window.CoffreNet.getImageB64(url);
-      if (!b64) return null;
-      const img = new Image(); img.src = 'data:image/jpeg;base64,' + b64; await img.decode();
-      return describe(img, 0, 0, img.naturalWidth, img.naturalHeight);
-    })().catch(() => null);
-    thumbCache.set(url, p);
-    return p;
-  }
-  async function rerankByCover(list, photo) {
-    const N = Math.min(list.length, 40);
-    const head = list.slice(0, N), tail = list.slice(N);
-    const scores = new Map();
-    let i = 0;
-    const work = async () => {
-      while (i < head.length) {
-        const r = head[i++];
-        if (!r.thumb) continue;
-        const d = await thumbDescriptor(r.thumb);
-        if (d) { let s = 0; for (let j = 0; j < DIM; j++) s += d[j] * photo[j]; scores.set(r, s); }
-      }
-    };
-    await Promise.all([work(), work(), work(), work(), work(), work()]);
-    const sorted = head.map((r, idx) => ({ r, idx, s: scores.has(r) ? scores.get(r) : -1 }))
-      .sort((a, b) => (b.s - a.s) || (a.idx - b.idx))
-      .map(({ r, s }) => ({ ...r, match: s >= 0.75 ? 'Même pochette' : s >= 0.6 ? 'Pochette ressemblante' : '' }));
-    return sorted.concat(tail);
+  function addYgo(x, auto) {
+    const Y = window.CoffreYgo;
+    const q = Y.addPrinting(x.ci, x.pi, 1);
+    yg.added.push(x);
+    Y.render();
+    if (navigator.vibrate) navigator.vibrate(auto ? [30, 40, 30] : 30);
+    App.toast(`${Y.label(x.card)} (${x.p[1]}) ajoutée · ×${q}`);
+    const fr = $('scanFrame'); fr.classList.remove('ok'); void fr.offsetWidth; fr.classList.add('ok');
+    renderYgo();
   }
 
   // ---------- Boutons ----------
@@ -523,7 +459,13 @@
     const b = e.target.closest('[data-scan]'); if (!b) return;
     const act = b.dataset.scan;
     if (act === 'close') return close();
-    if (act === 'cover') return recognizeCover();
+    if (act === 'yadd' && yg.hit) return addYgo(yg.hit.prints[Number(b.dataset.i)], false);
+    if (act === 'yundo') {
+      const x = yg.added.pop(); if (!x) return;
+      window.CoffreYgo.addPrinting(x.ci, x.pi, -1); window.CoffreYgo.render();
+      App.toast(`${window.CoffreYgo.label(x.card)} retirée`);
+      return renderYgo();
+    }
     if (act === 'add') return addCard(b.dataset.n, false);
     if (act === 'undo') {
       const n = cam.added.pop(); if (!n) return;
@@ -545,15 +487,22 @@
     }
     if (vinTools && !$('scanVinBtn')) {
       const b = document.createElement('button');
-      b.id = 'scanVinBtn'; b.className = 'primary scan-btn'; b.textContent = '📷 Scanner un vinyle';
+      b.id = 'scanVinBtn'; b.className = 'primary scan-btn'; b.textContent = '📷 Scanner un code-barres';
       b.addEventListener('click', () => open('vinyl'));
       vinTools.prepend(b);
+    }
+    const ygoTools = document.querySelector('.shelf.ygo .tools');
+    if (ygoTools && !$('scanYgoBtn')) {
+      const b = document.createElement('button');
+      b.id = 'scanYgoBtn'; b.className = 'primary scan-btn'; b.textContent = '📷 Scanner des cartes';
+      b.addEventListener('click', () => open('ygo'));
+      ygoTools.prepend(b);
     }
     // Bouton rond qui reste visible quand l'en-tête est replié
     if (!$('scanFab')) {
       const f = document.createElement('button');
       f.id = 'scanFab'; f.className = 'scan-fab'; f.textContent = '📷'; f.setAttribute('aria-label', 'Scanner');
-      f.addEventListener('click', () => open($('shelves').dataset.tab === 'vin' ? 'vinyl' : 'card'));
+      f.addEventListener('click', () => open({ vin: 'vinyl', ygo: 'ygo' }[$('shelves').dataset.tab] || 'card'));
       document.body.appendChild(f);
     }
   }
@@ -564,6 +513,8 @@
   window.CoffreScan = {
     openCards: () => open('card'),
     openBarcode: () => open('vinyl'),
+    openYgo: () => open('ygo'),
+    _ygoHit: onYgoHit,
     scanQr() { return new Promise(resolve => { if (qrResolve) qrResolve(''); qrResolve = resolve; open('qr'); }); },
     isOpen: () => !!$('scanView') && !$('scanView').hidden,
     close,

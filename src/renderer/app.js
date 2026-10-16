@@ -60,7 +60,7 @@ function openModal(html, cls = '') {
   if (first) first.focus();
 }
 function closeModal() { $('modal').hidden = true; $('sheet').innerHTML = ''; modalKind = null; }
-$('modal').addEventListener('mousedown', e => { if (e.target.id === 'modal' && ['card', 'vinyl', 'settings'].includes(modalKind)) closeModal(); });
+$('modal').addEventListener('mousedown', e => { if (e.target.id === 'modal' && ['card', 'vinyl', 'settings', 'ygo-card', 'ygo-add'].includes(modalKind)) closeModal(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('modal').hidden) closeModal(); });
 
 // ============================================================
@@ -628,7 +628,7 @@ window.coffre.onUpdate(s => {
 // ============================================================
 //  DÉMARRAGE
 // ============================================================
-function renderAll() { renderFm(); renderVinyls(); }
+function renderAll() { renderFm(); renderVinyls(); if (window.CoffreYgo) window.CoffreYgo.render(); }
 
 // Onglets Cartes FM / Vinyles (Ctrl+1 et Ctrl+2 au clavier)
 function showTab(tab) {
@@ -640,12 +640,13 @@ $('tabs').addEventListener('click', e => { const b = e.target.closest('[data-tab
 document.addEventListener('keydown', e => {
   if (!e.ctrlKey || !$('modal').hidden) return;
   if (e.key === '1') showTab('fm');
-  if (e.key === '2') showTab('vin');
+  if (e.key === '2') showTab('ygo');
+  if (e.key === '3') showTab('vin');
 });
 
 // Changements arrivés d'un autre appareil (synchro)
 function applyRemote(c) {
-  data.fm = c.fm || data.fm; data.vinyls = c.vinyls || data.vinyls;
+  data.fm = c.fm || data.fm; data.vinyls = c.vinyls || data.vinyls; data.ygo = c.ygo || data.ygo || {}; data.decks = c.decks || data.decks || {};
   renderAll();
   if (modalKind === 'vinyl') {
     const id = $('sheet').querySelector('[data-id]')?.dataset.id;
@@ -665,7 +666,10 @@ function toast(text) {
 
 // Accès pour le module de scan (appli Android)
 window.CoffreApp = {
-  get data() { return data; }, CARDS, HAS_IMG, cardImg, esc,
+  get data() { return data; }, CARDS, HAS_IMG, cardImg, esc, qtyHtml,
+  get modalKind() { return modalKind; },
+  openModal(html, cls, kind) { modalKind = kind; openModal(html, cls); },
+  get info() { return info; },
   changeQty, renderFm, renderVinyls, renderAll, scheduleSave, toast, applyRemote, showTab,
   openCard, openRelease, closeModal, coverUrl,
   // opts (appli Android) : rerank(résultats) → résultats triés ; hint : HTML affiché sous la barre de recherche
@@ -699,7 +703,10 @@ window.CoffreApp = {
   seg('fmLayout', data.settings.layout || 'gal', v => { data.settings.layout = v; scheduleSave(); renderFm(); });
   seg('fmView', 'all', v => { fmF.v = v; renderFm(); });
   seg('vinView', 'all', v => { vinF.v = v; renderVinyls(); });
-  showTab(data.settings.tab === 'vin' ? 'vin' : 'fm');
+  data.ygo = data.ygo || {}; data.decks = data.decks || {};
+  showTab(['vin', 'ygo'].includes(data.settings.tab) ? data.settings.tab : 'fm');
   renderAll();
   if (ext.ready) ext.ready();
+  window.coffreReady = true;
+  document.dispatchEvent(new Event('coffre:ready'));
 })();

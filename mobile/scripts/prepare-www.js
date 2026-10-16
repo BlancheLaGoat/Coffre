@@ -13,6 +13,7 @@ fs.mkdirSync(path.join(WWW, 'cards'), { recursive: true });
 
 const copy = (from, to) => fs.copyFileSync(from, path.join(WWW, to));
 copy(path.join(R, 'app.js'), 'app.js');
+copy(path.join(R, 'ygo.js'), 'ygo.js');
 copy(path.join(R, 'styles.css'), 'styles.css');
 copy(path.join(R, 'fm-data.js'), 'fm-data.js');
 copy(path.join(ROOT, 'src', 'shared', 'coffre-core.js'), 'coffre-core.js');
@@ -33,6 +34,7 @@ html = html
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#1b1a1f">`)
   .replace('<link rel="stylesheet" href="styles.css">', '<link rel="stylesheet" href="styles.css">\n  <link rel="stylesheet" href="mobile.css">')
+  .replace('<script src="../shared/coffre-core.js"></script>\n', '')
   .replace('<script src="fm-data.js"></script>',
     `<script src="version.js"></script>
   <script src="fm-data.js"></script>
