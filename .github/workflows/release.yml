@@ -1,0 +1,33 @@
+# Compile Coffre pour Windows et publie l'installeur dans les Releases GitHub.
+# Se lance tout seul quand tu pousses un tag de version (ex. v1.1.0),
+# ou à la main depuis l'onglet Actions du repo (bouton "Run workflow").
+name: Publier une version
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      - name: Installer Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Installer les dépendances
+        run: npm install
+
+      - name: Compiler et publier
+        run: npm run release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

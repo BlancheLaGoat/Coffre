@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file: data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'">
+  <title>Coffre</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <h1>Coffre de Blanche</h1>
+      <span class="sub">Cartes Forbidden Memories et vinyles</span>
+    </div>
+    <div class="top-right">
+      <div class="update" id="updateBar" hidden></div>
+      <span class="saved" id="savedState"></span>
+      <button class="icon-btn" id="settingsBtn" title="Réglages" aria-label="Réglages">⚙</button>
+    </div>
+  </header>
+
+  <main class="shelves">
+    <!-- ===== CARTES FM ===== -->
+    <section class="shelf fm">
+      <div class="shelf-head">
+        <div class="title-row">
+          <h2><span class="k">◆</span> Forbidden Memories</h2>
+          <span class="big"><b id="fmOwned">0</b> / 722 · <span id="fmCopies">0</span> exemplaires</span>
+        </div>
+        <div class="bar"><i id="fmBar"></i></div>
+        <div class="tools">
+          <input type="search" id="fmSearch" placeholder="Nom, n° ou mot de passe…" aria-label="Rechercher une carte">
+          <select id="fmType" aria-label="Type de carte">
+            <option value="">Tous les types</option>
+            <option value="M">Monstres</option>
+            <option value="G">Magies</option>
+            <option value="E">Équipements</option>
+            <option value="F">Terrains</option>
+            <option value="R">Rituels</option>
+            <option value="T">Pièges</option>
+          </select>
+          <div class="seg" id="fmLayout">
+            <button data-v="gal">Galerie</button>
+            <button data-v="list">Liste</button>
+          </div>
+          <div class="seg" id="fmView">
+            <button data-v="all" aria-pressed="true">Toutes</button>
+            <button data-v="own">Possédées</button>
+            <button data-v="miss">Manquantes</button>
+            <button data-v="dup">Doubles</button>
+          </div>
+        </div>
+      </div>
+      <div class="list" id="fmList"></div>
+    </section>
+
+    <!-- ===== VINYLES ===== -->
+    <section class="shelf vin">
+      <div class="shelf-head">
+        <div class="title-row">
+          <h2><span class="k">●</span> Vinyles</h2>
+          <span class="big"><b id="vinOwned">0</b> disques · <span id="vinWish">0</span> recherchés</span>
+        </div>
+        <div class="tools">
+          <button class="primary" id="vinFindBtn">Rechercher un vinyle</button>
+          <button id="vinManualBtn">Ajouter à la main</button>
+        </div>
+        <div class="tools">
+          <input type="search" id="vinFilter" placeholder="Filtrer ma collection…" aria-label="Filtrer ma collection">
+          <select id="vinSort" aria-label="Trier">
+            <option value="artist">Par artiste</option>
+            <option value="added">Derniers ajouts</option>
+            <option value="year">Par année</option>
+          </select>
+          <div class="seg" id="vinView">
+            <button data-v="all" aria-pressed="true">Tous</button>
+            <button data-v="own">Ma collection</button>
+            <button data-v="wish">Recherchés</button>
+          </div>
+        </div>
+      </div>
+      <div class="list" id="vinList"></div>
+    </section>
+  </main>
+
+  <!-- Fenêtres -->
+  <div class="overlay" id="modal" hidden><div class="sheet" id="sheet" role="dialog" aria-modal="true"></div></div>
+
+  <script src="fm-data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

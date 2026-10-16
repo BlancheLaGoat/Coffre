@@ -1,0 +1,1268 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Journal des modifications — Coffre</title>
+<style>body{font:14px/1.5 "Segoe UI",system-ui,sans-serif;max-width:1000px;margin:30px auto;padding:0 20px;background:#14121b;color:#ece9f5}
+h1{margin:0 0 4px}h2{margin:28px 0 8px;color:#e3b54a}.d{color:#9a95ad}details{border:1px solid #322e42;border-radius:8px;margin:6px 0;background:#1d1a27}
+summary{cursor:pointer;padding:8px 12px}pre{margin:0;padding:12px;overflow:auto;max-height:520px;font:12px Consolas,monospace;background:#100e16;border-top:1px solid #322e42}
+.new{font-size:11px;background:#1f3a26;color:#6cc58c;padding:1px 6px;border-radius:4px}ul{margin:4px 0 0}</style></head><body>
+<h1>Journal des modifications</h1><p class="d">Coffre — clique sur un fichier pour voir son code.</p>
+<h2>v1.0.0 <span class="d">— 16/10/2026</span></h2>
+<ul><li>Création de l’appli : cartes Forbidden Memories (722, dont 709 avec image) et vinyles côte à côte.</li>
+<li>Recherche de vinyles en ligne avec pochettes (MusicBrainz sans clé, Discogs avec token), fiche détaillée avec pistes, ajout au coffre.</li>
+<li>Ajout manuel avec ta propre photo de pochette, sauvegarde/restauration complète, mises à jour automatiques via GitHub Releases.</li></ul>
+<details><summary><code>src/main.js</code> <span class="new">nouveau</span> — Processus principal : stockage, recherche MusicBrainz/Discogs, pochettes, sauvegardes, mises à jour</summary><pre>// Coffre — processus principal Electron
+// Gère la fenêtre, le stockage local, la recherche de vinyles (MusicBrainz / Discogs),
+// les pochettes et les mises à jour automatiques via GitHub Releases.
+
+const { app, BrowserWindow, ipcMain, dialog, shell } = require(&#x27;electron&#x27;);
+const path = require(&#x27;path&#x27;);
+const fs = require(&#x27;fs&#x27;);
+const { pathToFileURL } = require(&#x27;url&#x27;);
+const crypto = require(&#x27;crypto&#x27;);
+
+let autoUpdater = null;
+try { autoUpdater = require(&#x27;electron-updater&#x27;).autoUpdater; } catch (e) { autoUpdater = null; }
+
+const USER_AGENT = `Coffre/${app.getVersion()} ( https://github.com/BlancheLaGoat/Coffre )`;
+
+// ---------- Chemins ----------
+const DATA_DIR = app.getPath(&#x27;userData&#x27;);            // %AppData%\Coffre
+const DATA_FILE = path.join(DATA_DIR, &#x27;coffre.json&#x27;);
+const PREV_FILE = path.join(DATA_DIR, &#x27;coffre.precedent.json&#x27;);
+const COVERS_DIR = path.join(DATA_DIR, &#x27;pochettes&#x27;);
+
+function ensureDirs() {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.mkdirSync(COVERS_DIR, { recursive: true });
+}
+
+function defaultData() {
+  return { version: 1, fm: {}, vinyls: {}, settings: { source: &#x27;musicbrainz&#x27;, discogsToken: &#x27;&#x27;, layout: &#x27;gal&#x27; } };
+}
+
+function loadData() {
+  ensureDirs();
+  for (const f of [DATA_FILE, PREV_FILE]) {
+    try {
+      if (fs.existsSync(f)) {
+        const d = JSON.parse(fs.readFileSync(f, &#x27;utf8&#x27;));
+        const base = defaultData();
+        return { ...base, ...d, settings: { ...base.settings, ...(d.settings || {}) } };
+      }
+    } catch (e) { /* fichier abîmé : on essaie le précédent */ }
+  }
+  return defaultData();
+}
+
+function saveData(data) {
+  ensureDirs();
+  const tmp = DATA_FILE + &#x27;.tmp&#x27;;
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 2), &#x27;utf8&#x27;);
+  if (fs.existsSync(DATA_FILE)) fs.copyFileSync(DATA_FILE, PREV_FILE);
+  fs.renameSync(tmp, DATA_FILE);
+  return true;
+}
+
+// ---------- Réseau ----------
+async function getJson(url, headers = {}) {
+  const res = await fetch(url, { headers: { &#x27;User-Agent&#x27;: USER_AGENT, Accept: &#x27;application/json&#x27;, ...headers } });
+  if (res.status === 401 || res.status === 403) throw new Error(&#x27;Clé Discogs refusée. Vérifie ton token dans les réglages.&#x27;);
+  if (res.status === 429 || res.status === 503) throw new Error(&#x27;Le site limite les recherches. Attends quelques secondes et réessaie.&#x27;);
+  if (!res.ok) throw new Error(`Le serveur a répondu ${res.status}.`);
+  return res.json();
+}
+
+// MusicBrainz : gratuit, sans clé. Pochettes via Cover Art Archive.
+function mbArtist(credit) {
+  return (credit || []).map(c =&gt; (c.name || c.artist?.name || &#x27;&#x27;) + (c.joinphrase || &#x27;&#x27;)).join(&#x27;&#x27;).trim();
+}
+
+async function searchMusicBrainz(q, page) {
+  const t = q.replace(/[\\+\-!(){}\[\]^&quot;~*?:/]|&amp;&amp;|\|\|/g, &#x27; &#x27;).trim();
+  if (!t) return { results: [], hasMore: false };
+  const query = `(release:(${t}) OR artist:(${t}) OR label:(${t}) OR catno:(${t})) AND format:vinyl`;
+  const limit = 30;
+  const url = `https://musicbrainz.org/ws/2/release/?query=${encodeURIComponent(query)}&amp;fmt=json&amp;limit=${limit}&amp;offset=${(page - 1) * limit}`;
+  const d = await getJson(url);
+  const results = (d.releases || []).map(r =&gt; {
+    const li = (r[&#x27;label-info&#x27;] || [])[0] || {};
+    const formats = (r.media || []).map(m =&gt; m.format).filter(Boolean);
+    const discs = (r.media || []).length;
+    return {
+      source: &#x27;musicbrainz&#x27;,
+      id: r.id,
+      artist: mbArtist(r[&#x27;artist-credit&#x27;]),
+      title: r.title,
+      year: (r.date || &#x27;&#x27;).slice(0, 4),
+      country: r.country || &#x27;&#x27;,
+      label: li.label?.name || &#x27;&#x27;,
+      catno: li[&#x27;catalog-number&#x27;] || &#x27;&#x27;,
+      format: discs &gt; 1 ? `${discs}× ${formats[0] || &#x27;Vinyl&#x27;}` : (formats[0] || &#x27;Vinyl&#x27;),
+      thumb: `https://coverartarchive.org/release/${r.id}/front-250`,
+      cover: `https://coverartarchive.org/release/${r.id}/front-500`
+    };
+  });
+  return { results, hasMore: (d.count || 0) &gt; page * limit };
+}
+
+function msToTime(ms) {
+  if (!ms) return &#x27;&#x27;;
+  const s = Math.round(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, &#x27;0&#x27;)}`;
+}
+
+async function detailsMusicBrainz(id) {
+  const r = await getJson(`https://musicbrainz.org/ws/2/release/${id}?inc=recordings+labels+artist-credits+release-groups&amp;fmt=json`);
+  const tracklist = [];
+  (r.media || []).forEach((m, i) =&gt; {
+    (m.tracks || []).forEach(t =&gt; tracklist.push({ pos: (r.media.length &gt; 1 ? `${i + 1}-` : &#x27;&#x27;) + (t.number || &#x27;&#x27;), title: t.title, duration: msToTime(t.length) }));
+  });
+  const li = (r[&#x27;label-info&#x27;] || [])[0] || {};
+  return {
+    tracklist,
+    genres: [],
+    label: li.label?.name || &#x27;&#x27;,
+    catno: li[&#x27;catalog-number&#x27;] || &#x27;&#x27;,
+    country: r.country || &#x27;&#x27;,
+    year: (r.date || &#x27;&#x27;).slice(0, 4),
+    cover: `https://coverartarchive.org/release/${id}/front-500`,
+    url: `https://musicbrainz.org/release/${id}`
+  };
+}
+
+// Discogs : nécessite un token personnel gratuit (discogs.com/settings/developers).
+async function searchDiscogs(q, page, token) {
+  if (!token) throw new Error(&#x27;Ajoute ton token Discogs dans les réglages pour chercher sur Discogs.&#x27;);
+  const url = `https://api.discogs.com/database/search?q=${encodeURIComponent(q)}&amp;type=release&amp;format=Vinyl&amp;per_page=30&amp;page=${page}`;
+  const d = await getJson(url, { Authorization: `Discogs token=${token}` });
+  const results = (d.results || []).map(r =&gt; {
+    const [artist, ...rest] = (r.title || &#x27;&#x27;).split(&#x27; - &#x27;);
+    return {
+      source: &#x27;discogs&#x27;,
+      id: String(r.id),
+      artist: rest.length ? artist : &#x27;&#x27;,
+      title: rest.length ? rest.join(&#x27; - &#x27;) : r.title,
+      year: r.year ? String(r.year) : &#x27;&#x27;,
+      country: r.country || &#x27;&#x27;,
+      label: (r.label || [])[0] || &#x27;&#x27;,
+      catno: r.catno || &#x27;&#x27;,
+      format: (r.format || []).slice(0, 3).join(&#x27;, &#x27;),
+      thumb: r.thumb || r.cover_image || &#x27;&#x27;,
+      cover: r.cover_image || r.thumb || &#x27;&#x27;
+    };
+  });
+  return { results, hasMore: (d.pagination?.pages || 1) &gt; page };
+}
+
+async function detailsDiscogs(id, token) {
+  const d = await getJson(`https://api.discogs.com/releases/${id}`, token ? { Authorization: `Discogs token=${token}` } : {});
+  const primary = (d.images || []).find(i =&gt; i.type === &#x27;primary&#x27;) || (d.images || [])[0];
+  const fmt = (d.formats || [])[0];
+  return {
+    tracklist: (d.tracklist || []).filter(t =&gt; t.type_ !== &#x27;heading&#x27;).map(t =&gt; ({ pos: t.position, title: t.title, duration: t.duration })),
+    genres: [...(d.genres || []), ...(d.styles || [])],
+    label: d.labels?.[0]?.name || &#x27;&#x27;,
+    catno: d.labels?.[0]?.catno || &#x27;&#x27;,
+    country: d.country || &#x27;&#x27;,
+    year: d.year ? String(d.year) : &#x27;&#x27;,
+    format: fmt ? [fmt.qty &amp;&amp; fmt.qty !== &#x27;1&#x27; ? `${fmt.qty}×` : &#x27;&#x27;, fmt.name, ...(fmt.descriptions || [])].filter(Boolean).join(&#x27; &#x27;) : &#x27;&#x27;,
+    cover: primary?.uri || &#x27;&#x27;,
+    url: d.uri || `https://www.discogs.com/release/${id}`
+  };
+}
+
+// ---------- Pochettes ----------
+function coverName(ext) {
+  return `${Date.now()}-${crypto.randomBytes(4).toString(&#x27;hex&#x27;)}${ext}`;
+}
+
+async function downloadCover(url) {
+  if (!url) return &#x27;&#x27;;
+  const res = await fetch(url, { headers: { &#x27;User-Agent&#x27;: USER_AGENT } });
+  if (!res.ok) return &#x27;&#x27;;
+  const type = res.headers.get(&#x27;content-type&#x27;) || &#x27;&#x27;;
+  const ext = type.includes(&#x27;png&#x27;) ? &#x27;.png&#x27; : type.includes(&#x27;webp&#x27;) ? &#x27;.webp&#x27; : &#x27;.jpg&#x27;;
+  const buf = Buffer.from(await res.arrayBuffer());
+  ensureDirs();
+  const name = coverName(ext);
+  fs.writeFileSync(path.join(COVERS_DIR, name), buf);
+  return name;
+}
+
+function safeCoverPath(name) {
+  const base = path.basename(String(name || &#x27;&#x27;));
+  return base ? path.join(COVERS_DIR, base) : &#x27;&#x27;;
+}
+
+// ---------- Fenêtre ----------
+let win = null;
+
+function createWindow() {
+  win = new BrowserWindow({
+    width: 1440,
+    height: 900,
+    minWidth: 900,
+    minHeight: 600,
+    backgroundColor: &#x27;#14121b&#x27;,
+    title: &#x27;Coffre&#x27;,
+    icon: path.join(__dirname, &#x27;assets&#x27;, &#x27;icon.png&#x27;),
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, &#x27;preload.js&#x27;),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true
+    }
+  });
+  win.loadFile(path.join(__dirname, &#x27;renderer&#x27;, &#x27;index.html&#x27;));
+
+  // Les liens externes (Discogs, Cardmarket…) s&#x27;ouvrent dans le navigateur.
+  win.webContents.setWindowOpenHandler(({ url }) =&gt; {
+    if (/^https?:\/\//.test(url)) shell.openExternal(url);
+    return { action: &#x27;deny&#x27; };
+  });
+  win.webContents.on(&#x27;will-navigate&#x27;, (e, url) =&gt; {
+    if (!url.startsWith(&#x27;file:&#x27;)) { e.preventDefault(); if (/^https?:\/\//.test(url)) shell.openExternal(url); }
+  });
+}
+
+function sendStatus(status, extra = {}) {
+  if (win &amp;&amp; !win.isDestroyed()) win.webContents.send(&#x27;update:status&#x27;, { status, ...extra });
+}
+
+function setupUpdater() {
+  if (!autoUpdater || !app.isPackaged) return;
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.on(&#x27;checking-for-update&#x27;, () =&gt; sendStatus(&#x27;checking&#x27;));
+  autoUpdater.on(&#x27;update-available&#x27;, i =&gt; sendStatus(&#x27;available&#x27;, { version: i.version }));
+  autoUpdater.on(&#x27;update-not-available&#x27;, () =&gt; sendStatus(&#x27;none&#x27;));
+  autoUpdater.on(&#x27;download-progress&#x27;, p =&gt; sendStatus(&#x27;downloading&#x27;, { percent: Math.round(p.percent) }));
+  autoUpdater.on(&#x27;update-downloaded&#x27;, i =&gt; sendStatus(&#x27;ready&#x27;, { version: i.version }));
+  autoUpdater.on(&#x27;error&#x27;, err =&gt; sendStatus(&#x27;error&#x27;, { message: String(err?.message || err) }));
+  autoUpdater.checkForUpdates().catch(() =&gt; {});
+  setInterval(() =&gt; autoUpdater.checkForUpdates().catch(() =&gt; {}), 6 * 60 * 60 * 1000);
+}
+
+// ---------- IPC ----------
+ipcMain.handle(&#x27;app:info&#x27;, () =&gt; ({
+  version: app.getVersion(),
+  packaged: app.isPackaged,
+  coversUrl: pathToFileURL(COVERS_DIR + path.sep).href,
+  dataDir: DATA_DIR
+}));
+
+ipcMain.handle(&#x27;data:load&#x27;, () =&gt; loadData());
+ipcMain.handle(&#x27;data:save&#x27;, (_e, data) =&gt; saveData(data));
+
+ipcMain.handle(&#x27;vinyl:search&#x27;, async (_e, { q, source, page = 1, token }) =&gt; {
+  return source === &#x27;discogs&#x27; ? searchDiscogs(q, page, token) : searchMusicBrainz(q, page);
+});
+
+ipcMain.handle(&#x27;vinyl:details&#x27;, async (_e, { source, id, token }) =&gt; {
+  return source === &#x27;discogs&#x27; ? detailsDiscogs(id, token) : detailsMusicBrainz(id);
+});
+
+ipcMain.handle(&#x27;cover:download&#x27;, async (_e, url) =&gt; {
+  try { return await downloadCover(url); } catch (e) { return &#x27;&#x27;; }
+});
+
+ipcMain.handle(&#x27;cover:pick&#x27;, async () =&gt; {
+  const r = await dialog.showOpenDialog(win, {
+    title: &#x27;Choisir une pochette&#x27;,
+    properties: [&#x27;openFile&#x27;],
+    filters: [{ name: &#x27;Images&#x27;, extensions: [&#x27;jpg&#x27;, &#x27;jpeg&#x27;, &#x27;png&#x27;, &#x27;webp&#x27;] }]
+  });
+  if (r.canceled || !r.filePaths[0]) return &#x27;&#x27;;
+  const src = r.filePaths[0];
+  ensureDirs();
+  const name = coverName(path.extname(src).toLowerCase() || &#x27;.jpg&#x27;);
+  fs.copyFileSync(src, path.join(COVERS_DIR, name));
+  return name;
+});
+
+ipcMain.handle(&#x27;cover:delete&#x27;, (_e, name) =&gt; {
+  const p = safeCoverPath(name);
+  try { if (p &amp;&amp; fs.existsSync(p)) fs.unlinkSync(p); } catch (e) { /* ignoré */ }
+  return true;
+});
+
+// Sauvegarde complète : données + pochettes, dans un seul fichier .coffre (JSON).
+ipcMain.handle(&#x27;backup:export&#x27;, async (_e, data) =&gt; {
+  const stamp = new Date().toISOString().slice(0, 10);
+  const r = await dialog.showSaveDialog(win, {
+    title: &#x27;Exporter une sauvegarde&#x27;,
+    defaultPath: `Coffre-sauvegarde-${stamp}.coffre`,
+    filters: [{ name: &#x27;Sauvegarde Coffre&#x27;, extensions: [&#x27;coffre&#x27;] }]
+  });
+  if (r.canceled || !r.filePath) return { ok: false };
+  const covers = {};
+  for (const v of Object.values(data.vinyls || {})) {
+    const p = safeCoverPath(v.cover);
+    if (p &amp;&amp; fs.existsSync(p)) covers[path.basename(p)] = fs.readFileSync(p).toString(&#x27;base64&#x27;);
+  }
+  fs.writeFileSync(r.filePath, JSON.stringify({ format: &#x27;coffre-backup&#x27;, version: 1, data, covers }));
+  return { ok: true, path: r.filePath };
+});
+
+ipcMain.handle(&#x27;backup:import&#x27;, async () =&gt; {
+  const r = await dialog.showOpenDialog(win, {
+    title: &#x27;Importer une sauvegarde&#x27;,
+    properties: [&#x27;openFile&#x27;],
+    filters: [{ name: &#x27;Sauvegarde Coffre&#x27;, extensions: [&#x27;coffre&#x27;, &#x27;json&#x27;] }]
+  });
+  if (r.canceled || !r.filePaths[0]) return { ok: false };
+  const b = JSON.parse(fs.readFileSync(r.filePaths[0], &#x27;utf8&#x27;));
+  const data = b.format === &#x27;coffre-backup&#x27; ? b.data : b;
+  if (!data || typeof data !== &#x27;object&#x27; || (!data.fm &amp;&amp; !data.vinyls)) throw new Error(&quot;Ce fichier n&#x27;est pas une sauvegarde Coffre.&quot;);
+  ensureDirs();
+  for (const [name, b64] of Object.entries(b.covers || {})) {
+    fs.writeFileSync(path.join(COVERS_DIR, path.basename(name)), Buffer.from(b64, &#x27;base64&#x27;));
+  }
+  const merged = { ...defaultData(), ...data, settings: { ...defaultData().settings, ...(data.settings || {}) } };
+  saveData(merged);
+  return { ok: true, data: merged };
+});
+
+ipcMain.handle(&#x27;open:external&#x27;, (_e, url) =&gt; { if (/^https?:\/\//.test(url)) shell.openExternal(url); });
+ipcMain.handle(&#x27;open:dataDir&#x27;, () =&gt; shell.openPath(DATA_DIR));
+
+ipcMain.handle(&#x27;update:check&#x27;, async () =&gt; {
+  if (!autoUpdater || !app.isPackaged) return { status: &#x27;dev&#x27; };
+  try { await autoUpdater.checkForUpdates(); return { status: &#x27;checking&#x27; }; }
+  catch (e) { return { status: &#x27;error&#x27;, message: String(e?.message || e) }; }
+});
+ipcMain.handle(&#x27;update:install&#x27;, () =&gt; { if (autoUpdater) autoUpdater.quitAndInstall(); });
+
+// ---------- Démarrage ----------
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on(&#x27;second-instance&#x27;, () =&gt; { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
+  app.whenReady().then(() =&gt; {
+    ensureDirs();
+    createWindow();
+    setupUpdater();
+    app.on(&#x27;activate&#x27;, () =&gt; { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+  });
+  app.on(&#x27;window-all-closed&#x27;, () =&gt; { if (process.platform !== &#x27;darwin&#x27;) app.quit(); });
+}
+</pre></details><details><summary><code>src/preload.js</code> <span class="new">nouveau</span> — Pont sécurisé entre l’interface et le processus principal</summary><pre>// Pont sécurisé entre l&#x27;interface et le processus principal.
+const { contextBridge, ipcRenderer } = require(&#x27;electron&#x27;);
+
+contextBridge.exposeInMainWorld(&#x27;coffre&#x27;, {
+  info: () =&gt; ipcRenderer.invoke(&#x27;app:info&#x27;),
+  load: () =&gt; ipcRenderer.invoke(&#x27;data:load&#x27;),
+  save: data =&gt; ipcRenderer.invoke(&#x27;data:save&#x27;, data),
+  search: args =&gt; ipcRenderer.invoke(&#x27;vinyl:search&#x27;, args),
+  details: args =&gt; ipcRenderer.invoke(&#x27;vinyl:details&#x27;, args),
+  downloadCover: url =&gt; ipcRenderer.invoke(&#x27;cover:download&#x27;, url),
+  pickCover: () =&gt; ipcRenderer.invoke(&#x27;cover:pick&#x27;),
+  deleteCover: name =&gt; ipcRenderer.invoke(&#x27;cover:delete&#x27;, name),
+  exportBackup: data =&gt; ipcRenderer.invoke(&#x27;backup:export&#x27;, data),
+  importBackup: () =&gt; ipcRenderer.invoke(&#x27;backup:import&#x27;),
+  openExternal: url =&gt; ipcRenderer.invoke(&#x27;open:external&#x27;, url),
+  openDataDir: () =&gt; ipcRenderer.invoke(&#x27;open:dataDir&#x27;),
+  checkUpdate: () =&gt; ipcRenderer.invoke(&#x27;update:check&#x27;),
+  installUpdate: () =&gt; ipcRenderer.invoke(&#x27;update:install&#x27;),
+  onUpdate: cb =&gt; ipcRenderer.on(&#x27;update:status&#x27;, (_e, s) =&gt; cb(s))
+});
+</pre></details><details><summary><code>src/renderer/index.html</code> <span class="new">nouveau</span> — Structure de la fenêtre</summary><pre>&lt;!doctype html&gt;
+&lt;html lang=&quot;fr&quot;&gt;
+&lt;head&gt;
+  &lt;meta charset=&quot;utf-8&quot;&gt;
+  &lt;meta http-equiv=&quot;Content-Security-Policy&quot; content=&quot;default-src &#x27;self&#x27;; img-src &#x27;self&#x27; file: data: https:; style-src &#x27;self&#x27; &#x27;unsafe-inline&#x27;; script-src &#x27;self&#x27;&quot;&gt;
+  &lt;title&gt;Coffre&lt;/title&gt;
+  &lt;link rel=&quot;stylesheet&quot; href=&quot;styles.css&quot;&gt;
+&lt;/head&gt;
+&lt;body&gt;
+  &lt;header class=&quot;top&quot;&gt;
+    &lt;div class=&quot;brand&quot;&gt;
+      &lt;h1&gt;Coffre de Blanche&lt;/h1&gt;
+      &lt;span class=&quot;sub&quot;&gt;Cartes Forbidden Memories et vinyles&lt;/span&gt;
+    &lt;/div&gt;
+    &lt;div class=&quot;top-right&quot;&gt;
+      &lt;div class=&quot;update&quot; id=&quot;updateBar&quot; hidden&gt;&lt;/div&gt;
+      &lt;span class=&quot;saved&quot; id=&quot;savedState&quot;&gt;&lt;/span&gt;
+      &lt;button class=&quot;icon-btn&quot; id=&quot;settingsBtn&quot; title=&quot;Réglages&quot; aria-label=&quot;Réglages&quot;&gt;⚙&lt;/button&gt;
+    &lt;/div&gt;
+  &lt;/header&gt;
+
+  &lt;main class=&quot;shelves&quot;&gt;
+    &lt;!-- ===== CARTES FM ===== --&gt;
+    &lt;section class=&quot;shelf fm&quot;&gt;
+      &lt;div class=&quot;shelf-head&quot;&gt;
+        &lt;div class=&quot;title-row&quot;&gt;
+          &lt;h2&gt;&lt;span class=&quot;k&quot;&gt;◆&lt;/span&gt; Forbidden Memories&lt;/h2&gt;
+          &lt;span class=&quot;big&quot;&gt;&lt;b id=&quot;fmOwned&quot;&gt;0&lt;/b&gt; / 722 · &lt;span id=&quot;fmCopies&quot;&gt;0&lt;/span&gt; exemplaires&lt;/span&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;bar&quot;&gt;&lt;i id=&quot;fmBar&quot;&gt;&lt;/i&gt;&lt;/div&gt;
+        &lt;div class=&quot;tools&quot;&gt;
+          &lt;input type=&quot;search&quot; id=&quot;fmSearch&quot; placeholder=&quot;Nom, n° ou mot de passe…&quot; aria-label=&quot;Rechercher une carte&quot;&gt;
+          &lt;select id=&quot;fmType&quot; aria-label=&quot;Type de carte&quot;&gt;
+            &lt;option value=&quot;&quot;&gt;Tous les types&lt;/option&gt;
+            &lt;option value=&quot;M&quot;&gt;Monstres&lt;/option&gt;
+            &lt;option value=&quot;G&quot;&gt;Magies&lt;/option&gt;
+            &lt;option value=&quot;E&quot;&gt;Équipements&lt;/option&gt;
+            &lt;option value=&quot;F&quot;&gt;Terrains&lt;/option&gt;
+            &lt;option value=&quot;R&quot;&gt;Rituels&lt;/option&gt;
+            &lt;option value=&quot;T&quot;&gt;Pièges&lt;/option&gt;
+          &lt;/select&gt;
+          &lt;div class=&quot;seg&quot; id=&quot;fmLayout&quot;&gt;
+            &lt;button data-v=&quot;gal&quot;&gt;Galerie&lt;/button&gt;
+            &lt;button data-v=&quot;list&quot;&gt;Liste&lt;/button&gt;
+          &lt;/div&gt;
+          &lt;div class=&quot;seg&quot; id=&quot;fmView&quot;&gt;
+            &lt;button data-v=&quot;all&quot; aria-pressed=&quot;true&quot;&gt;Toutes&lt;/button&gt;
+            &lt;button data-v=&quot;own&quot;&gt;Possédées&lt;/button&gt;
+            &lt;button data-v=&quot;miss&quot;&gt;Manquantes&lt;/button&gt;
+            &lt;button data-v=&quot;dup&quot;&gt;Doubles&lt;/button&gt;
+          &lt;/div&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+      &lt;div class=&quot;list&quot; id=&quot;fmList&quot;&gt;&lt;/div&gt;
+    &lt;/section&gt;
+
+    &lt;!-- ===== VINYLES ===== --&gt;
+    &lt;section class=&quot;shelf vin&quot;&gt;
+      &lt;div class=&quot;shelf-head&quot;&gt;
+        &lt;div class=&quot;title-row&quot;&gt;
+          &lt;h2&gt;&lt;span class=&quot;k&quot;&gt;●&lt;/span&gt; Vinyles&lt;/h2&gt;
+          &lt;span class=&quot;big&quot;&gt;&lt;b id=&quot;vinOwned&quot;&gt;0&lt;/b&gt; disques · &lt;span id=&quot;vinWish&quot;&gt;0&lt;/span&gt; recherchés&lt;/span&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;tools&quot;&gt;
+          &lt;button class=&quot;primary&quot; id=&quot;vinFindBtn&quot;&gt;Rechercher un vinyle&lt;/button&gt;
+          &lt;button id=&quot;vinManualBtn&quot;&gt;Ajouter à la main&lt;/button&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;tools&quot;&gt;
+          &lt;input type=&quot;search&quot; id=&quot;vinFilter&quot; placeholder=&quot;Filtrer ma collection…&quot; aria-label=&quot;Filtrer ma collection&quot;&gt;
+          &lt;select id=&quot;vinSort&quot; aria-label=&quot;Trier&quot;&gt;
+            &lt;option value=&quot;artist&quot;&gt;Par artiste&lt;/option&gt;
+            &lt;option value=&quot;added&quot;&gt;Derniers ajouts&lt;/option&gt;
+            &lt;option value=&quot;year&quot;&gt;Par année&lt;/option&gt;
+          &lt;/select&gt;
+          &lt;div class=&quot;seg&quot; id=&quot;vinView&quot;&gt;
+            &lt;button data-v=&quot;all&quot; aria-pressed=&quot;true&quot;&gt;Tous&lt;/button&gt;
+            &lt;button data-v=&quot;own&quot;&gt;Ma collection&lt;/button&gt;
+            &lt;button data-v=&quot;wish&quot;&gt;Recherchés&lt;/button&gt;
+          &lt;/div&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+      &lt;div class=&quot;list&quot; id=&quot;vinList&quot;&gt;&lt;/div&gt;
+    &lt;/section&gt;
+  &lt;/main&gt;
+
+  &lt;!-- Fenêtres --&gt;
+  &lt;div class=&quot;overlay&quot; id=&quot;modal&quot; hidden&gt;&lt;div class=&quot;sheet&quot; id=&quot;sheet&quot; role=&quot;dialog&quot; aria-modal=&quot;true&quot;&gt;&lt;/div&gt;&lt;/div&gt;
+
+  &lt;script src=&quot;fm-data.js&quot;&gt;&lt;/script&gt;
+  &lt;script src=&quot;app.js&quot;&gt;&lt;/script&gt;
+&lt;/body&gt;
+&lt;/html&gt;
+</pre></details><details><summary><code>src/renderer/styles.css</code> <span class="new">nouveau</span> — Apparence (thème clair/sombre automatique)</summary><pre>/* Coffre — deux étagères côte à côte : cartes FM (or) et vinyles (rouge vinyle) */
+:root {
+  --bg: #f2f1f6; --panel: #ffffff; --panel-2: #f7f6fa; --line: #dcd9e6; --fg: #1c1a26; --muted: #6b6780;
+  --gold: #a8790c; --gold-soft: #f5ead0; --wax: #c2412d; --wax-soft: #f8e1dc; --chip: #ece9f3;
+  --shadow: 0 18px 50px rgba(20, 16, 35, .25);
+  --f-display: &quot;Segoe UI Variable Display&quot;, &quot;Segoe UI&quot;, system-ui, sans-serif;
+  --f-body: &quot;Segoe UI Variable Text&quot;, &quot;Segoe UI&quot;, system-ui, sans-serif;
+  --f-mono: &quot;Cascadia Mono&quot;, Consolas, ui-monospace, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14121b; --panel: #1d1a27; --panel-2: #24202f; --line: #322e42; --fg: #ece9f5; --muted: #9a95ad;
+    --gold: #e3b54a; --gold-soft: #3a2f17; --wax: #ef7a62; --wax-soft: #3d1f1a; --chip: #2a2638;
+    --shadow: 0 18px 50px rgba(0, 0, 0, .55);
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--fg); font: 14px/1.45 var(--f-body); display: flex; flex-direction: column; overflow: hidden; }
+button, input, select, textarea { font: inherit; color: var(--fg); }
+
+/* ---------- En-tête ---------- */
+.top { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 14px 20px 10px; }
+.brand { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+h1 { font: 800 26px/1.1 var(--f-display); margin: 0; letter-spacing: -.01em; }
+.sub { color: var(--muted); }
+.top-right { display: flex; align-items: center; gap: 12px; }
+.saved { font: 12px var(--f-mono); color: var(--muted); }
+.icon-btn { width: 36px; height: 36px; border-radius: 10px; font-size: 18px; padding: 0; }
+.update { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 10px; background: var(--gold-soft); font-size: 13px; }
+.update button { padding: 4px 10px; }
+
+/* ---------- Étagères ---------- */
+.shelves { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 16px; padding: 0 20px 18px; }
+.shelf { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.shelf-head { padding: 14px 16px 12px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; }
+.title-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+h2 { font: 800 19px var(--f-display); margin: 0; }
+.fm h2 .k { color: var(--gold); } .vin h2 .k { color: var(--wax); }
+.big { font: 13px var(--f-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.big b { font-size: 19px; color: var(--fg); font-weight: 600; }
+.bar { height: 6px; border-radius: 99px; background: var(--chip); overflow: hidden; }
+.bar i { display: block; height: 100%; width: 0; background: var(--gold); border-radius: 99px; transition: width .3s; }
+.tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.list { flex: 1; overflow: auto; min-height: 0; }
+.empty { padding: 40px 20px; color: var(--muted); text-align: center; max-width: 46ch; margin: 0 auto; }
+
+/* ---------- Contrôles ---------- */
+input, select, textarea { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; min-width: 0; }
+input[type=search] { flex: 1 1 180px; }
+textarea { width: 100%; resize: vertical; min-height: 60px; }
+button { cursor: pointer; border-radius: 8px; border: 1px solid var(--line); background: var(--chip); padding: 7px 12px; }
+button:hover:not(:disabled) { border-color: var(--muted); }
+button:disabled { opacity: .45; cursor: not-allowed; }
+:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
+.vin :focus-visible, .sheet.vinyl :focus-visible { outline-color: var(--wax); }
+.primary { background: var(--wax); border-color: transparent; color: #fff; font-weight: 600; }
+.fm .primary, .sheet.card .primary { background: var(--gold); color: #1b1608; }
+.danger { color: var(--wax); border-color: var(--wax); background: transparent; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; background: transparent; padding: 6px 10px; color: var(--muted); }
+.seg button[aria-pressed=true] { background: var(--gold-soft); color: var(--fg); font-weight: 600; }
+.vin .seg button[aria-pressed=true], .sheet.vinyl .seg button[aria-pressed=true] { background: var(--wax-soft); }
+label.f { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+a { color: var(--wax); cursor: pointer; }
+.fm a, .sheet.card a { color: var(--gold); }
+
+/* ---------- Cartes FM ---------- */
+.num { font: 12px var(--f-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.noimg { display: flex; align-items: center; justify-content: center; text-align: center; font-size: 10px; color: var(--muted); border: 1px dashed var(--line); border-radius: 4px; aspect-ratio: 421/614; padding: 4px; }
+.gal { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 14px; padding: 14px 16px; }
+.gcard { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.gcard .pic { position: relative; border: 0; padding: 0; background: none; border-radius: 6px; }
+.gcard .pic img, .gcard .pic .noimg { width: 100%; aspect-ratio: 421/614; object-fit: cover; border-radius: 6px; display: block; }
+.gcard:not(.own) .pic img { filter: grayscale(1); opacity: .42; }
+.gcard .badge { position: absolute; top: 5px; right: 5px; font: 600 12px var(--f-mono); background: var(--gold); color: #1b1608; border-radius: 99px; padding: 1px 7px; }
+.gcard .cap { font-size: 12px; line-height: 1.25; overflow-wrap: anywhere; }
+.gcard .cap .num { display: block; }
+.gcard.own .cap .num { color: var(--gold); }
+.qty { display: flex; align-items: center; gap: 4px; }
+.gcard .qty { justify-content: space-between; }
+.qty button { width: 30px; height: 30px; padding: 0; font-size: 16px; line-height: 1; }
+.qty output { min-width: 22px; text-align: center; font: 600 14px var(--f-mono); }
+.row { display: grid; grid-template-columns: 40px 34px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 6px 16px; border-bottom: 1px solid var(--line); }
+.row.own { background: linear-gradient(90deg, var(--gold-soft), transparent 60%); }
+.row img, .row .noimg { width: 34px; aspect-ratio: 421/614; border-radius: 3px; object-fit: cover; font-size: 7px; }
+.row:not(.own) img { filter: grayscale(.85); opacity: .6; }
+.row .nm { font-weight: 600; background: none; border: 0; padding: 0; text-align: left; overflow-wrap: anywhere; }
+.meta { font-size: 12px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 3px 10px; }
+.tag { font-size: 11px; letter-spacing: .04em; text-transform: uppercase; padding: 1px 6px; border-radius: 4px; background: var(--chip); }
+
+/* ---------- Vinyles ---------- */
+.vgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px; padding: 16px; }
+.vcard { display: flex; flex-direction: column; gap: 6px; border: 0; background: none; padding: 0; text-align: left; min-width: 0; }
+.cover { width: 100%; aspect-ratio: 1; border-radius: 6px; object-fit: cover; background: var(--chip); display: block; box-shadow: 0 2px 8px rgba(0,0,0,.18); }
+.cover.ph { display: flex; align-items: center; justify-content: center; background: radial-gradient(circle, var(--wax) 0 14%, var(--panel) 15% 18%, #1a1720 19% 100%); }
+.vcard.wish .cover { opacity: .55; outline: 2px dashed var(--line); outline-offset: 2px; }
+.vcard .t { font-weight: 600; overflow-wrap: anywhere; line-height: 1.25; }
+.vcard .a { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.pill { display: inline-block; font: 600 11px var(--f-mono); padding: 1px 6px; border-radius: 4px; background: var(--wax-soft); }
+.pill.wish { background: transparent; border: 1px dashed var(--wax); color: var(--wax); }
+
+/* ---------- Fenêtres ---------- */
+.overlay { position: fixed; inset: 0; background: color-mix(in srgb, var(--bg) 70%, transparent); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; padding: 24px; z-index: 20; }
+.sheet { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); width: min(640px, 100%); max-height: 100%; overflow: auto; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+.sheet.wide { width: min(1180px, 100%); height: 100%; }
+.sheet h3 { font: 800 20px var(--f-display); margin: 0; text-wrap: balance; }
+.sheet-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.close { flex: none; }
+.split { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 18px; }
+.split img.big, .split .noimg { width: 100%; border-radius: 8px; }
+.split .cover { box-shadow: 0 4px 18px rgba(0,0,0,.3); }
+.form { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.form .wide { grid-column: 1 / -1; }
+.actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; align-items: center; }
+.actions .grow { flex: 1; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; font-size: 13px; }
+.kv dt { color: var(--muted); } .kv dd { margin: 0; overflow-wrap: anywhere; }
+.tracks { font-size: 13px; border-top: 1px solid var(--line); padding-top: 8px; max-height: 260px; overflow: auto; }
+.tracks div { display: grid; grid-template-columns: 42px 1fr auto; gap: 8px; padding: 3px 0; }
+.tracks .p, .tracks .d { color: var(--muted); font-family: var(--f-mono); font-size: 12px; }
+.hint { font-size: 12px; color: var(--muted); }
+.error { color: var(--wax); font-size: 13px; }
+
+/* Recherche de vinyles */
+.searchbar { display: flex; gap: 8px; flex-wrap: wrap; }
+.searchbar input { flex: 1 1 260px; font-size: 15px; padding: 9px 12px; }
+.results { flex: 1; min-height: 0; overflow: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 16px; align-content: start; padding: 2px; }
+.res { display: flex; flex-direction: column; gap: 5px; border: 0; background: none; padding: 0; text-align: left; min-width: 0; }
+.res .t { font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; }
+.res .a, .res .m { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.res .have { font: 600 11px var(--f-mono); color: var(--wax); }
+.res:hover .cover { outline: 2px solid var(--wax); outline-offset: 2px; }
+.more { grid-column: 1 / -1; justify-self: center; }
+.spinner { grid-column: 1 / -1; text-align: center; color: var(--muted); padding: 30px; }
+
+@media (max-width: 1100px) { .shelves { grid-template-columns: minmax(0, 1fr); overflow: auto; } .shelf { min-height: 70vh; } }
+@media (max-width: 640px) { .split { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: reduce) { .bar i { transition: none; } }
+</pre></details><details><summary><code>src/renderer/app.js</code> <span class="new">nouveau</span> — Interface : cartes FM, vinyles, recherche, fiches, réglages</summary><pre>// Coffre — interface
+&#x27;use strict&#x27;;
+
+const $ = id =&gt; document.getElementById(id);
+const esc = s =&gt; String(s ?? &#x27;&#x27;).replace(/[&amp;&lt;&gt;&quot;&#x27;]/g, c =&gt; ({ &#x27;&amp;&#x27;: &#x27;&amp;amp;&#x27;, &#x27;&lt;&#x27;: &#x27;&amp;lt;&#x27;, &#x27;&gt;&#x27;: &#x27;&amp;gt;&#x27;, &#x27;&quot;&#x27;: &#x27;&amp;quot;&#x27;, &quot;&#x27;&quot;: &#x27;&amp;#39;&#x27; }[c]));
+
+// ---------- Données des cartes ----------
+const TYPE_NAME = { M: &#x27;Monstre&#x27;, G: &#x27;Magie&#x27;, E: &#x27;Équipement&#x27;, F: &#x27;Terrain&#x27;, R: &#x27;Rituel&#x27;, T: &#x27;Piège&#x27; };
+const CARDS = window.FM_RAW.map((r, i) =&gt; {
+  const p = r.split(&#x27;|&#x27;); const t = p[1]; const m = t === &#x27;M&#x27;;
+  return {
+    n: String(i + 1).padStart(3, &#x27;0&#x27;), name: p[0], t,
+    race: m ? p[2] : &#x27;&#x27;, lvl: m ? p[3] : &#x27;&#x27;, atk: m ? p[4] : &#x27;&#x27;, def: m ? p[5] : &#x27;&#x27;,
+    pw: (m ? p[6] : p[p.length - 2]) || &#x27;&#x27;, cost: (m ? p[7] : p[p.length - 1]) || &#x27;&#x27;
+  };
+});
+const HAS_IMG = new Set(window.FM_IMG || []);
+const cardImg = n =&gt; `../assets/cards/${n}.webp`;
+const fmtCost = c =&gt; !c ? &#x27;—&#x27; : c === &#x27;999999&#x27; ? &#x27;non achetable&#x27; : Number(c).toLocaleString(&#x27;fr-FR&#x27;) + &#x27; ★&#x27;;
+
+// ---------- État ----------
+let data = null;
+let info = { coversUrl: &#x27;&#x27;, version: &#x27;&#x27; };
+const fmF = { q: &#x27;&#x27;, t: &#x27;&#x27;, v: &#x27;all&#x27; };
+const vinF = { q: &#x27;&#x27;, v: &#x27;all&#x27;, sort: &#x27;artist&#x27; };
+const search = { q: &#x27;&#x27;, source: &#x27;musicbrainz&#x27;, page: 1, results: [], hasMore: false, loading: false, error: &#x27;&#x27; };
+let modalKind = null;
+
+const coverUrl = name =&gt; name ? info.coversUrl + encodeURIComponent(name) : &#x27;&#x27;;
+const uid = () =&gt; &#x27;v&#x27; + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+
+// ---------- Sauvegarde ----------
+let saveTimer = null;
+function scheduleSave() {
+  $(&#x27;savedState&#x27;).textContent = &#x27;Enregistrement…&#x27;;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async () =&gt; {
+    try { await window.coffre.save(data); $(&#x27;savedState&#x27;).textContent = &#x27;Enregistré&#x27;; }
+    catch (e) { $(&#x27;savedState&#x27;).textContent = &quot;Échec de l&#x27;enregistrement&quot;; }
+  }, 400);
+}
+
+// ---------- Utilitaires d&#x27;interface ----------
+function seg(id, value, cb) {
+  const el = $(id);
+  const mark = v =&gt; el.querySelectorAll(&#x27;button&#x27;).forEach(b =&gt; b.setAttribute(&#x27;aria-pressed&#x27;, String(b.dataset.v === v)));
+  mark(value);
+  el.addEventListener(&#x27;click&#x27;, e =&gt; { const b = e.target.closest(&#x27;button&#x27;); if (!b) return; mark(b.dataset.v); cb(b.dataset.v); });
+}
+
+function openModal(html, cls = &#x27;&#x27;) {
+  $(&#x27;sheet&#x27;).className = &#x27;sheet &#x27; + cls;
+  $(&#x27;sheet&#x27;).innerHTML = html;
+  $(&#x27;modal&#x27;).hidden = false;
+  const first = $(&#x27;sheet&#x27;).querySelector(&#x27;[autofocus]&#x27;);
+  if (first) first.focus();
+}
+function closeModal() { $(&#x27;modal&#x27;).hidden = true; $(&#x27;sheet&#x27;).innerHTML = &#x27;&#x27;; modalKind = null; }
+$(&#x27;modal&#x27;).addEventListener(&#x27;mousedown&#x27;, e =&gt; { if (e.target.id === &#x27;modal&#x27; &amp;&amp; [&#x27;card&#x27;, &#x27;vinyl&#x27;, &#x27;settings&#x27;].includes(modalKind)) closeModal(); });
+document.addEventListener(&#x27;keydown&#x27;, e =&gt; { if (e.key === &#x27;Escape&#x27; &amp;&amp; !$(&#x27;modal&#x27;).hidden) closeModal(); });
+
+// ============================================================
+//  CARTES FORBIDDEN MEMORIES
+// ============================================================
+function fmStats() {
+  let owned = 0, copies = 0;
+  for (const k in data.fm) { const q = data.fm[k].qty || 0; if (q &gt; 0) { owned++; copies += q; } }
+  $(&#x27;fmOwned&#x27;).textContent = owned;
+  $(&#x27;fmCopies&#x27;).textContent = copies;
+  $(&#x27;fmBar&#x27;).style.width = (owned / 722 * 100).toFixed(2) + &#x27;%&#x27;;
+}
+
+function qtyHtml(qty) {
+  return `&lt;div class=&quot;qty&quot;&gt;&lt;button data-act=&quot;dec&quot; aria-label=&quot;Retirer un exemplaire&quot; ${!qty ? &#x27;disabled&#x27; : &#x27;&#x27;}&gt;−&lt;/button&gt;&lt;output&gt;${qty}&lt;/output&gt;&lt;button data-act=&quot;inc&quot; aria-label=&quot;Ajouter un exemplaire&quot;&gt;+&lt;/button&gt;&lt;/div&gt;`;
+}
+
+function renderFm() {
+  fmStats();
+  const q = fmF.q.trim().toLowerCase();
+  const gal = data.settings.layout !== &#x27;list&#x27;;
+  const out = [];
+  for (const c of CARDS) {
+    const d = data.fm[c.n] || {}; const qty = d.qty || 0;
+    if (fmF.t &amp;&amp; c.t !== fmF.t) continue;
+    if (fmF.v === &#x27;own&#x27; &amp;&amp; !qty) continue;
+    if (fmF.v === &#x27;miss&#x27; &amp;&amp; qty) continue;
+    if (fmF.v === &#x27;dup&#x27; &amp;&amp; qty &lt; 2) continue;
+    if (q &amp;&amp; !(c.name.toLowerCase().includes(q) || c.n.includes(q) || Number(c.n) === Number(q) || (c.pw &amp;&amp; c.pw.includes(q)))) continue;
+    const pic = HAS_IMG.has(c.n) ? `&lt;img src=&quot;${cardImg(c.n)}&quot; alt=&quot;&quot; loading=&quot;lazy&quot;&gt;` : `&lt;span class=&quot;noimg&quot;&gt;pas d&#x27;image&lt;/span&gt;`;
+    if (gal) {
+      out.push(`&lt;div class=&quot;gcard${qty ? &#x27; own&#x27; : &#x27;&#x27;}&quot; data-n=&quot;${c.n}&quot;&gt;
+        &lt;button class=&quot;pic&quot; data-act=&quot;open&quot; aria-label=&quot;Détails de ${esc(c.name)}&quot;&gt;${pic}${qty ? `&lt;span class=&quot;badge&quot;&gt;×${qty}&lt;/span&gt;` : &#x27;&#x27;}&lt;/button&gt;
+        &lt;div class=&quot;cap&quot;&gt;&lt;span class=&quot;num&quot;&gt;${c.n}&lt;/span&gt;${esc(c.name)}&lt;/div&gt;${qtyHtml(qty)}&lt;/div&gt;`);
+    } else {
+      const stats = c.t === &#x27;M&#x27; ? `&lt;span&gt;${esc(c.race)}&lt;/span&gt;&lt;span&gt;Niv ${c.lvl}&lt;/span&gt;&lt;span&gt;${c.atk}/${c.def}&lt;/span&gt;` : &#x27;&#x27;;
+      out.push(`&lt;div class=&quot;row${qty ? &#x27; own&#x27; : &#x27;&#x27;}&quot; data-n=&quot;${c.n}&quot;&gt;&lt;span class=&quot;num&quot;&gt;${c.n}&lt;/span&gt;${pic}
+        &lt;div style=&quot;min-width:0&quot;&gt;&lt;button class=&quot;nm&quot; data-act=&quot;open&quot;&gt;${esc(c.name)}&lt;/button&gt;
+        &lt;div class=&quot;meta&quot;&gt;&lt;span class=&quot;tag&quot;&gt;${TYPE_NAME[c.t]}&lt;/span&gt;${stats}${d.cond ? `&lt;span&gt;${esc(d.cond)}&lt;/span&gt;` : &#x27;&#x27;}&lt;/div&gt;&lt;/div&gt;${qtyHtml(qty)}&lt;/div&gt;`);
+    }
+  }
+  $(&#x27;fmList&#x27;).innerHTML = out.length ? (gal ? `&lt;div class=&quot;gal&quot;&gt;${out.join(&#x27;&#x27;)}&lt;/div&gt;` : out.join(&#x27;&#x27;)) : `&lt;div class=&quot;empty&quot;&gt;Aucune carte ne correspond.&lt;/div&gt;`;
+}
+
+function changeQty(n, delta) {
+  const d = { ...(data.fm[n] || {}) };
+  d.qty = Math.max(0, (d.qty || 0) + delta);
+  if (!d.qty &amp;&amp; !d.cond &amp;&amp; !d.lang &amp;&amp; !d.note) delete data.fm[n]; else data.fm[n] = d;
+  scheduleSave();
+}
+
+$(&#x27;fmList&#x27;).addEventListener(&#x27;click&#x27;, e =&gt; {
+  const b = e.target.closest(&#x27;[data-act]&#x27;); if (!b) return;
+  const n = b.closest(&#x27;[data-n]&#x27;).dataset.n;
+  if (b.dataset.act === &#x27;open&#x27;) return openCard(n);
+  changeQty(n, b.dataset.act === &#x27;inc&#x27; ? 1 : -1);
+  renderFm();
+});
+
+function openCard(n) {
+  modalKind = &#x27;card&#x27;;
+  const c = CARDS[Number(n) - 1]; const d = data.fm[n] || {}; const qty = d.qty || 0;
+  const stats = c.t === &#x27;M&#x27; ? `${esc(c.race)} · Niveau ${c.lvl} · ${c.atk} ATK / ${c.def} DEF` : TYPE_NAME[c.t];
+  const conds = [&#x27;&#x27;, &#x27;Mint&#x27;, &#x27;Near Mint&#x27;, &#x27;Excellent&#x27;, &#x27;Good&#x27;, &#x27;Played&#x27;, &#x27;Poor&#x27;];
+  openModal(`
+    &lt;div class=&quot;sheet-head&quot;&gt;&lt;div&gt;&lt;span class=&quot;num&quot;&gt;N° ${c.n}&lt;/span&gt;&lt;h3&gt;${esc(c.name)}&lt;/h3&gt;&lt;div class=&quot;meta&quot;&gt;${stats}&lt;/div&gt;&lt;/div&gt;
+      &lt;button class=&quot;close&quot; data-act=&quot;close&quot;&gt;Fermer&lt;/button&gt;&lt;/div&gt;
+    &lt;div class=&quot;split&quot; data-n=&quot;${c.n}&quot;&gt;
+      ${HAS_IMG.has(c.n) ? `&lt;img class=&quot;big&quot; src=&quot;${cardImg(c.n)}&quot; alt=&quot;${esc(c.name)}&quot;&gt;` : `&lt;span class=&quot;noimg&quot;&gt;Carte propre au jeu, pas d&#x27;image&lt;/span&gt;`}
+      &lt;div style=&quot;display:flex;flex-direction:column;gap:12px;min-width:0&quot;&gt;
+        &lt;div&gt;${qtyHtml(qty)}&lt;/div&gt;
+        &lt;div class=&quot;form&quot;&gt;
+          &lt;label class=&quot;f&quot;&gt;État&lt;select data-f=&quot;cond&quot;&gt;${conds.map(o =&gt; `&lt;option value=&quot;${o}&quot; ${d.cond === o ? &#x27;selected&#x27; : &#x27;&#x27;}&gt;${o || &#x27;—&#x27;}&lt;/option&gt;`).join(&#x27;&#x27;)}&lt;/select&gt;&lt;/label&gt;
+          &lt;label class=&quot;f&quot;&gt;Langue / édition&lt;input data-f=&quot;lang&quot; value=&quot;${esc(d.lang || &#x27;&#x27;)}&quot; placeholder=&quot;FR, EN, 1st edition…&quot;&gt;&lt;/label&gt;
+          &lt;label class=&quot;f wide&quot;&gt;Notes&lt;textarea data-f=&quot;note&quot; placeholder=&quot;Où je l&#x27;ai eue, prix payé…&quot;&gt;${esc(d.note || &#x27;&#x27;)}&lt;/textarea&gt;&lt;/label&gt;
+        &lt;/div&gt;
+        &lt;dl class=&quot;kv&quot;&gt;&lt;dt&gt;Mot de passe&lt;/dt&gt;&lt;dd&gt;${c.pw || &#x27;—&#x27;}&lt;/dd&gt;&lt;dt&gt;Coût en étoiles&lt;/dt&gt;&lt;dd&gt;${fmtCost(c.cost)}&lt;/dd&gt;&lt;/dl&gt;
+        &lt;div&gt;&lt;a data-act=&quot;cm&quot;&gt;Voir les prix sur Cardmarket ↗&lt;/a&gt;&lt;/div&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;`, &#x27;card&#x27;);
+}
+
+$(&#x27;sheet&#x27;).addEventListener(&#x27;click&#x27;, e =&gt; {
+  if (modalKind !== &#x27;card&#x27;) return;
+  const b = e.target.closest(&#x27;[data-act]&#x27;); if (!b) return;
+  const n = $(&#x27;sheet&#x27;).querySelector(&#x27;[data-n]&#x27;).dataset.n;
+  const act = b.dataset.act;
+  if (act === &#x27;close&#x27;) return closeModal();
+  if (act === &#x27;cm&#x27;) return window.coffre.openExternal(`https://www.cardmarket.com/fr/YuGiOh/Products/Search?searchString=${encodeURIComponent(CARDS[Number(n) - 1].name)}`);
+  if (act === &#x27;inc&#x27; || act === &#x27;dec&#x27;) {
+    changeQty(n, act === &#x27;inc&#x27; ? 1 : -1);
+    const qty = (data.fm[n] || {}).qty || 0;
+    $(&#x27;sheet&#x27;).querySelector(&#x27;.qty output&#x27;).textContent = qty;
+    $(&#x27;sheet&#x27;).querySelector(&#x27;.qty [data-act=dec]&#x27;).disabled = !qty;
+    renderFm();
+  }
+});
+$(&#x27;sheet&#x27;).addEventListener(&#x27;change&#x27;, e =&gt; {
+  if (modalKind !== &#x27;card&#x27;) return;
+  const f = e.target.dataset.f; if (!f) return;
+  const n = $(&#x27;sheet&#x27;).querySelector(&#x27;[data-n]&#x27;).dataset.n;
+  data.fm[n] = { ...(data.fm[n] || {}), [f]: e.target.value };
+  scheduleSave(); renderFm();
+});
+
+$(&#x27;fmSearch&#x27;).addEventListener(&#x27;input&#x27;, e =&gt; { fmF.q = e.target.value; renderFm(); });
+$(&#x27;fmType&#x27;).addEventListener(&#x27;change&#x27;, e =&gt; { fmF.t = e.target.value; renderFm(); });
+
+// ============================================================
+//  VINYLES — collection
+// ============================================================
+function coverHtml(v, cls = &#x27;cover&#x27;) {
+  const src = v.cover ? coverUrl(v.cover) : &#x27;&#x27;;
+  return src ? `&lt;img class=&quot;${cls}&quot; src=&quot;${src}&quot; alt=&quot;&quot; loading=&quot;lazy&quot;&gt;` : `&lt;div class=&quot;${cls} ph&quot;&gt;&lt;/div&gt;`;
+}
+
+function renderVinyls() {
+  const all = Object.entries(data.vinyls);
+  $(&#x27;vinOwned&#x27;).textContent = all.filter(([, v]) =&gt; v.status !== &#x27;wish&#x27;).length;
+  $(&#x27;vinWish&#x27;).textContent = all.filter(([, v]) =&gt; v.status === &#x27;wish&#x27;).length;
+  if (!all.length) {
+    $(&#x27;vinList&#x27;).innerHTML = `&lt;div class=&quot;empty&quot;&gt;Ton bac est vide.&lt;br&gt;Clique sur &lt;b&gt;Rechercher un vinyle&lt;/b&gt;, tape un artiste ou un album, puis ajoute le disque avec sa pochette.&lt;/div&gt;`;
+    return;
+  }
+  const q = vinF.q.trim().toLowerCase();
+  const rows = all.filter(([, v]) =&gt; {
+    if (vinF.v === &#x27;own&#x27; &amp;&amp; v.status === &#x27;wish&#x27;) return false;
+    if (vinF.v === &#x27;wish&#x27; &amp;&amp; v.status !== &#x27;wish&#x27;) return false;
+    if (q &amp;&amp; ![v.artist, v.title, v.label, v.catno, v.note, v.year].some(x =&gt; String(x || &#x27;&#x27;).toLowerCase().includes(q))) return false;
+    return true;
+  });
+  const s = vinF.sort;
+  rows.sort(([, a], [, b]) =&gt; s === &#x27;added&#x27; ? (b.added || 0) - (a.added || 0)
+    : s === &#x27;year&#x27; ? String(a.year || &#x27;9999&#x27;).localeCompare(String(b.year || &#x27;9999&#x27;))
+    : String(a.artist || &#x27;&#x27;).localeCompare(String(b.artist || &#x27;&#x27;), &#x27;fr&#x27;) || String(a.year || &#x27;&#x27;).localeCompare(String(b.year || &#x27;&#x27;)));
+  $(&#x27;vinList&#x27;).innerHTML = rows.length ? `&lt;div class=&quot;vgrid&quot;&gt;${rows.map(([id, v]) =&gt; `
+    &lt;button class=&quot;vcard${v.status === &#x27;wish&#x27; ? &#x27; wish&#x27; : &#x27;&#x27;}&quot; data-id=&quot;${esc(id)}&quot;&gt;
+      ${coverHtml(v)}
+      &lt;span class=&quot;t&quot;&gt;${esc(v.title)}&lt;/span&gt;
+      &lt;span class=&quot;a&quot;&gt;${esc(v.artist)}${v.year ? &#x27; · &#x27; + esc(v.year) : &#x27;&#x27;}&lt;/span&gt;
+      &lt;span&gt;${v.status === &#x27;wish&#x27; ? &#x27;&lt;span class=&quot;pill wish&quot;&gt;Recherché&lt;/span&gt;&#x27; : v.grade ? `&lt;span class=&quot;pill&quot;&gt;${esc(v.grade)}&lt;/span&gt;` : &#x27;&#x27;}&lt;/span&gt;
+    &lt;/button&gt;`).join(&#x27;&#x27;)}&lt;/div&gt;` : `&lt;div class=&quot;empty&quot;&gt;Aucun disque ne correspond.&lt;/div&gt;`;
+}
+
+$(&#x27;vinList&#x27;).addEventListener(&#x27;click&#x27;, e =&gt; { const b = e.target.closest(&#x27;[data-id]&#x27;); if (b) openVinyl(b.dataset.id); });
+$(&#x27;vinFilter&#x27;).addEventListener(&#x27;input&#x27;, e =&gt; { vinF.q = e.target.value; renderVinyls(); });
+$(&#x27;vinSort&#x27;).addEventListener(&#x27;change&#x27;, e =&gt; { vinF.sort = e.target.value; renderVinyls(); });
+
+const GRADES = [&#x27;&#x27;, &#x27;M&#x27;, &#x27;NM&#x27;, &#x27;VG+&#x27;, &#x27;VG&#x27;, &#x27;G+&#x27;, &#x27;G&#x27;, &#x27;P&#x27;];
+const gradeOpts = cur =&gt; GRADES.map(g =&gt; `&lt;option value=&quot;${g}&quot; ${cur === g ? &#x27;selected&#x27; : &#x27;&#x27;}&gt;${g || &#x27;—&#x27;}&lt;/option&gt;`).join(&#x27;&#x27;);
+const sourceName = s =&gt; s === &#x27;discogs&#x27; ? &#x27;Discogs&#x27; : s === &#x27;musicbrainz&#x27; ? &#x27;MusicBrainz&#x27; : &#x27;ajout manuel&#x27;;
+
+function tracksHtml(list) {
+  if (!list || !list.length) return &#x27;&#x27;;
+  return `&lt;div class=&quot;tracks&quot;&gt;${list.map(t =&gt; `&lt;div&gt;&lt;span class=&quot;p&quot;&gt;${esc(t.pos)}&lt;/span&gt;&lt;span&gt;${esc(t.title)}&lt;/span&gt;&lt;span class=&quot;d&quot;&gt;${esc(t.duration)}&lt;/span&gt;&lt;/div&gt;`).join(&#x27;&#x27;)}&lt;/div&gt;`;
+}
+
+function vinylInfoHtml(v) {
+  const rows = [[&#x27;Label&#x27;, v.label], [&#x27;Référence&#x27;, v.catno], [&#x27;Format&#x27;, v.format], [&#x27;Pays&#x27;, v.country], [&#x27;Année&#x27;, v.year], [&#x27;Genres&#x27;, (v.genres || []).join(&#x27;, &#x27;)]].filter(([, x]) =&gt; x);
+  return `&lt;dl class=&quot;kv&quot;&gt;${rows.map(([k, x]) =&gt; `&lt;dt&gt;${k}&lt;/dt&gt;&lt;dd&gt;${esc(x)}&lt;/dd&gt;`).join(&#x27;&#x27;)}&lt;/dl&gt;`;
+}
+
+// Fiche d&#x27;un vinyle de la collection
+function openVinyl(id) {
+  modalKind = &#x27;vinyl&#x27;;
+  const v = data.vinyls[id]; if (!v) return;
+  openModal(`
+    &lt;div class=&quot;sheet-head&quot;&gt;&lt;div&gt;&lt;h3&gt;${esc(v.title)}&lt;/h3&gt;&lt;div class=&quot;meta&quot;&gt;${esc(v.artist)}&lt;/div&gt;&lt;/div&gt;
+      &lt;button class=&quot;close&quot; data-act=&quot;close&quot;&gt;Fermer&lt;/button&gt;&lt;/div&gt;
+    &lt;div class=&quot;split&quot; data-id=&quot;${esc(id)}&quot;&gt;
+      &lt;div style=&quot;display:flex;flex-direction:column;gap:8px&quot;&gt;${coverHtml(v)}&lt;button data-act=&quot;cover&quot;&gt;Changer la pochette&lt;/button&gt;&lt;/div&gt;
+      &lt;div style=&quot;display:flex;flex-direction:column;gap:12px;min-width:0&quot;&gt;
+        ${vinylInfoHtml(v)}
+        &lt;div class=&quot;form&quot;&gt;
+          &lt;label class=&quot;f&quot;&gt;Statut&lt;select data-f=&quot;status&quot;&gt;&lt;option value=&quot;own&quot; ${v.status !== &#x27;wish&#x27; ? &#x27;selected&#x27; : &#x27;&#x27;}&gt;Je l&#x27;ai&lt;/option&gt;&lt;option value=&quot;wish&quot; ${v.status === &#x27;wish&#x27; ? &#x27;selected&#x27; : &#x27;&#x27;}&gt;Je le cherche&lt;/option&gt;&lt;/select&gt;&lt;/label&gt;
+          &lt;label class=&quot;f&quot;&gt;État (Goldmine)&lt;select data-f=&quot;grade&quot;&gt;${gradeOpts(v.grade)}&lt;/select&gt;&lt;/label&gt;
+          &lt;label class=&quot;f&quot;&gt;Prix (€)&lt;input data-f=&quot;price&quot; value=&quot;${esc(v.price || &#x27;&#x27;)}&quot; inputmode=&quot;decimal&quot;&gt;&lt;/label&gt;
+          &lt;label class=&quot;f wide&quot;&gt;Notes&lt;textarea data-f=&quot;note&quot; placeholder=&quot;Couleur du vinyle, pressage, où je l&#x27;ai trouvé…&quot;&gt;${esc(v.note || &#x27;&#x27;)}&lt;/textarea&gt;&lt;/label&gt;
+        &lt;/div&gt;
+        ${tracksHtml(v.tracklist)}
+      &lt;/div&gt;
+    &lt;/div&gt;
+    &lt;div class=&quot;actions&quot;&gt;
+      &lt;span class=&quot;hint grow&quot;&gt;Source : ${sourceName(v.source)}${v.url ? ` · &lt;a data-act=&quot;src&quot;&gt;voir la fiche ↗&lt;/a&gt;` : &#x27;&#x27;}&lt;/span&gt;
+      &lt;span id=&quot;delZone&quot;&gt;&lt;button class=&quot;danger&quot; data-act=&quot;ask&quot;&gt;Retirer du coffre&lt;/button&gt;&lt;/span&gt;
+    &lt;/div&gt;`, &#x27;vinyl&#x27;);
+}
+
+$(&#x27;sheet&#x27;).addEventListener(&#x27;click&#x27;, async e =&gt; {
+  if (modalKind !== &#x27;vinyl&#x27;) return;
+  const b = e.target.closest(&#x27;[data-act]&#x27;); if (!b) return;
+  const id = $(&#x27;sheet&#x27;).querySelector(&#x27;[data-id]&#x27;).dataset.id;
+  const v = data.vinyls[id];
+  switch (b.dataset.act) {
+    case &#x27;close&#x27;: return closeModal();
+    case &#x27;src&#x27;: return window.coffre.openExternal(v.url);
+    case &#x27;cover&#x27;: {
+      const name = await window.coffre.pickCover();
+      if (!name) return;
+      if (v.cover) window.coffre.deleteCover(v.cover);
+      v.cover = name; scheduleSave(); renderVinyls(); openVinyl(id); return;
+    }
+    case &#x27;ask&#x27;:
+      $(&#x27;delZone&#x27;).innerHTML = `&lt;span class=&quot;hint&quot;&gt;Retirer ce disque ?&lt;/span&gt; &lt;button class=&quot;danger&quot; data-act=&quot;del&quot;&gt;Oui, retirer&lt;/button&gt; &lt;button data-act=&quot;nodel&quot;&gt;Non&lt;/button&gt;`; return;
+    case &#x27;nodel&#x27;:
+      $(&#x27;delZone&#x27;).innerHTML = `&lt;button class=&quot;danger&quot; data-act=&quot;ask&quot;&gt;Retirer du coffre&lt;/button&gt;`; return;
+    case &#x27;del&#x27;:
+      if (v.cover) window.coffre.deleteCover(v.cover);
+      delete data.vinyls[id]; scheduleSave(); renderVinyls(); closeModal(); return;
+  }
+});
+$(&#x27;sheet&#x27;).addEventListener(&#x27;change&#x27;, e =&gt; {
+  if (modalKind !== &#x27;vinyl&#x27;) return;
+  const f = e.target.dataset.f; if (!f) return;
+  const id = $(&#x27;sheet&#x27;).querySelector(&#x27;[data-id]&#x27;).dataset.id;
+  data.vinyls[id][f] = e.target.value; scheduleSave(); renderVinyls();
+});
+
+// ============================================================
+//  VINYLES — recherche en ligne
+// ============================================================
+function findInCollection(r) {
+  return Object.keys(data.vinyls).find(k =&gt; data.vinyls[k].source === r.source &amp;&amp; String(data.vinyls[k].sourceId) === String(r.id));
+}
+
+function openSearch() {
+  modalKind = &#x27;search&#x27;;
+  search.source = data.settings.source || &#x27;musicbrainz&#x27;;
+  const noToken = !data.settings.discogsToken;
+  openModal(`
+    &lt;div class=&quot;sheet-head&quot;&gt;&lt;h3&gt;Rechercher un vinyle&lt;/h3&gt;&lt;button class=&quot;close&quot; data-act=&quot;close&quot;&gt;Fermer&lt;/button&gt;&lt;/div&gt;
+    &lt;form class=&quot;searchbar&quot; id=&quot;sForm&quot;&gt;
+      &lt;input id=&quot;sQ&quot; type=&quot;search&quot; placeholder=&quot;Artiste, album, label ou référence…&quot; value=&quot;${esc(search.q)}&quot; autofocus&gt;
+      &lt;div class=&quot;seg&quot; id=&quot;sSrc&quot;&gt;
+        &lt;button type=&quot;button&quot; data-v=&quot;musicbrainz&quot;&gt;MusicBrainz&lt;/button&gt;
+        &lt;button type=&quot;button&quot; data-v=&quot;discogs&quot; ${noToken ? &#x27;title=&quot;Ajoute ton token Discogs dans les réglages&quot;&#x27; : &#x27;&#x27;}&gt;Discogs&lt;/button&gt;
+      &lt;/div&gt;
+      &lt;button class=&quot;primary&quot; type=&quot;submit&quot;&gt;Chercher&lt;/button&gt;
+    &lt;/form&gt;
+    &lt;div class=&quot;results&quot; id=&quot;sRes&quot;&gt;&lt;/div&gt;`, &#x27;vinyl wide&#x27;);
+  const mark = () =&gt; $(&#x27;sSrc&#x27;).querySelectorAll(&#x27;button&#x27;).forEach(b =&gt; b.setAttribute(&#x27;aria-pressed&#x27;, String(b.dataset.v === search.source)));
+  mark();
+  $(&#x27;sSrc&#x27;).addEventListener(&#x27;click&#x27;, e =&gt; {
+    const b = e.target.closest(&#x27;button&#x27;); if (!b) return;
+    search.source = b.dataset.v; data.settings.source = search.source; scheduleSave(); mark();
+    if (search.q) runSearch(1);
+  });
+  $(&#x27;sForm&#x27;).addEventListener(&#x27;submit&#x27;, e =&gt; { e.preventDefault(); search.q = $(&#x27;sQ&#x27;).value.trim(); if (search.q) runSearch(1); });
+  renderResults();
+}
+
+async function runSearch(page) {
+  search.loading = true; search.error = &#x27;&#x27;; search.page = page;
+  if (page === 1) search.results = [];
+  renderResults();
+  try {
+    const r = await window.coffre.search({ q: search.q, source: search.source, page, token: data.settings.discogsToken });
+    search.results = page === 1 ? r.results : search.results.concat(r.results);
+    search.hasMore = r.hasMore;
+  } catch (e) {
+    search.error = String(e.message || e).replace(/^Error invoking remote method &#x27;[^&#x27;]+&#x27;: (Error: )?/, &#x27;&#x27;);
+  }
+  search.loading = false;
+  if (modalKind === &#x27;search&#x27;) renderResults();
+}
+
+function renderResults() {
+  const el = $(&#x27;sRes&#x27;); if (!el) return;
+  if (search.error) { el.innerHTML = `&lt;div class=&quot;spinner error&quot;&gt;${esc(search.error)}&lt;/div&gt;`; return; }
+  if (!search.results.length) {
+    el.innerHTML = search.loading ? `&lt;div class=&quot;spinner&quot;&gt;Recherche…&lt;/div&gt;`
+      : `&lt;div class=&quot;spinner&quot;&gt;${search.q ? &#x27;Aucun vinyle trouvé. Essaie avec moins de mots, ou change de source.&#x27; : &#x27;Tape un nom et appuie sur Entrée. Les résultats viennent directement de &#x27; + (search.source === &#x27;discogs&#x27; ? &#x27;Discogs&#x27; : &#x27;MusicBrainz&#x27;) + &#x27;, les nouveautés comprises.&#x27;}&lt;/div&gt;`;
+    return;
+  }
+  el.innerHTML = search.results.map((r, i) =&gt; {
+    const have = findInCollection(r);
+    return `&lt;button class=&quot;res&quot; data-i=&quot;${i}&quot;&gt;
+      ${r.thumb ? `&lt;img class=&quot;cover&quot; src=&quot;${esc(r.thumb)}&quot; alt=&quot;&quot; loading=&quot;lazy&quot; data-ph=&quot;1&quot;&gt;` : `&lt;div class=&quot;cover ph&quot;&gt;&lt;/div&gt;`}
+      &lt;span class=&quot;t&quot;&gt;${esc(r.title)}&lt;/span&gt;&lt;span class=&quot;a&quot;&gt;${esc(r.artist)}&lt;/span&gt;
+      &lt;span class=&quot;m&quot;&gt;${[r.year, r.country, r.format].filter(Boolean).map(esc).join(&#x27; · &#x27;)}&lt;/span&gt;
+      ${r.label || r.catno ? `&lt;span class=&quot;m&quot;&gt;${esc([r.label, r.catno].filter(Boolean).join(&#x27; — &#x27;))}&lt;/span&gt;` : &#x27;&#x27;}
+      ${have ? `&lt;span class=&quot;have&quot;&gt;Déjà dans ton coffre&lt;/span&gt;` : &#x27;&#x27;}
+    &lt;/button&gt;`;
+  }).join(&#x27;&#x27;) + (search.loading ? `&lt;div class=&quot;spinner&quot;&gt;Chargement…&lt;/div&gt;` : search.hasMore ? `&lt;button class=&quot;more&quot; data-act=&quot;more&quot;&gt;Plus de résultats&lt;/button&gt;` : &#x27;&#x27;);
+  // Pochette manquante : on remplace par le disque stylisé
+  el.querySelectorAll(&#x27;img[data-ph]&#x27;).forEach(img =&gt; img.addEventListener(&#x27;error&#x27;, () =&gt; { const d = document.createElement(&#x27;div&#x27;); d.className = &#x27;cover ph&#x27;; img.replaceWith(d); }, { once: true }));
+}
+
+// Fiche d&#x27;un résultat avant ajout
+async function openRelease(r) {
+  modalKind = &#x27;release&#x27;;
+  const have = findInCollection(r);
+  openModal(`
+    &lt;div class=&quot;sheet-head&quot;&gt;&lt;div&gt;&lt;h3&gt;${esc(r.title)}&lt;/h3&gt;&lt;div class=&quot;meta&quot;&gt;${esc(r.artist)}&lt;/div&gt;&lt;/div&gt;
+      &lt;button data-act=&quot;back&quot;&gt;← Retour aux résultats&lt;/button&gt;&lt;/div&gt;
+    &lt;div class=&quot;split&quot;&gt;
+      &lt;div id=&quot;rCover&quot;&gt;${r.cover || r.thumb ? `&lt;img class=&quot;cover&quot; src=&quot;${esc(r.cover || r.thumb)}&quot; alt=&quot;&quot;&gt;` : `&lt;div class=&quot;cover ph&quot;&gt;&lt;/div&gt;`}&lt;/div&gt;
+      &lt;div style=&quot;display:flex;flex-direction:column;gap:12px;min-width:0&quot;&gt;
+        &lt;div id=&quot;rInfo&quot;&gt;${vinylInfoHtml(r)}&lt;p class=&quot;hint&quot;&gt;Chargement des détails…&lt;/p&gt;&lt;/div&gt;
+        ${have ? `&lt;p class=&quot;hint&quot;&gt;Ce pressage est déjà dans ton coffre.&lt;/p&gt;` : &#x27;&#x27;}
+        &lt;div class=&quot;form&quot;&gt;
+          &lt;label class=&quot;f&quot;&gt;Statut&lt;select id=&quot;aStatus&quot;&gt;&lt;option value=&quot;own&quot;&gt;Je l&#x27;ai&lt;/option&gt;&lt;option value=&quot;wish&quot;&gt;Je le cherche&lt;/option&gt;&lt;/select&gt;&lt;/label&gt;
+          &lt;label class=&quot;f&quot;&gt;État (Goldmine)&lt;select id=&quot;aGrade&quot;&gt;${gradeOpts(&#x27;&#x27;)}&lt;/select&gt;&lt;/label&gt;
+          &lt;label class=&quot;f&quot;&gt;Prix (€)&lt;input id=&quot;aPrice&quot; inputmode=&quot;decimal&quot;&gt;&lt;/label&gt;
+          &lt;label class=&quot;f wide&quot;&gt;Notes&lt;textarea id=&quot;aNote&quot; placeholder=&quot;Couleur du vinyle, pressage, où je l&#x27;ai trouvé…&quot;&gt;&lt;/textarea&gt;&lt;/label&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;actions&quot;&gt;&lt;span class=&quot;hint grow&quot; id=&quot;aMsg&quot;&gt;&lt;/span&gt;
+          ${have ? `&lt;button data-act=&quot;see&quot;&gt;Voir dans mon coffre&lt;/button&gt;` : &#x27;&#x27;}
+          &lt;button class=&quot;primary&quot; data-act=&quot;add&quot;&gt;Ajouter au coffre&lt;/button&gt;&lt;/div&gt;
+        &lt;div id=&quot;rTracks&quot;&gt;&lt;/div&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;`, &#x27;vinyl wide&#x27;);
+  $(&#x27;sheet&#x27;).dataset.release = JSON.stringify(r);
+  const cover = $(&#x27;rCover&#x27;).querySelector(&#x27;img&#x27;);
+  if (cover) cover.addEventListener(&#x27;error&#x27;, () =&gt; { $(&#x27;rCover&#x27;).innerHTML = `&lt;div class=&quot;cover ph&quot;&gt;&lt;/div&gt;`; }, { once: true });
+  try {
+    const d = await window.coffre.details({ source: r.source, id: r.id, token: data.settings.discogsToken });
+    if (modalKind !== &#x27;release&#x27;) return;
+    const full = { ...r, ...Object.fromEntries(Object.entries(d).filter(([, x]) =&gt; x &amp;&amp; (!Array.isArray(x) || x.length))) };
+    $(&#x27;sheet&#x27;).dataset.release = JSON.stringify(full);
+    $(&#x27;rInfo&#x27;).innerHTML = vinylInfoHtml(full);
+    $(&#x27;rTracks&#x27;).innerHTML = tracksHtml(full.tracklist);
+    if (d.cover &amp;&amp; d.cover !== r.cover) $(&#x27;rCover&#x27;).innerHTML = `&lt;img class=&quot;cover&quot; src=&quot;${esc(d.cover)}&quot; alt=&quot;&quot;&gt;`;
+  } catch (e) {
+    if ($(&#x27;rInfo&#x27;)) $(&#x27;rInfo&#x27;).innerHTML = vinylInfoHtml(r) + `&lt;p class=&quot;hint&quot;&gt;Détails indisponibles pour l&#x27;instant. Tu peux quand même l&#x27;ajouter.&lt;/p&gt;`;
+  }
+}
+
+async function addRelease() {
+  const r = JSON.parse($(&#x27;sheet&#x27;).dataset.release);
+  const btn = $(&#x27;sheet&#x27;).querySelector(&#x27;[data-act=add]&#x27;);
+  btn.disabled = true; $(&#x27;aMsg&#x27;).textContent = &#x27;Téléchargement de la pochette…&#x27;;
+  let cover = await window.coffre.downloadCover(r.cover || r.thumb);
+  if (!cover &amp;&amp; r.thumb &amp;&amp; r.thumb !== r.cover) cover = await window.coffre.downloadCover(r.thumb);
+  const id = uid();
+  data.vinyls[id] = {
+    source: r.source, sourceId: r.id, url: r.url || &#x27;&#x27;,
+    artist: r.artist || &#x27;&#x27;, title: r.title || &#x27;&#x27;, year: r.year || &#x27;&#x27;, country: r.country || &#x27;&#x27;,
+    label: r.label || &#x27;&#x27;, catno: r.catno || &#x27;&#x27;, format: r.format || &#x27;&#x27;,
+    genres: r.genres || [], tracklist: r.tracklist || [],
+    status: $(&#x27;aStatus&#x27;).value, grade: $(&#x27;aGrade&#x27;).value, price: $(&#x27;aPrice&#x27;).value.trim(), note: $(&#x27;aNote&#x27;).value.trim(),
+    cover, added: Date.now()
+  };
+  scheduleSave(); renderVinyls();
+  $(&#x27;aMsg&#x27;).textContent = cover ? &#x27;Ajouté au coffre.&#x27; : &#x27;Ajouté au coffre (sans pochette, tu peux en choisir une dans sa fiche).&#x27;;
+  setTimeout(() =&gt; { if (modalKind === &#x27;release&#x27;) backToSearch(); }, 700);
+}
+
+function backToSearch() { openSearch(); }
+
+$(&#x27;sheet&#x27;).addEventListener(&#x27;click&#x27;, e =&gt; {
+  if (modalKind === &#x27;search&#x27;) {
+    const b = e.target.closest(&#x27;[data-act], [data-i]&#x27;); if (!b) return;
+    if (b.dataset.act === &#x27;close&#x27;) return closeModal();
+    if (b.dataset.act === &#x27;more&#x27;) return runSearch(search.page + 1);
+    if (b.dataset.i !== undefined) return openRelease(search.results[Number(b.dataset.i)]);
+  } else if (modalKind === &#x27;release&#x27;) {
+    const b = e.target.closest(&#x27;[data-act]&#x27;); if (!b) return;
+    if (b.dataset.act === &#x27;back&#x27;) return backToSearch();
+    if (b.dataset.act === &#x27;add&#x27;) return addRelease();
+    if (b.dataset.act === &#x27;see&#x27;) { const r = JSON.parse($(&#x27;sheet&#x27;).dataset.release); return openVinyl(findInCollection(r)); }
+  }
+});
+
+$(&#x27;vinFindBtn&#x27;).addEventListener(&#x27;click&#x27;, openSearch);
+
+// ============================================================
+//  VINYLES — ajout à la main
+// ============================================================
+let manualCover = &#x27;&#x27;;
+function openManual() {
+  modalKind = &#x27;manual&#x27;; manualCover = &#x27;&#x27;;
+  openModal(`
+    &lt;div class=&quot;sheet-head&quot;&gt;&lt;h3&gt;Ajouter un vinyle à la main&lt;/h3&gt;&lt;button class=&quot;close&quot; data-act=&quot;close&quot;&gt;Fermer&lt;/button&gt;&lt;/div&gt;
+    &lt;p class=&quot;hint&quot;&gt;Pour un pressage introuvable en ligne. Tu peux mettre une photo de ta pochette.&lt;/p&gt;
+    &lt;div class=&quot;split&quot;&gt;
+      &lt;div style=&quot;display:flex;flex-direction:column;gap:8px&quot;&gt;&lt;div id=&quot;mCover&quot;&gt;&lt;div class=&quot;cover ph&quot;&gt;&lt;/div&gt;&lt;/div&gt;&lt;button data-act=&quot;pick&quot;&gt;Choisir une pochette&lt;/button&gt;&lt;/div&gt;
+      &lt;form class=&quot;form&quot; id=&quot;mForm&quot;&gt;
+        &lt;label class=&quot;f&quot;&gt;Artiste&lt;input id=&quot;mArtist&quot; required autofocus&gt;&lt;/label&gt;
+        &lt;label class=&quot;f&quot;&gt;Album&lt;input id=&quot;mTitle&quot; required&gt;&lt;/label&gt;
+        &lt;label class=&quot;f&quot;&gt;Année&lt;input id=&quot;mYear&quot; inputmode=&quot;numeric&quot; maxlength=&quot;4&quot;&gt;&lt;/label&gt;
+        &lt;label class=&quot;f&quot;&gt;Label&lt;input id=&quot;mLabel&quot;&gt;&lt;/label&gt;
+        &lt;label class=&quot;f&quot;&gt;Référence&lt;input id=&quot;mCatno&quot;&gt;&lt;/label&gt;
+        &lt;label class=&quot;f&quot;&gt;Format&lt;input id=&quot;mFormat&quot; value=&quot;LP&quot;&gt;&lt;/label&gt;
+        &lt;label class=&quot;f&quot;&gt;Pays&lt;input id=&quot;mCountry&quot;&gt;&lt;/label&gt;
+        &lt;label class=&quot;f&quot;&gt;Statut&lt;select id=&quot;mStatus&quot;&gt;&lt;option value=&quot;own&quot;&gt;Je l&#x27;ai&lt;/option&gt;&lt;option value=&quot;wish&quot;&gt;Je le cherche&lt;/option&gt;&lt;/select&gt;&lt;/label&gt;
+        &lt;label class=&quot;f&quot;&gt;État (Goldmine)&lt;select id=&quot;mGrade&quot;&gt;${gradeOpts(&#x27;&#x27;)}&lt;/select&gt;&lt;/label&gt;
+        &lt;label class=&quot;f&quot;&gt;Prix (€)&lt;input id=&quot;mPrice&quot; inputmode=&quot;decimal&quot;&gt;&lt;/label&gt;
+        &lt;label class=&quot;f wide&quot;&gt;Notes&lt;textarea id=&quot;mNote&quot;&gt;&lt;/textarea&gt;&lt;/label&gt;
+        &lt;div class=&quot;actions wide&quot;&gt;&lt;button class=&quot;primary&quot; type=&quot;submit&quot;&gt;Ajouter au coffre&lt;/button&gt;&lt;/div&gt;
+      &lt;/form&gt;
+    &lt;/div&gt;`, &#x27;vinyl&#x27;);
+  $(&#x27;mForm&#x27;).addEventListener(&#x27;submit&#x27;, e =&gt; {
+    e.preventDefault();
+    const id = uid();
+    data.vinyls[id] = {
+      source: &#x27;manuel&#x27;, sourceId: &#x27;&#x27;, url: &#x27;&#x27;,
+      artist: $(&#x27;mArtist&#x27;).value.trim(), title: $(&#x27;mTitle&#x27;).value.trim(), year: $(&#x27;mYear&#x27;).value.trim(),
+      label: $(&#x27;mLabel&#x27;).value.trim(), catno: $(&#x27;mCatno&#x27;).value.trim(), format: $(&#x27;mFormat&#x27;).value.trim(), country: $(&#x27;mCountry&#x27;).value.trim(),
+      genres: [], tracklist: [], status: $(&#x27;mStatus&#x27;).value, grade: $(&#x27;mGrade&#x27;).value, price: $(&#x27;mPrice&#x27;).value.trim(), note: $(&#x27;mNote&#x27;).value.trim(),
+      cover: manualCover, added: Date.now()
+    };
+    manualCover = &#x27;&#x27;;
+    scheduleSave(); renderVinyls(); closeModal();
+  });
+}
+$(&#x27;sheet&#x27;).addEventListener(&#x27;click&#x27;, async e =&gt; {
+  if (modalKind !== &#x27;manual&#x27;) return;
+  const b = e.target.closest(&#x27;[data-act]&#x27;); if (!b) return;
+  if (b.dataset.act === &#x27;close&#x27;) { if (manualCover) window.coffre.deleteCover(manualCover); manualCover = &#x27;&#x27;; return closeModal(); }
+  if (b.dataset.act === &#x27;pick&#x27;) {
+    const name = await window.coffre.pickCover(); if (!name) return;
+    if (manualCover) window.coffre.deleteCover(manualCover);
+    manualCover = name; $(&#x27;mCover&#x27;).innerHTML = `&lt;img class=&quot;cover&quot; src=&quot;${coverUrl(name)}&quot; alt=&quot;&quot;&gt;`;
+  }
+});
+$(&#x27;vinManualBtn&#x27;).addEventListener(&#x27;click&#x27;, openManual);
+
+// ============================================================
+//  RÉGLAGES
+// ============================================================
+let updateState = { status: &#x27;&#x27; };
+function updateLabel() {
+  const s = updateState;
+  switch (s.status) {
+    case &#x27;dev&#x27;: return &quot;Mises à jour désactivées en mode développement.&quot;;
+    case &#x27;checking&#x27;: return &#x27;Recherche de mise à jour…&#x27;;
+    case &#x27;none&#x27;: return &quot;Tu as la dernière version.&quot;;
+    case &#x27;available&#x27;: return `Version ${s.version} trouvée, téléchargement…`;
+    case &#x27;downloading&#x27;: return `Téléchargement de la mise à jour : ${s.percent} %`;
+    case &#x27;ready&#x27;: return `Version ${s.version} prête à être installée.`;
+    case &#x27;error&#x27;: return `Impossible de vérifier les mises à jour : ${s.message}`;
+    default: return &#x27;&#x27;;
+  }
+}
+
+function openSettings() {
+  modalKind = &#x27;settings&#x27;;
+  openModal(`
+    &lt;div class=&quot;sheet-head&quot;&gt;&lt;h3&gt;Réglages&lt;/h3&gt;&lt;button class=&quot;close&quot; data-act=&quot;close&quot;&gt;Fermer&lt;/button&gt;&lt;/div&gt;
+    &lt;div class=&quot;form&quot;&gt;
+      &lt;label class=&quot;f&quot;&gt;Source de recherche par défaut
+        &lt;select id=&quot;stSource&quot;&gt;&lt;option value=&quot;musicbrainz&quot;&gt;MusicBrainz (sans clé)&lt;/option&gt;&lt;option value=&quot;discogs&quot;&gt;Discogs (token requis)&lt;/option&gt;&lt;/select&gt;&lt;/label&gt;
+      &lt;label class=&quot;f wide&quot;&gt;Token Discogs
+        &lt;input id=&quot;stToken&quot; value=&quot;${esc(data.settings.discogsToken)}&quot; placeholder=&quot;Colle ton token personnel ici&quot; spellcheck=&quot;false&quot;&gt;&lt;/label&gt;
+    &lt;/div&gt;
+    &lt;p class=&quot;hint&quot;&gt;Discogs référence plus de pressages vinyles. Pour obtenir un token gratuit : connecte-toi sur Discogs, va dans Paramètres → Développeurs, puis « Générer un token ». &lt;a data-act=&quot;dgs&quot;&gt;Ouvrir la page ↗&lt;/a&gt;&lt;/p&gt;
+    &lt;h3&gt;Sauvegarde&lt;/h3&gt;
+    &lt;div class=&quot;actions&quot; style=&quot;justify-content:flex-start&quot;&gt;
+      &lt;button data-act=&quot;export&quot;&gt;Exporter une sauvegarde&lt;/button&gt;
+      &lt;button data-act=&quot;import&quot;&gt;Importer une sauvegarde&lt;/button&gt;
+      &lt;button data-act=&quot;folder&quot;&gt;Ouvrir le dossier des données&lt;/button&gt;
+    &lt;/div&gt;
+    &lt;p class=&quot;hint&quot; id=&quot;stMsg&quot;&gt;L&#x27;export contient tes cartes, tes vinyles et toutes les pochettes dans un seul fichier.&lt;/p&gt;
+    &lt;h3&gt;Application&lt;/h3&gt;
+    &lt;div class=&quot;actions&quot; style=&quot;justify-content:flex-start&quot;&gt;&lt;span&gt;Coffre version ${esc(info.version)}&lt;/span&gt;
+      &lt;button data-act=&quot;check&quot;&gt;Chercher une mise à jour&lt;/button&gt;
+      ${updateState.status === &#x27;ready&#x27; ? `&lt;button class=&quot;primary&quot; data-act=&quot;install&quot;&gt;Redémarrer et mettre à jour&lt;/button&gt;` : &#x27;&#x27;}&lt;/div&gt;
+    &lt;p class=&quot;hint&quot; id=&quot;stUpd&quot;&gt;${esc(updateLabel())}&lt;/p&gt;`, &#x27;vinyl&#x27;);
+  $(&#x27;stSource&#x27;).value = data.settings.source || &#x27;musicbrainz&#x27;;
+}
+$(&#x27;sheet&#x27;).addEventListener(&#x27;change&#x27;, e =&gt; {
+  if (modalKind !== &#x27;settings&#x27;) return;
+  if (e.target.id === &#x27;stSource&#x27;) data.settings.source = e.target.value;
+  if (e.target.id === &#x27;stToken&#x27;) data.settings.discogsToken = e.target.value.trim();
+  scheduleSave();
+});
+$(&#x27;sheet&#x27;).addEventListener(&#x27;click&#x27;, async e =&gt; {
+  if (modalKind !== &#x27;settings&#x27;) return;
+  const b = e.target.closest(&#x27;[data-act]&#x27;); if (!b) return;
+  const msg = t =&gt; { const m = $(&#x27;stMsg&#x27;); if (m) m.textContent = t; };
+  switch (b.dataset.act) {
+    case &#x27;close&#x27;: return closeModal();
+    case &#x27;dgs&#x27;: return window.coffre.openExternal(&#x27;https://www.discogs.com/settings/developers&#x27;);
+    case &#x27;folder&#x27;: return window.coffre.openDataDir();
+    case &#x27;export&#x27;: {
+      const r = await window.coffre.exportBackup(data);
+      if (r.ok) msg(&#x27;Sauvegarde enregistrée : &#x27; + r.path); return;
+    }
+    case &#x27;import&#x27;: {
+      try {
+        const r = await window.coffre.importBackup();
+        if (r.ok) { data = r.data; renderAll(); msg(&#x27;Sauvegarde importée.&#x27;); }
+      } catch (err) { msg(&quot;Ce fichier n&#x27;a pas pu être importé. Choisis un fichier .coffre exporté depuis l&#x27;appli.&quot;); }
+      return;
+    }
+    case &#x27;check&#x27;: { const r = await window.coffre.checkUpdate(); updateState = r.status === &#x27;checking&#x27; ? { status: &#x27;checking&#x27; } : r; $(&#x27;stUpd&#x27;).textContent = updateLabel(); return; }
+    case &#x27;install&#x27;: return window.coffre.installUpdate();
+  }
+});
+$(&#x27;settingsBtn&#x27;).addEventListener(&#x27;click&#x27;, openSettings);
+
+// Bandeau de mise à jour
+window.coffre.onUpdate(s =&gt; {
+  updateState = s;
+  const bar = $(&#x27;updateBar&#x27;);
+  if (s.status === &#x27;ready&#x27;) {
+    bar.innerHTML = `&lt;span&gt;Version ${esc(s.version)} prête&lt;/span&gt;&lt;button class=&quot;primary&quot; id=&quot;updNow&quot;&gt;Redémarrer&lt;/button&gt;`;
+    bar.hidden = false;
+    $(&#x27;updNow&#x27;).addEventListener(&#x27;click&#x27;, () =&gt; window.coffre.installUpdate());
+  } else if (s.status === &#x27;available&#x27; || s.status === &#x27;downloading&#x27;) {
+    bar.innerHTML = `&lt;span&gt;${esc(updateLabel())}&lt;/span&gt;`; bar.hidden = false;
+  } else {
+    bar.hidden = true;
+  }
+  const upd = $(&#x27;stUpd&#x27;); if (upd) upd.textContent = updateLabel();
+});
+
+// ============================================================
+//  DÉMARRAGE
+// ============================================================
+function renderAll() { renderFm(); renderVinyls(); }
+
+(async () =&gt; {
+  info = await window.coffre.info();
+  data = await window.coffre.load();
+  seg(&#x27;fmLayout&#x27;, data.settings.layout || &#x27;gal&#x27;, v =&gt; { data.settings.layout = v; scheduleSave(); renderFm(); });
+  seg(&#x27;fmView&#x27;, &#x27;all&#x27;, v =&gt; { fmF.v = v; renderFm(); });
+  seg(&#x27;vinView&#x27;, &#x27;all&#x27;, v =&gt; { vinF.v = v; renderVinyls(); });
+  renderAll();
+})();
+</pre></details><details><summary><code>.github/workflows/release.yml</code> <span class="new">nouveau</span> — Compilation et publication automatiques sur GitHub</summary><pre># Compile Coffre pour Windows et publie l&#x27;installeur dans les Releases GitHub.
+# Se lance tout seul quand tu pousses un tag de version (ex. v1.1.0),
+# ou à la main depuis l&#x27;onglet Actions du repo (bouton &quot;Run workflow&quot;).
+name: Publier une version
+
+on:
+  push:
+    tags:
+      - &#x27;v*&#x27;
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      - name: Installer Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Installer les dépendances
+        run: npm install
+
+      - name: Compiler et publier
+        run: npm run release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+</pre></details><details><summary><code>package.json</code> <span class="new">nouveau</span> — Configuration du projet, de l’installeur et des mises à jour</summary><pre>{
+  &quot;name&quot;: &quot;coffre&quot;,
+  &quot;productName&quot;: &quot;Coffre&quot;,
+  &quot;version&quot;: &quot;1.0.0&quot;,
+  &quot;description&quot;: &quot;Coffre de Blanche : collection de cartes Forbidden Memories et de vinyles&quot;,
+  &quot;author&quot;: &quot;BlancheLaGoat&quot;,
+  &quot;license&quot;: &quot;MIT&quot;,
+  &quot;main&quot;: &quot;src/main.js&quot;,
+  &quot;scripts&quot;: {
+    &quot;start&quot;: &quot;electron .&quot;,
+    &quot;dist&quot;: &quot;electron-builder --win&quot;,
+    &quot;release&quot;: &quot;electron-builder --win --publish always&quot;
+  },
+  &quot;dependencies&quot;: {
+    &quot;electron-updater&quot;: &quot;^6.3.9&quot;
+  },
+  &quot;devDependencies&quot;: {
+    &quot;electron&quot;: &quot;^33.2.1&quot;,
+    &quot;electron-builder&quot;: &quot;^25.1.8&quot;
+  },
+  &quot;build&quot;: {
+    &quot;appId&quot;: &quot;com.blanchelagoat.coffre&quot;,
+    &quot;productName&quot;: &quot;Coffre&quot;,
+    &quot;copyright&quot;: &quot;BlancheLaGoat&quot;,
+    &quot;directories&quot;: {
+      &quot;output&quot;: &quot;dist&quot;,
+      &quot;buildResources&quot;: &quot;build&quot;
+    },
+    &quot;files&quot;: [
+      &quot;src/**/*&quot;,
+      &quot;package.json&quot;
+    ],
+    &quot;win&quot;: {
+      &quot;target&quot;: &quot;nsis&quot;,
+      &quot;icon&quot;: &quot;build/icon.ico&quot;
+    },
+    &quot;nsis&quot;: {
+      &quot;oneClick&quot;: false,
+      &quot;allowToChangeInstallationDirectory&quot;: true,
+      &quot;createDesktopShortcut&quot;: true,
+      &quot;shortcutName&quot;: &quot;Coffre&quot;
+    },
+    &quot;publish&quot;: [
+      {
+        &quot;provider&quot;: &quot;github&quot;,
+        &quot;owner&quot;: &quot;BlancheLaGoat&quot;,
+        &quot;repo&quot;: &quot;Coffre&quot;,
+        &quot;releaseType&quot;: &quot;release&quot;
+      }
+    ]
+  }
+}
+</pre></details>
+<p class="d">Fichiers non affichés : <code>src/renderer/fm-data.js</code> (liste des 722 cartes), <code>src/assets/cards/</code> (709 images), <code>build/</code> (icône).</p>
+</body></html>

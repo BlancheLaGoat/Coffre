@@ -1,0 +1,52 @@
+{
+  "name": "coffre",
+  "productName": "Coffre",
+  "version": "1.0.0",
+  "description": "Coffre de Blanche : collection de cartes Forbidden Memories et de vinyles",
+  "author": "BlancheLaGoat",
+  "license": "MIT",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win",
+    "release": "electron-builder --win --publish always"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
+  },
+  "devDependencies": {
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.blanchelagoat.coffre",
+    "productName": "Coffre",
+    "copyright": "BlancheLaGoat",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Coffre"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "BlancheLaGoat",
+        "repo": "Coffre",
+        "releaseType": "release"
+      }
+    ]
+  }
+}
