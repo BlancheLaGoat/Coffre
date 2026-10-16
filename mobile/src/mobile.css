@@ -64,19 +64,23 @@ body.mobile.compact .shelves { padding-top: 6px; }
 body.mobile.compact .scan-fab { display: flex; align-items: center; justify-content: center; position: fixed; right: 16px; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); width: 58px; height: 58px; border-radius: 99px; border: 0; background: var(--fg); color: var(--bg); font-size: 24px; box-shadow: var(--shadow); z-index: 15; padding: 0; }
 
 /* Scan Yu-Gi-Oh */
-.scan[data-mode=ygo] .scan-cands { display: flex; flex-direction: column; gap: 8px; }
+.scan[data-mode=op] .scan-frame i { position: absolute; left: 55%; right: 3%; top: 88%; height: 8%; border: 1.5px dashed rgba(255, 255, 255, .7); border-radius: 4px; }
+.scan[data-mode=ygo] .scan-cands, .scan[data-mode=op] .scan-cands { display: flex; flex-direction: column; gap: 8px; }
 .ycand { display: grid; grid-template-columns: 54px 1fr; gap: 10px; align-items: center; background: rgba(255, 255, 255, .1); border-radius: 10px; padding: 8px; }
 .ycand div { display: flex; flex-direction: column; gap: 2px; font-size: 13px; min-width: 0; }
 .ycand b { font-size: 15px; }
 .ycand span { opacity: .8; }
 .ychoices { display: flex; flex-wrap: wrap; gap: 6px; }
 .ychoices button { background: #a48cff !important; color: #fff; border: 0; font-weight: 700; }
+.scan[data-mode=op] .ychoices button { background: #3a8ee6 !important; }
+.scan[data-mode=op] .ychoices button:not(.primary) { background: rgba(255, 255, 255, .2) !important; }
 body.mobile .ydecks { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; padding: 12px; }
 body.mobile .yrow { padding: 6px 10px; }
-body.mobile #ygoQ { flex-basis: 100%; }
-body.mobile #ygoView { flex: 1 1 100%; }
+body.mobile #ygoQ, body.mobile #opQ { flex-basis: 100%; }
+body.mobile #ygoView, body.mobile #opView { flex: 1 1 100%; }
 body.mobile .tabs .count { display: none; }
-body.mobile .tabs button { padding: 10px 4px; gap: 5px; font-size: 14px; }
+body.mobile .tabs button { padding: 10px 2px; gap: 4px; font-size: 13px; white-space: nowrap; }
+body.mobile .tabs .long { display: none; }
 
 .scan-tool { min-width: 44px; height: 40px; border-radius: 99px; border: 0; background: rgba(255, 255, 255, .18); color: #fff; font-weight: 700; padding: 0 10px; min-height: 0 !important; }
 .scan-title { min-width: 0; font-size: 15px !important; }

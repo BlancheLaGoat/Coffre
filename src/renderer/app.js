@@ -60,7 +60,7 @@ function openModal(html, cls = '') {
   if (first) first.focus();
 }
 function closeModal() { $('modal').hidden = true; $('sheet').innerHTML = ''; modalKind = null; }
-$('modal').addEventListener('mousedown', e => { if (e.target.id === 'modal' && ['card', 'vinyl', 'settings', 'ygo-card', 'ygo-add'].includes(modalKind)) closeModal(); });
+$('modal').addEventListener('mousedown', e => { if (e.target.id === 'modal' && ['card', 'vinyl', 'settings', 'ygo-card', 'ygo-add', 'op-card', 'op-add'].includes(modalKind)) closeModal(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('modal').hidden) closeModal(); });
 
 // ============================================================
@@ -715,10 +715,10 @@ window.coffre.onUpdate(s => {
 // ============================================================
 //  DÉMARRAGE
 // ============================================================
-function renderAll() { renderFm(); renderVinyls(); if (window.CoffreYgo) window.CoffreYgo.render(); }
+function renderAll() { renderFm(); renderVinyls(); if (window.CoffreYgo) window.CoffreYgo.render(); if (window.CoffreOp) window.CoffreOp.render(); }
 
 // Onglets Cartes FM / Vinyles (Ctrl+1 et Ctrl+2 au clavier)
-const TABS = [['fm', 'Cartes FM'], ['ygo', 'Yu-Gi-Oh'], ['vin', 'Vinyles']];
+const TABS = [['fm', 'Cartes FM'], ['ygo', 'Yu-Gi-Oh'], ['op', 'One Piece'], ['vin', 'Vinyles']];
 const tabOn = k => !(data.settings.hiddenTabs || []).includes(k);
 // Cache les onglets désactivés dans les réglages (les données ne sont pas touchées)
 function applyTabs() {
@@ -738,12 +738,13 @@ document.addEventListener('keydown', e => {
   if (!e.ctrlKey || !$('modal').hidden) return;
   if (e.key === '1') showTab('fm');
   if (e.key === '2') showTab('ygo');
-  if (e.key === '3') showTab('vin');
+  if (e.key === '3') showTab('op');
+  if (e.key === '4') showTab('vin');
 });
 
 // Changements arrivés d'un autre appareil (synchro)
 function applyRemote(c) {
-  data.fm = c.fm || data.fm; data.vinyls = c.vinyls || data.vinyls; data.ygo = c.ygo || data.ygo || {}; data.decks = c.decks || data.decks || {};
+  data.fm = c.fm || data.fm; data.vinyls = c.vinyls || data.vinyls; data.ygo = c.ygo || data.ygo || {}; data.decks = c.decks || data.decks || {}; data.op = c.op || data.op || {}; data.opdecks = c.opdecks || data.opdecks || {};
   renderAll();
   if (modalKind === 'vinyl') {
     const id = $('sheet').querySelector('[data-id]')?.dataset.id;
@@ -800,8 +801,8 @@ window.CoffreApp = {
   seg('fmLayout', data.settings.layout || 'gal', v => { data.settings.layout = v; scheduleSave(); renderFm(); });
   seg('fmView', 'all', v => { fmF.v = v; renderFm(); });
   seg('vinView', 'all', v => { vinF.v = v; renderVinyls(); });
-  data.ygo = data.ygo || {}; data.decks = data.decks || {};
-  const want = ['vin', 'ygo'].includes(data.settings.tab) ? data.settings.tab : 'fm';
+  data.ygo = data.ygo || {}; data.decks = data.decks || {}; data.op = data.op || {}; data.opdecks = data.opdecks || {};
+  const want = ['vin', 'ygo', 'op'].includes(data.settings.tab) ? data.settings.tab : 'fm';
   $('shelves').dataset.tab = want; applyTabs(); showTab($('shelves').dataset.tab);
   renderAll();
   if (ext.ready) ext.ready();

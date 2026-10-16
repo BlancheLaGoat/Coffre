@@ -243,7 +243,7 @@
   function openDeck(id, keep) {
     if (!keep) { st.deckQ = ''; st.deckView = 'all'; }
     st.deckId = id;
-    App.openModal(`<div id="ydeckSheet"></div>`, 'ygo wide', 'ygo-deck');
+    App.openModal(`<div id="ydeckSheet"></div>`, 'tcg ygo wide', 'ygo-deck');
     renderDeck();
   }
   function renderDeck(keepFocus) {
@@ -339,7 +339,7 @@
   function openCard(id, back) {
     const c = card(id); if (!c) return;
     cardBack = back || null;
-    App.openModal(`<div id="ycardSheet" data-id="${id}"></div>`, 'ygo wide', 'ygo-card');
+    App.openModal(`<div id="ycardSheet" data-id="${id}"></div>`, 'tcg ygo wide', 'ygo-card');
     renderCard();
   }
   function renderCard() {
@@ -380,7 +380,7 @@
     App.openModal(`
       <div class="sheet-head"><h3>Ajouter des cartes</h3><button class="close" data-y="close">Fermer</button></div>
  <div class="ydeckbar">${langSelect('yaLang')}<input type="search" id="yaQ" placeholder="Nom de carte (français ou anglais), code (SGX1-FRA18) ou extension…" value="${esc(st.addQ)}" autofocus></div>
-      <div class="yresults" id="yaRes"></div>`, 'ygo wide', 'ygo-add');
+      <div class="yresults" id="yaRes"></div>`, 'tcg ygo wide', 'ygo-add');
     renderAdd();
   }
   // ---------- Extensions : toutes les cartes d'une extension, pour la compléter ----------

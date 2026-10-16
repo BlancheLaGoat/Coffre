@@ -11,8 +11,9 @@
     <div class="brand">
       <h1>Coffre</h1>
       <nav class="tabs" id="tabs" role="tablist">
-        <button role="tab" data-tab="fm"><span class="k fm-k">◆</span> Cartes FM <span class="count" id="tabFmCount"></span></button>
+        <button role="tab" data-tab="fm"><span class="k fm-k">◆</span> <span class="long">Cartes </span>FM <span class="count" id="tabFmCount"></span></button>
         <button role="tab" data-tab="ygo"><span class="k ygo-k">★</span> Yu-Gi-Oh <span class="count" id="tabYgoCount"></span></button>
+        <button role="tab" data-tab="op"><span class="k op-k">☠</span> One Piece <span class="count" id="tabOpCount"></span></button>
         <button role="tab" data-tab="vin"><span class="k vin-k">●</span> Vinyles <span class="count" id="tabVinCount"></span></button>
       </nav>
     </div>
@@ -60,7 +61,7 @@
     </section>
 
     <!-- ===== YU-GI-OH (toutes les cartes du jeu) ===== -->
-    <section class="shelf ygo">
+    <section class="shelf ygo tcg">
       <div class="shelf-head">
         <div class="title-row">
           <h2><span class="k">★</span> Yu-Gi-Oh</h2>
@@ -76,6 +77,25 @@
         <div class="tools" id="ygoTools"></div>
       </div>
       <div class="list" id="ygoList"></div>
+    </section>
+
+    <!-- ===== ONE PIECE (toutes les cartes du jeu) ===== -->
+    <section class="shelf op tcg">
+      <div class="shelf-head">
+        <div class="title-row">
+          <h2><span class="k">☠</span> One Piece</h2>
+          <span class="big" id="opStats"></span>
+        </div>
+        <div class="tools">
+          <div class="seg" id="opView">
+            <button data-v="col">Ma collection</button>
+            <button data-v="decks">Decks</button>
+            <button data-v="wish">Wishlist</button>
+          </div>
+        </div>
+        <div class="tools" id="opTools"></div>
+      </div>
+      <div class="list" id="opList"></div>
     </section>
 
     <!-- ===== VINYLES ===== -->
@@ -115,5 +135,6 @@
   <script src="fm-data.js"></script>
   <script src="app.js"></script>
   <script src="ygo.js"></script>
+  <script src="op.js"></script>
 </body>
 </html>

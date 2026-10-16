@@ -21,6 +21,10 @@ contextBridge.exposeInMainWorld('coffre', {
   ygoDb: () => ipcRenderer.invoke('ygo:db'),
   ygoRefresh: () => ipcRenderer.invoke('ygo:refresh'),
   ygoImg: (id, big) => ipcRenderer.invoke('ygo:img', id, big),
+  // One Piece : base de cartes et images
+  opDb: () => ipcRenderer.invoke('op:db'),
+  opRefresh: () => ipcRenderer.invoke('op:refresh'),
+  opImg: id => ipcRenderer.invoke('op:img', id),
   // Synchronisation avec l'appli Android
   syncInfo: () => ipcRenderer.invoke('sync:info'),
   syncReset: () => ipcRenderer.invoke('sync:reset'),

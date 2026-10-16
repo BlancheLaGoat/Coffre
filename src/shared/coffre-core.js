@@ -20,8 +20,8 @@
     return out;
   }
 
-  // Ce qui se synchronise : cartes FM, vinyles, collection Yu-Gi-Oh et decks (chaque entrée porte « mt »)
-  const PARTS = ['fm', 'vinyls', 'ygo', 'decks'];
+  // Ce qui se synchronise : cartes FM, vinyles, collections Yu-Gi-Oh et One Piece, et leurs decks (chaque entrée porte « mt »)
+  const PARTS = ['fm', 'vinyls', 'ygo', 'decks', 'op', 'opdecks'];
   function pickCollections(d) {
     const o = {}; for (const k of PARTS) o[k] = (d && d[k]) || {}; return o;
   }
@@ -180,9 +180,100 @@
     return { byId, byNorm, bySet };
   }
 
+
+  // ---------- Base de cartes One Piece (optcgapi.com, gratuite, sans clé) ----------
+  const OP_API = 'https://optcgapi.com/api/';
+  const OP_URLS = {
+    sets: OP_API + 'allSets/', decks: OP_API + 'allDecks/',
+    setCards: OP_API + 'allSetCards/', stCards: OP_API + 'allSTCards/', promoCards: OP_API + 'allPromoCards/'
+  };
+  const opImgUrl = id => `https://optcgapi.com/media/static/Card_Images/${encodeURIComponent(id)}.jpg`;
+  const OP_VARIANTS = { 'parallel': 'Parallèle', 'alternate art': 'Parallèle', 'alt art': 'Parallèle' };
+  // « Roronoa Zoro (001) (Parallel) » → { name: 'Roronoa Zoro', variant: 'Parallèle' }
+  function opSplitName(raw, code) {
+    let t = String(raw || '').trim();
+    const num = String(code || '').split('-').pop();
+    t = t.replace(new RegExp('\\s*\\((' + num.replace(/[^A-Z0-9]/gi, '') + '|' + String(code || '').replace(/[^A-Z0-9-]/gi, '') + ')\\)', 'i'), '');
+    const vars = [];
+    let m;
+    while ((m = t.match(/\s*\(([^()]*)\)\s*$/))) { vars.unshift(m[1].trim()); t = t.slice(0, m.index); }
+    const variant = vars.map(v => OP_VARIANTS[v.toLowerCase()] || v).join(' · ');
+    return { name: t.trim(), variant };
+  }
+  // Carte : { i: code (OP01-001), n: nom, t: catégorie (Leader, Character, Event, Stage), co: couleur, c: coût,
+  //           pw: puissance, l: vie, ct: counter, at: attribut, ty: types,
+  //           p: [[n° extension, clé de l'impression, rareté, version (Parallèle…), prix $ TCGplayer, image]] }
+  function opCompact(sets, decks, ...lists) {
+    const setList = [], setIdx = new Map();
+    const addSet = (id, name, kind) => {
+      id = String(id || '').trim(); if (!id && !name) return -1;
+      const k = id || name;
+      if (setIdx.has(k)) return setIdx.get(k);
+      const i = setList.length; setIdx.set(k, i); setList.push([String(name || id), id, kind || '', i]);
+      return i;
+    };
+    for (const x of Array.isArray(sets) ? sets : []) addSet(x.set_id, x.set_name, 'booster');
+    for (const x of Array.isArray(decks) ? decks : []) addSet(x.structure_deck_id, x.structure_deck_name, 'deck');
+    const byCode = new Map(), cards = [], seen = new Set();
+    for (const list of lists) for (const r of Array.isArray(list) ? list : []) {
+      const code = String(r.card_set_id || '').trim().toUpperCase(); if (!code) continue;
+      if (/^don/i.test(r.card_type || '')) continue;
+      const { name, variant } = opSplitName(r.card_name, code);
+      const img = String(r.card_image_id || '').trim();
+      const key = img || `${code}#${opSplitName(r.card_name, code).variant || r.set_name || ''}`;
+      const si = addSet(r.set_id || '', r.set_name || r.set_id || '', /^P-/.test(code) ? 'promo' : '');
+      if (seen.has(key + '|' + si)) continue; seen.add(key + '|' + si);
+      let c = byCode.get(code);
+      if (!c) {
+        const num = v => v === null || v === undefined || v === '' ? '' : (isNaN(Number(v)) ? String(v) : Number(v));
+        c = { i: code, n: name, t: String(r.card_type || ''), co: String(r.card_color || ''), c: num(r.card_cost), pw: num(r.card_power),
+          l: num(r.life), ct: num(r.counter_amount), at: String(r.attribute || ''), ty: String(r.sub_types || ''), p: [] };
+        byCode.set(code, c); cards.push(c);
+      }
+      if (!variant && c.n.length > name.length) c.n = name;
+      const price = parseFloat(r.market_price) || parseFloat(r.inventory_price) || 0;
+      c.p.push([si, key, String(r.rarity || ''), variant, Math.round(price * 100) / 100, img && r.card_image ? img : '']);
+    }
+    for (const c of cards) c.p.sort((a, b) => (a[3] ? 1 : 0) - (b[3] ? 1 : 0) || a[0] - b[0]);
+    cards.sort((a, b) => a.i.localeCompare(b.i, 'en', { numeric: true }));
+    return { v: 1, at: Date.now(), cur: 'USD', cards, sets: setList };
+  }
+  // Codes One Piece lus par l'appareil photo : OP01-001, ST10-005, EB01-012, PRB01-001, P-034
+  function opCodesInText(text) {
+    const t = String(text || '').toUpperCase().replace(/[‐-―−]/g, '-');
+    const fix = d => d.replace(/O/g, '0').replace(/[IL]/g, '1').replace(/S/g, '5').replace(/Z/g, '2').replace(/B/g, '8').replace(/G/g, '6');
+    const out = [];
+    let m;
+    const re = /\b(OP|ST|EB|PRB|0P)\s?([0-9OILSZBG]{2})\s?-\s?([0-9OILSZBG]{3})\b/g;
+    while ((m = re.exec(t))) out.push(`${m[1] === '0P' ? 'OP' : m[1]}${fix(m[2])}-${fix(m[3])}`);
+    const rp = /\bP\s?-\s?([0-9OILSZBG]{3})\b/g;
+    while ((m = rp.exec(t))) out.push(`P-${fix(m[1])}`);
+    return [...new Set(out)];
+  }
+  function opIndex(db) {
+    const byId = new Map(), bySet = new Map(), byKey = new Map();
+    db.cards.forEach((c, ci) => {
+      byId.set(c.i, ci);
+      c.s = (c.n + ' ' + c.i + ' ' + c.ty).toLowerCase();
+      c.p.forEach((x, pi) => {
+        byKey.set(x[1], [ci, pi]);
+        if (!bySet.has(x[0])) bySet.set(x[0], []);
+        bySet.get(x[0]).push([ci, pi]);
+      });
+      // Prix de référence : la version normale la moins chère (sinon la moins chère tout court)
+      const pr = a => a.map(x => x[4]).filter(v => v > 0);
+      const base = pr(c.p.filter(x => !x[3]));
+      c.cm = base.length ? Math.min(...base) : (pr(c.p).length ? Math.min(...pr(c.p)) : 0);
+      const im = c.p.find(x => x[5] && !x[3]) || c.p.find(x => x[5]);
+      c.im = im ? im[5] : '';
+    });
+    return { byId, bySet, byKey };
+  }
+
   // Ligne pour la wishlist Cardmarket : « 2 Dark Magician »
   const cmLine = (qty, name) => `${qty} ${name}`;
 
   return { PARTS, pickCollections, mergeMaps, mergeCollections, sameCollections, createVinylApi,
-    YGO_URLS, ygoImgUrl, ygoCompact, ygoKey, ygoNormCode, ygoCodesInText, ygoIndex, cmLine };
+    YGO_URLS, ygoImgUrl, ygoCompact, ygoKey, ygoNormCode, ygoCodesInText, ygoIndex, cmLine,
+    OP_URLS, opImgUrl, opCompact, opSplitName, opCodesInText, opIndex };
 });

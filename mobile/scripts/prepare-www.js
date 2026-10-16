@@ -14,6 +14,7 @@ fs.mkdirSync(path.join(WWW, 'cards'), { recursive: true });
 const copy = (from, to) => fs.copyFileSync(from, path.join(WWW, to));
 copy(path.join(R, 'app.js'), 'app.js');
 copy(path.join(R, 'ygo.js'), 'ygo.js');
+copy(path.join(R, 'op.js'), 'op.js');
 copy(path.join(R, 'styles.css'), 'styles.css');
 copy(path.join(R, 'fm-data.js'), 'fm-data.js');
 copy(path.join(ROOT, 'src', 'shared', 'coffre-core.js'), 'coffre-core.js');

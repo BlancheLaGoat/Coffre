@@ -95,7 +95,7 @@ Onglet Cartes FM → **Wishlist Cardmarket** : la liste des cartes FM qui te man
 
 ## 6. Yu-Gi-Oh (toutes les cartes du jeu)
 
-La première fois, l'onglet **Yu-Gi-Oh** propose de **télécharger la base de cartes** (YGOPRODeck, gratuite : environ 13 000 cartes avec toutes leurs extensions, noms anglais et français). Elle se met ensuite à jour toute seule toutes les deux semaines. Sur le téléphone associé, elle est récupérée depuis le PC. Les images des cartes se téléchargent au fur et à mesure, puis restent sur l'appareil.
+La première fois, l'onglet **Yu-Gi-Oh** propose de **télécharger la base de cartes** (YGOPRODeck, gratuite : environ 13 000 cartes avec toutes leurs extensions, noms anglais et français). Elle se met ensuite à jour toute seule chaque semaine. Sur le téléphone associé, elle est récupérée depuis le PC. Les images des cartes se téléchargent au fur et à mesure, puis restent sur l'appareil.
 
 - **Ma collection** : seulement les cartes que tu as. Chaque carte garde sa **langue** (FR par défaut, choix à côté de la recherche et dans la fiche) : une carte française apparaît avec son code français (ex. DUAD-FR053). **Ajouter des cartes** → tape un nom (français ou anglais) ou un code (ex. SGX1-FRA18) → choisis l'extension et la rareté, ou « Peu importe l'extension ».
 - **Compléter une extension** : dans « Ajouter des cartes », tape le nom de l'extension (ex. « Legend of Blue Eyes ») ou son code (ex. « LOB »). Touche l'extension : toutes ses cartes s'affichent avec ta progression (ex. 12 / 126), le filtre **Manquantes**, et **Copier les manquantes** pour ta wishlist Cardmarket.
@@ -109,9 +109,22 @@ Tout se synchronise entre le PC et le téléphone, comme le reste.
 
 ---
 
+## 7. One Piece (toutes les cartes du jeu)
+
+L'onglet **One Piece** marche comme celui de Yu-Gi-Oh. La première fois, il propose de **télécharger la base de cartes** (optcgapi.com, gratuite, sans clé : toutes les extensions OP, EB, PRB, les decks de démarrage ST et les promos, avec les versions parallèles). Elle se met à jour toute seule chaque semaine ; sur le téléphone associé, elle est récupérée depuis le PC.
+
+- **Ma collection** : par **version** (normale, Parallèle, SP…) ou « Peu importe la version », avec la langue de la carte (FR, EN ou JP). Le code est le même dans toutes les langues (ex. OP01-001).
+- **Compléter une extension** : dans « Ajouter des cartes », tape son nom (« Romance Dawn ») ou son code (« OP-05 », « ST-01 »). Progression, filtre par rareté/version, **Manquantes** et **Copier les manquantes**.
+- **Decks** : un Leader + 50 cartes, même celles que tu n'as pas. **Manquantes** et **Copier la liste** au format Cardmarket One Piece (`2x Roronoa Zoro OP01-025`).
+- **Wishlist** : comme pour Yu-Gi-Oh.
+- **Scan (téléphone)** : 📷 **Scanner des cartes** lit le code en bas à droite de la carte. La version normale est ajoutée toute seule ; pour une parallèle, touche **Annuler** puis la bonne version.
+- **Prix** : prix du marché **TCGplayer** (États-Unis), en **dollars**, par version (une parallèle coûte souvent bien plus). Cardmarket ne donne pas ses prix One Piece à des applis gratuites : c'est une estimation.
+
+---
+
 ## Choisir les onglets
 
-⚙ Réglages → **Onglets** : décoche Cartes FM, Yu-Gi-Oh ou Vinyles pour cacher l'onglet. Rien n'est supprimé : recoche la case et tout revient. Chaque appareil garde son propre choix.
+⚙ Réglages → **Onglets** : décoche Cartes FM, Yu-Gi-Oh, One Piece ou Vinyles pour cacher l'onglet. Rien n'est supprimé : recoche la case et tout revient. Chaque appareil garde son propre choix.
 
 ## Sauvegarde
 

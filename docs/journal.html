@@ -4,6 +4,678 @@ h1{margin:0 0 4px}h2{margin:28px 0 8px;color:#e3b54a}.d{color:#9a95ad}details{bo
 summary{cursor:pointer;padding:8px 12px}pre{margin:0;padding:12px;overflow:auto;max-height:520px;font:12px Consolas,monospace;background:#100e16;border-top:1px solid #322e42}
 .mod{font-size:11px;background:#3a2f17;color:#e3b54a;padding:1px 6px;border-radius:4px}.new{font-size:11px;background:#1f3a26;color:#6cc58c;padding:1px 6px;border-radius:4px}ul{margin:4px 0 0}</style></head><body>
 <h1>Journal des modifications</h1><p class="d">Coffre — clique sur un fichier pour voir son code.</p>
+<h2>v1.7.0 <span class="d">— 16/10/2026</span></h2>
+<ul><li>Nouvel onglet <b>One Piece</b> (☠), comme Yu-Gi-Oh : <b>Ma collection</b>, <b>Decks</b> et <b>Wishlist</b>.</li><li>Base de toutes les cartes One Piece (optcgapi.com, gratuite) : extensions OP, EB, PRB, decks ST, promos, avec les versions <b>parallèles</b>. Téléchargée une fois, mise à jour chaque semaine, envoyée au téléphone par le PC.</li><li>Collection par version (normale, Parallèle, SP…) ou « peu importe la version », avec la langue FR / EN / JP.</li><li>Compléter une extension : recherche par nom ou code (OP-05), progression, filtre par rareté/version, manquantes et copie pour Cardmarket.</li><li>Decks : Leader + 50 cartes, cartes manquantes, prix du deck, liste au format Cardmarket One Piece (<code>2x Nom OP01-025</code>).</li><li>Scan sur le téléphone : le code en bas à droite de la carte est lu, la version normale s'ajoute toute seule, les autres en un toucher.</li><li>Prix : marché TCGplayer, en dollars, par version.</li><li>Tout se synchronise entre PC et téléphone et part dans les sauvegardes. L'onglet peut être caché dans ⚙ Réglages → Onglets.</li><li>Téléphone : onglets plus compacts (« FM ») pour que les quatre tiennent sur une ligne.</li></ul>
+<details><summary><code>src/renderer/op.js</code> <span class="new">nouveau</span></summary><pre>// Coffre — onglet One Piece : toutes les cartes du jeu (base optcgapi.com),
+// ta collection (par version : normale, parallèle… ou « peu importe la version »),
+// les extensions à compléter, tes decks, ta wishlist et les listes au format wishlist Cardmarket.
+(function () {
+  &#x27;use strict&#x27;;
+  const App = window.CoffreApp;
+  const Core = window.CoffreCore;
+  const $ = id =&gt; document.getElementById(id);
+  const esc = App.esc;
+  const now = () =&gt; Date.now();
+
+  const st = { db: null, idx: null, loading: false, error: &#x27;&#x27;, view: &#x27;col&#x27;, q: &#x27;&#x27;, sort: &#x27;name&#x27;, addQ: &#x27;&#x27;, addSet: null, setView: &#x27;all&#x27;, setRarity: null, deckId: &#x27;&#x27;, deckView: &#x27;all&#x27;, deckQ: &#x27;&#x27;, wishQ: &#x27;&#x27; };
+
+  // ---------- Base de cartes ----------
+  function setDb(db) {
+    if (!db || !db.cards) return;
+    st.db = db; st.idx = Core.opIndex(db);
+  }
+  async function loadDb() {
+    try { setDb(await window.coffre.opDb()); } catch (e) { /* pas encore téléchargée */ }
+    render();
+    // Mise à jour discrète (nouvelles cartes, prix) chaque semaine
+    if (st.db &amp;&amp; (st.db.v !== 1 || now() - (st.db.at || 0) &gt; 7 * 864e5)) refreshDb(true);
+  }
+  async function refreshDb(silent) {
+    if (st.loading) return;
+    st.loading = true; st.error = &#x27;&#x27;;
+    if (!silent) render();
+    try { setDb(await window.coffre.opRefresh()); if (!silent) App.toast(&#x27;Base de cartes One Piece à jour&#x27;); }
+    catch (e) { st.error = &quot;Impossible de télécharger la base de cartes : &quot; + String(e.message || e).replace(/^Error invoking remote method &#x27;[^&#x27;]+&#x27;: (Error: )?/, &#x27;&#x27;); }
+    st.loading = false;
+    render();
+  }
+
+  const card = id =&gt; st.idx &amp;&amp; st.idx.byId.has(id) ? st.db.cards[st.idx.byId.get(id)] : null;
+  const setName = i =&gt; (st.db.sets[i] || [&#x27;&#x27;])[0];
+  const setCode = i =&gt; (st.db.sets[i] || [&#x27;&#x27;, &#x27;&#x27;])[1];
+  const label = c =&gt; c.n;
+  const isLeader = c =&gt; /leader/i.test(c.t || &#x27;&#x27;);
+  const gal = () =&gt; App.data.settings.opLayout !== &#x27;list&#x27;;
+  const layoutSeg = id =&gt; `&lt;div class=&quot;seg&quot; id=&quot;${id}&quot;&gt;&lt;button data-v=&quot;gal&quot; aria-pressed=&quot;${gal()}&quot;&gt;Galerie&lt;/button&gt;&lt;button data-v=&quot;list&quot; aria-pressed=&quot;${!gal()}&quot;&gt;Liste&lt;/button&gt;&lt;/div&gt;`;
+  function setLayout(v) { App.data.settings.opLayout = v; App.scheduleSave(); render(); }
+  // Version d&#x27;une impression : « SR », « SR · Parallèle »…
+  const rarName = p =&gt; [p[2], p[3]].filter(Boolean).join(&#x27; · &#x27;) || &#x27;?&#x27;;
+  const printImg = (c, p) =&gt; (p &amp;&amp; p[5]) || c.im;
+
+  const CAT = { leader: &#x27;Leader&#x27;, character: &#x27;Personnage&#x27;, event: &#x27;Événement&#x27;, stage: &#x27;Lieu&#x27; };
+  const COLORS = { red: &#x27;Rouge&#x27;, green: &#x27;Vert&#x27;, blue: &#x27;Bleu&#x27;, purple: &#x27;Violet&#x27;, black: &#x27;Noir&#x27;, yellow: &#x27;Jaune&#x27; };
+  const catFr = c =&gt; CAT[String(c.t || &#x27;&#x27;).toLowerCase()] || c.t || &#x27;&#x27;;
+  const colorFr = c =&gt; String(c.co || &#x27;&#x27;).split(/[\s/]+/).filter(Boolean).map(x =&gt; COLORS[x.toLowerCase()] || x).join(&#x27; / &#x27;);
+
+  // ---------- Images (téléchargées une fois, puis gardées sur l&#x27;appareil) ----------
+  const imgTag = (img, cls = &#x27;&#x27;) =&gt; `&lt;img class=&quot;yimg ${cls}&quot; data-op=&quot;${esc(img || &#x27;&#x27;)}&quot; alt=&quot;&quot; src=&quot;data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7&quot;&gt;`;
+  let io = null;
+  function loadImages(root) {
+    const imgs = (root || document).querySelectorAll(&#x27;img[data-op]:not([data-done])&#x27;);
+    const go = img =&gt; {
+      img.dataset.done = &#x27;1&#x27;;
+      if (!img.dataset.op) { img.classList.add(&#x27;missing&#x27;); return; }
+      window.coffre.opImg(img.dataset.op).then(u =&gt; { if (u) img.src = u; else img.classList.add(&#x27;missing&#x27;); });
+    };
+    if (!(&#x27;IntersectionObserver&#x27; in window)) { imgs.forEach(go); return; }
+    if (!io) io = new IntersectionObserver(es =&gt; es.forEach(e =&gt; { if (e.isIntersecting) { io.unobserve(e.target); go(e.target); } }), { rootMargin: &#x27;300px&#x27; });
+    imgs.forEach(img =&gt; io.observe(img));
+  }
+
+  // ---------- Collection ----------
+  // data.op[clé] = { id: code de la carte, k: clé de la version, lang, qty, mt }
+  // clé = « version » (anglais), « version|FR », « version|JP », ou « code|* » (peu importe la version)
+  const col = () =&gt; App.data.op || (App.data.op = {});
+  function ownedOf(id) {
+    let n = 0;
+    for (const e of Object.values(col())) if (e &amp;&amp; e.id === id) n += e.qty || 0;
+    return n;
+  }
+  function changeEntry(key, base, delta) {
+    const e = { ...(col()[key] || base) };
+    e.qty = Math.max(0, (e.qty || 0) + delta);
+    e.mt = now();
+    col()[key] = e;
+    App.scheduleSave();
+    return e.qty;
+  }
+  // Langue de la carte physique (le code est le même dans toutes les langues)
+  const LANGS = [&#x27;FR&#x27;, &#x27;EN&#x27;, &#x27;JP&#x27;];
+  const curLang = () =&gt; LANGS.includes(App.data.settings.opLang) ? App.data.settings.opLang : &#x27;FR&#x27;;
+  const keyFor = (pkey, lang) =&gt; pkey + (lang &amp;&amp; lang !== &#x27;EN&#x27; ? &#x27;|&#x27; + lang : &#x27;&#x27;);
+  const langSelect = id =&gt; `&lt;select id=&quot;${id}&quot; class=&quot;ylang&quot; aria-label=&quot;Langue de tes cartes&quot; title=&quot;Langue de tes cartes&quot;&gt;${LANGS.map(l =&gt; `&lt;option${l === curLang() ? &#x27; selected&#x27; : &#x27;&#x27;}&gt;${l}&lt;/option&gt;`).join(&#x27;&#x27;)}&lt;/select&gt;`;
+  function addPrinting(ci, pi, delta = 1, lang) {
+    const c = st.db.cards[ci], p = c.p[pi];
+    lang = lang || curLang();
+    const base = { id: c.i, k: p[1] };
+    if (lang !== &#x27;EN&#x27;) base.lang = lang;
+    return changeEntry(keyFor(p[1], lang), base, delta);
+  }
+  // Exemplaires d&#x27;une version, toutes langues confondues
+  function qtyAny(pkey) {
+    let n = 0;
+    for (const e of Object.values(col())) if (e &amp;&amp; e.k === pkey) n += e.qty || 0;
+    return n;
+  }
+  const qtyLang = pkey =&gt; { const e = col()[keyFor(pkey, curLang())]; return (e &amp;&amp; e.qty) || 0; };
+  function addGeneric(id, delta = 1) { return changeEntry(`${id}|*`, { id, k: &#x27;&#x27; }, delta); }
+  const entryPrint = e =&gt; { if (!e || !e.k || !st.idx.byKey.has(e.k)) return null; const [ci, pi] = st.idx.byKey.get(e.k); return st.db.cards[ci].p[pi]; };
+
+  // ---------- Prix (TCGplayer, en dollars) ----------
+  const usd = new Intl.NumberFormat(&#x27;fr-FR&#x27;, { style: &#x27;currency&#x27;, currency: &#x27;USD&#x27; });
+  const money = v =&gt; usd.format(v || 0);
+  const priceOf = id =&gt; { const c = card(id); return (c &amp;&amp; c.cm) || 0; };
+  const entryPrice = e =&gt; { const p = entryPrint(e); return (p &amp;&amp; p[4]) || priceOf(e.id); };
+  const tag = v =&gt; v ? `&lt;span class=&quot;price&quot;&gt;${money(v)}&lt;/span&gt;` : &#x27;&#x27;;
+  const priceTag = (id, qty = 1) =&gt; tag(priceOf(id) * qty);
+  const pricesDate = () =&gt; st.db ? new Date(st.db.at).toLocaleDateString(&#x27;fr-FR&#x27;, { day: &#x27;2-digit&#x27;, month: &#x27;2-digit&#x27; }) : &#x27;&#x27;;
+  const priceSrc = () =&gt; `&lt;span class=&quot;hint&quot; title=&quot;Prix du marché TCGplayer (États-Unis), en dollars, mis à jour chaque semaine&quot;&gt;(TCGplayer, ${pricesDate()})&lt;/span&gt;`;
+
+  function stats() {
+    let copies = 0, value = 0; const ids = new Set();
+    for (const e of Object.values(col())) if (e &amp;&amp; e.qty &gt; 0) { copies += e.qty; ids.add(e.id); if (st.db) value += entryPrice(e) * e.qty; }
+    $(&#x27;opStats&#x27;).innerHTML = `&lt;b&gt;${ids.size}&lt;/b&gt; cartes · ${copies} exemplaires${st.db ? ` · valeur ≈ &lt;b class=&quot;price&quot;&gt;${money(value)}&lt;/b&gt; ${priceSrc()}` : &#x27;&#x27;} · ${liveDecks().length} decks${wishCount() ? ` · ${wishCount()} en wishlist` : &#x27;&#x27;}`;
+    $(&#x27;tabOpCount&#x27;).textContent = ids.size;
+  }
+
+  // ---------- Rendu de l&#x27;onglet ----------
+  function toolsHtml() {
+    if (st.view === &#x27;wish&#x27;) return &#x27;&#x27;;
+    if (st.view === &#x27;decks&#x27;) return `&lt;button class=&quot;primary&quot; data-o=&quot;newDeck&quot;&gt;Nouveau deck&lt;/button&gt;`;
+    return `&lt;button class=&quot;primary&quot; data-o=&quot;add&quot;&gt;Ajouter des cartes&lt;/button&gt;
+      &lt;input type=&quot;search&quot; id=&quot;opQ&quot; placeholder=&quot;Filtrer ma collection (nom, code)…&quot; value=&quot;${esc(st.q)}&quot;&gt;
+      ${layoutSeg(&#x27;opLayout&#x27;)}
+      &lt;select id=&quot;opSort&quot; aria-label=&quot;Trier&quot;&gt;&lt;option value=&quot;name&quot;&gt;Par nom&lt;/option&gt;&lt;option value=&quot;added&quot;&gt;Derniers ajouts&lt;/option&gt;&lt;option value=&quot;code&quot;&gt;Par code&lt;/option&gt;&lt;/select&gt;`;
+  }
+
+  function render() {
+    if (!$(&#x27;opList&#x27;) || !App.data) return;
+    stats();
+    $(&#x27;opView&#x27;).querySelectorAll(&#x27;button&#x27;).forEach(b =&gt; b.setAttribute(&#x27;aria-pressed&#x27;, String(b.dataset.v === st.view)));
+    const tools = $(&#x27;opTools&#x27;);
+    if (tools.dataset.view !== st.view) {
+      tools.innerHTML = toolsHtml(); tools.dataset.view = st.view;
+      const s = $(&#x27;opSort&#x27;); if (s) s.value = st.sort;
+    }
+    const ls = $(&#x27;opLayout&#x27;); if (ls) ls.querySelectorAll(&#x27;button&#x27;).forEach(b =&gt; b.setAttribute(&#x27;aria-pressed&#x27;, String((b.dataset.v === &#x27;gal&#x27;) === gal())));
+    const list = $(&#x27;opList&#x27;);
+    if (!st.db) {
+      list.innerHTML = `&lt;div class=&quot;empty&quot;&gt;
+        &lt;p&gt;Pour voir toutes les cartes One Piece, Coffre doit d&#x27;abord télécharger la base de cartes (optcgapi.com, gratuite : toutes les extensions, decks de démarrage et promos, avec les versions parallèles). Ça se fait une seule fois, puis elle se met à jour toute seule chaque semaine.&lt;/p&gt;
+        ${st.loading ? `&lt;p&gt;&lt;b&gt;Téléchargement en cours…&lt;/b&gt; (une minute environ)&lt;/p&gt;` : `&lt;button class=&quot;primary&quot; data-o=&quot;dl&quot;&gt;Télécharger la base de cartes&lt;/button&gt;`}
+        ${st.error ? `&lt;p class=&quot;error&quot;&gt;${esc(st.error)}&lt;/p&gt;` : &#x27;&#x27;}&lt;/div&gt;`;
+      return;
+    }
+    if (st.view === &#x27;wish&#x27;) renderWish();
+    else list.innerHTML = st.view === &#x27;decks&#x27; ? decksHtml() : collectionHtml();
+    loadImages(list);
+    refreshOpenModal();
+  }
+
+  function collectionHtml() {
+    const q = st.q.trim().toLowerCase();
+    const rows = [];
+    for (const [key, e] of Object.entries(col())) {
+      if (!e || !(e.qty &gt; 0)) continue;
+      const c = card(e.id); if (!c) continue;
+      if (q &amp;&amp; !c.s.includes(q)) continue;
+      rows.push({ key, e, c, p: entryPrint(e) });
+    }
+    if (!rows.length) {
+      return `&lt;div class=&quot;empty&quot;&gt;${Object.keys(col()).length &amp;&amp; q ? &#x27;Aucune carte ne correspond.&#x27; : &quot;Ta collection est vide. Touche « Ajouter des cartes » pour chercher dans toutes les cartes du jeu ou compléter une extension&quot; + (App.info.platform === &#x27;mobile&#x27; ? &#x27;, ou scanne le code imprimé en bas à droite de la carte (ex. OP01-001).&#x27; : &#x27;.&#x27;)}&lt;/div&gt;`;
+    }
+    const by = { name: (a, b) =&gt; label(a.c).localeCompare(label(b.c), &#x27;fr&#x27;) || a.c.i.localeCompare(b.c.i), added: (a, b) =&gt; (b.e.mt || 0) - (a.e.mt || 0), code: (a, b) =&gt; a.c.i.localeCompare(b.c.i, &#x27;en&#x27;, { numeric: true }) };
+    rows.sort(by[st.sort] || by.name);
+    if (gal()) return `&lt;div class=&quot;gal&quot;&gt;` + rows.map(({ key, e, c, p }) =&gt; `&lt;div class=&quot;gcard own&quot; data-key=&quot;${esc(key)}&quot; data-id=&quot;${esc(c.i)}&quot;&gt;
+        &lt;button class=&quot;pic&quot; data-o=&quot;card&quot; aria-label=&quot;Détails de ${esc(label(c))}&quot;&gt;${imgTag(printImg(c, p))}&lt;span class=&quot;badge&quot;&gt;×${e.qty}&lt;/span&gt;&lt;/button&gt;
+        &lt;div class=&quot;cap&quot;&gt;&lt;span class=&quot;num&quot;&gt;${esc(c.i)} · ${p ? esc(rarName(p)) : &#x27;toute version&#x27;}${e.lang ? &#x27; · &#x27; + esc(e.lang) : &#x27;&#x27;}&lt;/span&gt;${tag(entryPrice(e))}${esc(label(c))}&lt;/div&gt;${App.qtyHtml(e.qty)}&lt;/div&gt;`).join(&#x27;&#x27;) + `&lt;/div&gt;`;
+    return rows.map(({ key, e, c, p }) =&gt; `&lt;div class=&quot;yrow&quot; data-key=&quot;${esc(key)}&quot; data-id=&quot;${esc(c.i)}&quot;&gt;
+        &lt;button class=&quot;ypic&quot; data-o=&quot;card&quot;&gt;${imgTag(printImg(c, p))}&lt;/button&gt;
+        &lt;div class=&quot;yinfo&quot;&gt;&lt;button class=&quot;nm&quot; data-o=&quot;card&quot;&gt;${esc(label(c))}&lt;/button&gt;
+          &lt;span class=&quot;meta&quot;&gt;&lt;span class=&quot;code&quot;&gt;${esc(c.i)}&lt;/span&gt;${e.lang ? `&lt;span class=&quot;tag&quot;&gt;${esc(e.lang)}&lt;/span&gt;` : &#x27;&#x27;}${p ? `&lt;span&gt;${esc(rarName(p))}&lt;/span&gt;&lt;span&gt;${esc(setName(p[0]))}&lt;/span&gt;` : `&lt;span class=&quot;tag&quot;&gt;peu importe la version&lt;/span&gt;`}${tag(entryPrice(e))}&lt;/span&gt;&lt;/div&gt;
+        ${App.qtyHtml(e.qty)}&lt;/div&gt;`).join(&#x27;&#x27;);
+  }
+
+  // ---------- Decks ----------
+  const decks = () =&gt; App.data.opdecks || (App.data.opdecks = {});
+  const WISH = &#x27;wishlist&#x27;;
+  const liveDecks = () =&gt; Object.entries(decks()).filter(([id, d]) =&gt; d &amp;&amp; !d.deleted &amp;&amp; id !== WISH);
+  function wishDeck() {
+    const d = decks()[WISH];
+    if (!d || d.deleted) decks()[WISH] = { name: &#x27;Wishlist&#x27;, cards: {}, wish: true, created: now(), mt: now() };
+    return decks()[WISH];
+  }
+  function wishCount() { const d = decks()[WISH]; return d &amp;&amp; !d.deleted ? Object.values(d.cards || {}).reduce((a, q) =&gt; a + q, 0) : 0; }
+  function deckCounts(d) {
+    let total = 0, missing = 0;
+    for (const [id, q] of Object.entries(d.cards || {})) { total += q; missing += Math.max(0, q - ownedOf(id)); }
+    return { total, missing };
+  }
+  function missingCost(d) {
+    let v = 0;
+    for (const [id, q] of Object.entries(d.cards || {})) v += Math.max(0, q - ownedOf(id)) * priceOf(id);
+    return v;
+  }
+  function decksHtml() {
+    const ds = liveDecks().sort((a, b) =&gt; (b[1].mt || 0) - (a[1].mt || 0));
+    if (!ds.length) return `&lt;div class=&quot;empty&quot;&gt;Aucun deck. Touche « Nouveau deck », choisis ton Leader et ajoute des cartes, même celles que tu n&#x27;as pas encore : Coffre te dira lesquelles manquent.&lt;/div&gt;`;
+    return `&lt;div class=&quot;ydecks&quot;&gt;` + ds.map(([id, d]) =&gt; {
+      const { total, missing } = deckCounts(d);
+      const ids = Object.keys(d.cards || {});
+      const lead = ids.map(card).find(c =&gt; c &amp;&amp; isLeader(c)) || card(ids[0]);
+      return `&lt;button class=&quot;ydeck&quot; data-o=&quot;deck&quot; data-deck=&quot;${id}&quot;&gt;
+        &lt;span class=&quot;ycover&quot;&gt;${lead ? imgTag(lead.im) : &#x27;&#x27;}&lt;/span&gt;
+        &lt;span class=&quot;t&quot;&gt;${esc(d.name || &#x27;Deck sans nom&#x27;)}&lt;/span&gt;
+        &lt;span class=&quot;a&quot;&gt;${total} cartes · ${missing ? `&lt;b class=&quot;miss&quot;&gt;${missing} manquante${missing &gt; 1 ? &#x27;s&#x27; : &#x27;&#x27;}&lt;/b&gt;` : &#x27;complet&#x27;}${missingCost(d) ? ` · ≈ ${money(missingCost(d))} à acheter` : &#x27;&#x27;}&lt;/span&gt;&lt;/button&gt;`;
+    }).join(&#x27;&#x27;) + `&lt;/div&gt;`;
+  }
+
+  function newDeck() {
+    const id = &#x27;d&#x27; + now().toString(36) + Math.random().toString(36).slice(2, 6);
+    decks()[id] = { name: &#x27;Nouveau deck&#x27;, cards: {}, created: now(), mt: now() };
+    App.scheduleSave();
+    render();
+    openDeck(id);
+  }
+  function touchDeck(d) { d.mt = now(); App.scheduleSave(); }
+
+  // Recherche dans toutes les cartes du jeu (nom, code, type)
+  function searchCards(q, max = 60) {
+    q = q.trim().toLowerCase();
+    if (!q || !st.db) return [];
+    const out = [];
+    const exact = card(q.toUpperCase().replace(/\s+/g, &#x27;&#x27;));
+    if (exact) out.push(exact);
+    const words = q.split(/\s+/);
+    const starts = [], contains = [];
+    for (const c of st.db.cards) {
+      if (c === exact) continue;
+      if (!words.every(w =&gt; c.s.includes(w))) continue;
+      (c.n.toLowerCase().startsWith(q) || c.i.toLowerCase().startsWith(q) ? starts : contains).push(c);
+      if (starts.length &gt;= max) break;
+    }
+    return out.concat(starts, contains).slice(0, max);
+  }
+  const statLine = c =&gt; [catFr(c), colorFr(c), c.c !== &#x27;&#x27; ? `coût ${c.c}` : &#x27;&#x27;, c.pw !== &#x27;&#x27; ? `${c.pw}` : &#x27;&#x27;].filter(Boolean).join(&#x27; · &#x27;);
+  const resultHtml = (c, act) =&gt; `&lt;div class=&quot;yres&quot; data-id=&quot;${esc(c.i)}&quot;&gt;
+      &lt;button class=&quot;ypic&quot; data-o=&quot;card&quot;&gt;${imgTag(c.im)}&lt;/button&gt;
+      &lt;div class=&quot;yinfo&quot;&gt;&lt;button class=&quot;nm&quot; data-o=&quot;card&quot;&gt;${esc(label(c))}&lt;/button&gt;&lt;span class=&quot;en&quot;&gt;${esc(c.i)}&lt;/span&gt;
+        &lt;span class=&quot;meta&quot;&gt;&lt;span&gt;${esc(statLine(c))}&lt;/span&gt;${ownedOf(c.i) ? `&lt;span class=&quot;own&quot;&gt;${ownedOf(c.i)} dans ta collection&lt;/span&gt;` : &#x27;&#x27;}&lt;/span&gt;&lt;/div&gt;
+      ${act}&lt;/div&gt;`;
+
+  function openDeck(id, keep) {
+    if (!keep) { st.deckQ = &#x27;&#x27;; st.deckView = &#x27;all&#x27;; }
+    st.deckId = id;
+    App.openModal(`&lt;div id=&quot;odeckSheet&quot;&gt;&lt;/div&gt;`, &#x27;tcg op wide&#x27;, &#x27;op-deck&#x27;);
+    renderDeck();
+  }
+  function renderDeck(keepFocus) {
+    const box = $(&#x27;odeckSheet&#x27;); if (!box) return;
+    const d = decks()[st.deckId]; if (!d || d.deleted) { App.closeModal(); return; }
+    const entries = Object.entries(d.cards || {}).map(([id, q]) =&gt; ({ c: card(id), q, owned: ownedOf(id) })).filter(x =&gt; x.c);
+    const missingList = entries.filter(x =&gt; x.q &gt; x.owned);
+    const shown = st.deckView === &#x27;miss&#x27; ? missingList : entries;
+    const dq = q =&gt; `&lt;div class=&quot;qty&quot;&gt;&lt;button data-o=&quot;dq&quot; data-d=&quot;-1&quot; aria-label=&quot;Retirer du deck&quot;&gt;−&lt;/button&gt;&lt;output&gt;${q}&lt;/output&gt;&lt;button data-o=&quot;dq&quot; data-d=&quot;1&quot; aria-label=&quot;Ajouter au deck&quot;&gt;+&lt;/button&gt;&lt;/div&gt;`;
+    const ownTxt = (q, owned) =&gt; owned &gt;= q ? `&lt;span class=&quot;own&quot;&gt;${owned} possédée${owned &gt; 1 ? &#x27;s&#x27; : &#x27;&#x27;}&lt;/span&gt;` : `&lt;span class=&quot;miss&quot;&gt;il en manque ${q - owned}&lt;/span&gt;`;
+    const sortFn = (a, b) =&gt; (Number(a.c.c) || 0) - (Number(b.c.c) || 0) || label(a.c).localeCompare(label(b.c), &#x27;fr&#x27;);
+    const group = (title, arr) =&gt; arr.length ? `&lt;h4&gt;${title} &lt;span class=&quot;num&quot;&gt;${arr.reduce((a, x) =&gt; a + x.q, 0)}&lt;/span&gt;&lt;/h4&gt;` + (gal()
+      ? `&lt;div class=&quot;gal&quot;&gt;${arr.sort(sortFn).map(({ c, q, owned }) =&gt; `&lt;div class=&quot;gcard${owned &gt;= q ? &#x27; own&#x27; : &#x27; short&#x27;}&quot; data-id=&quot;${esc(c.i)}&quot;&gt;
+          &lt;button class=&quot;pic&quot; data-o=&quot;card&quot; aria-label=&quot;Détails de ${esc(label(c))}&quot;&gt;${imgTag(c.im)}&lt;span class=&quot;badge&quot;&gt;×${q}&lt;/span&gt;&lt;/button&gt;
+          &lt;div class=&quot;cap&quot;&gt;&lt;span class=&quot;num&quot;&gt;${ownTxt(q, owned)}&lt;/span&gt;${esc(label(c))}${priceTag(c.i)}&lt;/div&gt;${dq(q)}&lt;/div&gt;`).join(&#x27;&#x27;)}&lt;/div&gt;`
+      : arr.sort(sortFn).map(({ c, q, owned }) =&gt; `
+      &lt;div class=&quot;yrow${owned &gt;= q ? &#x27; ok&#x27; : &#x27; short&#x27;}&quot; data-id=&quot;${esc(c.i)}&quot;&gt;
+        &lt;button class=&quot;ypic&quot; data-o=&quot;card&quot;&gt;${imgTag(c.im)}&lt;/button&gt;
+        &lt;div class=&quot;yinfo&quot;&gt;&lt;button class=&quot;nm&quot; data-o=&quot;card&quot;&gt;${esc(label(c))}&lt;/button&gt;&lt;span class=&quot;en&quot;&gt;${esc(c.i)} · ${esc(statLine(c))}&lt;/span&gt;
+          &lt;span class=&quot;meta&quot;&gt;${ownTxt(q, owned)}${owned &lt; q ? `&lt;span&gt;(${owned} possédée${owned &gt; 1 ? &#x27;s&#x27; : &#x27;&#x27;})&lt;/span&gt;` : &#x27;&#x27;}${priceTag(c.i)}&lt;/span&gt;&lt;/div&gt;
+        ${dq(q)}&lt;/div&gt;`).join(&#x27;&#x27;)) : &#x27;&#x27;;
+    const leaders = shown.filter(x =&gt; isLeader(x.c)), main = shown.filter(x =&gt; !isLeader(x.c));
+    const leadCount = entries.filter(x =&gt; isLeader(x.c)).reduce((a, x) =&gt; a + x.q, 0);
+    const mainCount = entries.filter(x =&gt; !isLeader(x.c)).reduce((a, x) =&gt; a + x.q, 0);
+    const results = searchCards(st.deckQ, 30);
+    const cm = missingList.map(x =&gt; cmLine(x.q - x.owned, x.c)).join(&#x27;\n&#x27;);
+    const deckValue = entries.reduce((a, x) =&gt; a + x.q * (x.c.cm || 0), 0);
+    const missValue = missingList.reduce((a, x) =&gt; a + (x.q - x.owned) * (x.c.cm || 0), 0);
+    const q = $(&#x27;odQ&#x27;), hadFocus = q &amp;&amp; document.activeElement === q, caret = q ? q.selectionStart : 0;
+    box.innerHTML = `
+      &lt;div class=&quot;sheet-head&quot;&gt;&lt;input id=&quot;odName&quot; class=&quot;dname&quot; value=&quot;${esc(d.name || &#x27;&#x27;)}&quot; aria-label=&quot;Nom du deck&quot;&gt;
+        &lt;button class=&quot;close&quot; data-o=&quot;close&quot;&gt;Fermer&lt;/button&gt;&lt;/div&gt;
+      &lt;p class=&quot;hint&quot;&gt;Leader : ${leadCount}/1 · Deck : ${mainCount}/50 cartes · ${missingList.length ? `&lt;b class=&quot;miss&quot;&gt;${missingList.reduce((a, x) =&gt; a + x.q - x.owned, 0)} carte(s) manquante(s)&lt;/b&gt;` : &#x27;tu as toutes les cartes&#x27;}
+        ${deckValue ? `&lt;br&gt;Prix du deck ≈ &lt;b class=&quot;price&quot;&gt;${money(deckValue)}&lt;/b&gt;${missValue ? ` · ce qu&#x27;il te manque ≈ &lt;b class=&quot;price miss&quot;&gt;${money(missValue)}&lt;/b&gt;` : &#x27;&#x27;} ${priceSrc()}` : &#x27;&#x27;}&lt;/p&gt;
+      &lt;div class=&quot;ydeckbar&quot;&gt;
+        &lt;input type=&quot;search&quot; id=&quot;odQ&quot; placeholder=&quot;Ajouter une carte : nom ou code (OP01-001)…&quot; value=&quot;${esc(st.deckQ)}&quot;&gt;
+        &lt;div class=&quot;seg&quot; id=&quot;odView&quot;&gt;&lt;button data-v=&quot;all&quot; aria-pressed=&quot;${st.deckView === &#x27;all&#x27;}&quot;&gt;Toutes&lt;/button&gt;&lt;button data-v=&quot;miss&quot; aria-pressed=&quot;${st.deckView === &#x27;miss&#x27;}&quot;&gt;Manquantes&lt;/button&gt;&lt;/div&gt;
+        ${layoutSeg(&#x27;odLayout&#x27;)}
+      &lt;/div&gt;
+      ${st.deckQ ? `&lt;div class=&quot;yresults&quot;&gt;${results.length ? results.map(c =&gt; resultHtml(c, `&lt;button class=&quot;primary&quot; data-o=&quot;dadd&quot;&gt;+ ${isLeader(c) ? &#x27;Leader&#x27; : &#x27;Deck&#x27;}&lt;/button&gt;`)).join(&#x27;&#x27;) : &#x27;&lt;p class=&quot;hint&quot;&gt;Aucune carte trouvée.&lt;/p&gt;&#x27;}&lt;/div&gt;` : &#x27;&#x27;}
+      &lt;div class=&quot;ydecklist&quot;&gt;${group(&#x27;Leader&#x27;, leaders)}${group(&#x27;Deck&#x27;, main)}${!shown.length ? `&lt;p class=&quot;hint&quot;&gt;${st.deckView === &#x27;miss&#x27; ? &#x27;Aucune carte manquante.&#x27; : &#x27;Deck vide : cherche ton Leader et tes cartes au-dessus pour les ajouter.&#x27;}&lt;/p&gt;` : &#x27;&#x27;}&lt;/div&gt;
+      ${missingList.length ? `&lt;div class=&quot;ycm&quot;&gt;&lt;h4&gt;Manquantes pour ta wishlist Cardmarket&lt;/h4&gt;
+        &lt;textarea id=&quot;odCm&quot; readonly rows=&quot;${Math.min(8, missingList.length)}&quot;&gt;${esc(cm)}&lt;/textarea&gt;
+        &lt;div class=&quot;actions&quot;&gt;&lt;span class=&quot;hint grow&quot;&gt;Cardmarket → Wishlist → « Ajouter des cartes » : colle la liste (une carte par ligne).&lt;/span&gt;&lt;button class=&quot;primary&quot; data-o=&quot;copy&quot;&gt;Copier la liste&lt;/button&gt;&lt;/div&gt;&lt;/div&gt;` : &#x27;&#x27;}
+      &lt;div class=&quot;actions&quot;&gt;&lt;button class=&quot;danger&quot; data-o=&quot;delDeck&quot;&gt;Supprimer ce deck&lt;/button&gt;&lt;/div&gt;`;
+    if (hadFocus || keepFocus) { const n = $(&#x27;odQ&#x27;); n.focus(); try { n.setSelectionRange(caret, caret); } catch (e) { /* rien */ } }
+    loadImages(box);
+  }
+  // Ligne pour la wishlist Cardmarket One Piece : « 2x Roronoa Zoro OP01-025 »
+  const cmLine = (qty, c) =&gt; `${qty}x ${c.n} ${c.i}`;
+
+  // ---------- Wishlist (dans l&#x27;onglet) ----------
+  function renderWish(keepFocus) {
+    const box = $(&#x27;opList&#x27;); if (!box) return;
+    const d = decks()[WISH] &amp;&amp; !decks()[WISH].deleted ? decks()[WISH] : { cards: {} };
+    const entries = Object.entries(d.cards || {}).map(([id, q]) =&gt; ({ c: card(id), q, owned: ownedOf(id) })).filter(x =&gt; x.c)
+      .sort((a, b) =&gt; label(a.c).localeCompare(label(b.c), &#x27;fr&#x27;));
+    const total = entries.reduce((a, x) =&gt; a + x.q, 0);
+    const value = entries.reduce((a, x) =&gt; a + x.q * (x.c.cm || 0), 0);
+    const cm = entries.map(x =&gt; cmLine(x.q, x.c)).join(&#x27;\n&#x27;);
+    const results = searchCards(st.wishQ || &#x27;&#x27;, 30);
+    const wq = q =&gt; `&lt;div class=&quot;qty&quot;&gt;&lt;button data-o=&quot;wq&quot; data-d=&quot;-1&quot; aria-label=&quot;Retirer de la wishlist&quot;&gt;−&lt;/button&gt;&lt;output&gt;${q}&lt;/output&gt;&lt;button data-o=&quot;wq&quot; data-d=&quot;1&quot; aria-label=&quot;En vouloir une de plus&quot;&gt;+&lt;/button&gt;&lt;/div&gt;`;
+    const ownTxt = o =&gt; o ? `&lt;span class=&quot;own&quot;&gt;déjà ${o} dans ta collection&lt;/span&gt;` : &#x27;&#x27;;
+    const q0 = $(&#x27;owQ&#x27;), hadFocus = q0 &amp;&amp; document.activeElement === q0, caret = q0 ? q0.selectionStart : 0;
+    box.innerHTML = `&lt;div class=&quot;ywish&quot;&gt;
+      &lt;p class=&quot;hint&quot;&gt;Les cartes que tu veux, en dehors de tes decks. ${total ? `&lt;b&gt;${total}&lt;/b&gt; carte${total &gt; 1 ? &#x27;s&#x27; : &#x27;&#x27;}${value ? ` · ≈ &lt;b class=&quot;price&quot;&gt;${money(value)}&lt;/b&gt; ${priceSrc()}` : &#x27;&#x27;}` : &#x27;&#x27;}&lt;/p&gt;
+      &lt;div class=&quot;ydeckbar&quot;&gt;
+        &lt;input type=&quot;search&quot; id=&quot;owQ&quot; placeholder=&quot;Ajouter une carte à la wishlist : nom ou code…&quot; value=&quot;${esc(st.wishQ || &#x27;&#x27;)}&quot;&gt;
+        ${layoutSeg(&#x27;owLayout&#x27;)}
+      &lt;/div&gt;
+      ${st.wishQ ? `&lt;div class=&quot;yresults&quot;&gt;${results.length ? results.map(c =&gt; resultHtml(c, `&lt;button class=&quot;primary&quot; data-o=&quot;wadd&quot;&gt;+ Wishlist&lt;/button&gt;`)).join(&#x27;&#x27;) : &#x27;&lt;p class=&quot;hint&quot;&gt;Aucune carte trouvée.&lt;/p&gt;&#x27;}&lt;/div&gt;` : &#x27;&#x27;}
+      ${entries.length ? (gal() ? `&lt;div class=&quot;gal&quot;&gt;${entries.map(({ c, q, owned }) =&gt; `&lt;div class=&quot;gcard own&quot; data-id=&quot;${esc(c.i)}&quot;&gt;
+          &lt;button class=&quot;pic&quot; data-o=&quot;card&quot; aria-label=&quot;Détails de ${esc(label(c))}&quot;&gt;${imgTag(c.im)}&lt;span class=&quot;badge&quot;&gt;×${q}&lt;/span&gt;&lt;/button&gt;
+          &lt;div class=&quot;cap&quot;&gt;&lt;span class=&quot;num&quot;&gt;${ownTxt(owned) || esc(c.i)}&lt;/span&gt;${esc(label(c))}${priceTag(c.i, q)}&lt;/div&gt;${wq(q)}&lt;/div&gt;`).join(&#x27;&#x27;)}&lt;/div&gt;`
+        : entries.map(({ c, q, owned }) =&gt; `&lt;div class=&quot;yrow&quot; data-id=&quot;${esc(c.i)}&quot;&gt;
+          &lt;button class=&quot;ypic&quot; data-o=&quot;card&quot;&gt;${imgTag(c.im)}&lt;/button&gt;
+          &lt;div class=&quot;yinfo&quot;&gt;&lt;button class=&quot;nm&quot; data-o=&quot;card&quot;&gt;${esc(label(c))}&lt;/button&gt;&lt;span class=&quot;en&quot;&gt;${esc(c.i)}&lt;/span&gt;
+            &lt;span class=&quot;meta&quot;&gt;${ownTxt(owned)}${priceTag(c.i, q)}&lt;/span&gt;&lt;/div&gt;${wq(q)}&lt;/div&gt;`).join(&#x27;&#x27;))
+        : `&lt;p class=&quot;empty&quot;&gt;Ta wishlist est vide : cherche une carte au-dessus, ou ouvre la fiche d&#x27;une carte et touche « Ajouter à la wishlist ».&lt;/p&gt;`}
+      ${entries.length ? `&lt;div class=&quot;ycm&quot;&gt;&lt;h4&gt;Pour ta wishlist Cardmarket&lt;/h4&gt;
+        &lt;textarea id=&quot;owCm&quot; readonly rows=&quot;${Math.min(8, entries.length)}&quot;&gt;${esc(cm)}&lt;/textarea&gt;
+        &lt;div class=&quot;actions&quot;&gt;&lt;span class=&quot;hint grow&quot;&gt;Cardmarket → Wishlist → « Ajouter des cartes » : colle la liste (une carte par ligne).&lt;/span&gt;
+          &lt;button data-o=&quot;wclear&quot;&gt;Vider la wishlist&lt;/button&gt;&lt;button class=&quot;primary&quot; data-o=&quot;wcopy&quot;&gt;Copier la liste&lt;/button&gt;&lt;/div&gt;&lt;/div&gt;` : &#x27;&#x27;}
+    &lt;/div&gt;`;
+    if (hadFocus || keepFocus) { const n = $(&#x27;owQ&#x27;); n.focus(); try { n.setSelectionRange(caret, caret); } catch (e) { /* rien */ } }
+    loadImages(box);
+  }
+  function addToWish(id, delta = 1) {
+    const d = wishDeck(); d.cards = d.cards || {};
+    const n = (d.cards[id] || 0) + delta;
+    if (n &gt; 0) d.cards[id] = n; else delete d.cards[id];
+    touchDeck(d);
+    return n;
+  }
+
+  // ---------- Fiche d&#x27;une carte (toutes ses versions) ----------
+  let cardBack = null;
+  function openCard(id, back) {
+    const c = card(id); if (!c) return;
+    cardBack = back || null;
+    App.openModal(`&lt;div id=&quot;ocardSheet&quot; data-id=&quot;${esc(id)}&quot;&gt;&lt;/div&gt;`, &#x27;tcg op wide&#x27;, &#x27;op-card&#x27;);
+    renderCard();
+  }
+  function renderCard() {
+    const box = $(&#x27;ocardSheet&#x27;); if (!box) return;
+    const c = card(box.dataset.id); if (!c) return;
+    const gen = col()[`${c.i}|*`];
+    const prints = c.p.map((p, pi) =&gt; ({ p, pi, q: qtyLang(p[1]), all: qtyAny(p[1]) }));
+    const ds = liveDecks();
+    const wish = decks()[WISH] &amp;&amp; !decks()[WISH].deleted &amp;&amp; (decks()[WISH].cards || {})[c.i];
+    box.innerHTML = `
+      &lt;div class=&quot;sheet-head&quot;&gt;&lt;div&gt;&lt;h3&gt;${esc(label(c))}&lt;/h3&gt;&lt;div class=&quot;meta&quot;&gt;${esc(c.i)}&lt;/div&gt;&lt;/div&gt;
+        &lt;button data-o=&quot;${cardBack ? &#x27;back&#x27; : &#x27;close&#x27;}&quot;&gt;${cardBack ? &#x27;← Retour&#x27; : &#x27;Fermer&#x27;}&lt;/button&gt;&lt;/div&gt;
+      &lt;div class=&quot;split&quot;&gt;
+        &lt;div&gt;${imgTag(c.im, &#x27;big&#x27;)}&lt;/div&gt;
+        &lt;div style=&quot;display:flex;flex-direction:column;gap:12px;min-width:0&quot;&gt;
+          &lt;dl class=&quot;kv&quot;&gt;&lt;dt&gt;Catégorie&lt;/dt&gt;&lt;dd&gt;${esc(catFr(c))}${c.co ? &#x27; · &#x27; + esc(colorFr(c)) : &#x27;&#x27;}&lt;/dd&gt;
+            ${c.c !== &#x27;&#x27; ? `&lt;dt&gt;Coût&lt;/dt&gt;&lt;dd&gt;${esc(c.c)}&lt;/dd&gt;` : &#x27;&#x27;}
+            ${c.l !== &#x27;&#x27; ? `&lt;dt&gt;Vie&lt;/dt&gt;&lt;dd&gt;${esc(c.l)}&lt;/dd&gt;` : &#x27;&#x27;}
+            ${c.pw !== &#x27;&#x27; ? `&lt;dt&gt;Puissance&lt;/dt&gt;&lt;dd&gt;${esc(c.pw)}&lt;/dd&gt;` : &#x27;&#x27;}
+            ${c.ct !== &#x27;&#x27; &amp;&amp; c.ct !== 0 ? `&lt;dt&gt;Counter&lt;/dt&gt;&lt;dd&gt;+${esc(c.ct)}&lt;/dd&gt;` : &#x27;&#x27;}
+            ${c.at ? `&lt;dt&gt;Attribut&lt;/dt&gt;&lt;dd&gt;${esc(c.at)}&lt;/dd&gt;` : &#x27;&#x27;}
+            ${c.ty ? `&lt;dt&gt;Types&lt;/dt&gt;&lt;dd&gt;${esc(c.ty)}&lt;/dd&gt;` : &#x27;&#x27;}
+            &lt;dt&gt;Dans ta collection&lt;/dt&gt;&lt;dd&gt;&lt;b&gt;${ownedOf(c.i)}&lt;/b&gt;&lt;/dd&gt;
+            ${c.cm ? `&lt;dt&gt;Prix&lt;/dt&gt;&lt;dd&gt;&lt;b class=&quot;price&quot;&gt;${money(c.cm)}&lt;/b&gt; &lt;span class=&quot;hint&quot;&gt;(TCGplayer, version normale)&lt;/span&gt;&lt;/dd&gt;` : &#x27;&#x27;}&lt;/dl&gt;
+          &lt;div class=&quot;actions&quot; style=&quot;justify-content:flex-start&quot;&gt;
+            ${ds.length ? `&lt;select id=&quot;ocDeck&quot;&gt;${ds.map(([id, d]) =&gt; `&lt;option value=&quot;${id}&quot;&gt;${esc(d.name || &#x27;Deck&#x27;)}&lt;/option&gt;`).join(&#x27;&#x27;)}&lt;/select&gt;&lt;button data-o=&quot;toDeck&quot;&gt;Ajouter au deck&lt;/button&gt;` : &#x27;&#x27;}
+            &lt;button data-o=&quot;toWish&quot;&gt;☆ Ajouter à la wishlist${wish ? ` (${wish})` : &#x27;&#x27;}&lt;/button&gt;
+            &lt;a data-o=&quot;cm&quot;&gt;Voir sur Cardmarket ↗&lt;/a&gt;&lt;/div&gt;
+          &lt;h4 class=&quot;yaddh&quot;&gt;Ajouter à ma collection ${langSelect(&#x27;ocLang&#x27;)}&lt;/h4&gt;
+          &lt;div class=&quot;yprints&quot;&gt;
+            &lt;div class=&quot;yprint&quot; data-gen=&quot;1&quot;&gt;&lt;div&gt;&lt;b&gt;Peu importe la version&lt;/b&gt;&lt;/div&gt;${App.qtyHtml((gen &amp;&amp; gen.qty) || 0)}&lt;/div&gt;
+            ${prints.map(({ p, pi, q, all }) =&gt; `&lt;div class=&quot;yprint${all ? &#x27; own&#x27; : &#x27;&#x27;}&quot; data-pi=&quot;${pi}&quot;&gt;
+              &lt;div&gt;&lt;span class=&quot;code&quot;&gt;${esc(c.i)}&lt;/span&gt;${all &gt; q ? ` &lt;span class=&quot;own&quot;&gt;+${all - q} autre langue&lt;/span&gt;` : &#x27;&#x27;} &lt;span class=&quot;tag&quot;&gt;${esc(rarName(p))}&lt;/span&gt;${p[4] ? &#x27; &#x27; + tag(p[4]) : &#x27;&#x27;}&lt;div class=&quot;hint&quot;&gt;${esc(setName(p[0]))}&lt;/div&gt;&lt;/div&gt;
+              ${App.qtyHtml(q)}&lt;/div&gt;`).join(&#x27;&#x27;)}
+          &lt;/div&gt;
+        &lt;/div&gt;&lt;/div&gt;`;
+    loadImages(box);
+  }
+
+  // ---------- Ajout de cartes à la collection ----------
+  function openAdd() {
+    App.openModal(`
+      &lt;div class=&quot;sheet-head&quot;&gt;&lt;h3&gt;Ajouter des cartes One Piece&lt;/h3&gt;&lt;button class=&quot;close&quot; data-o=&quot;close&quot;&gt;Fermer&lt;/button&gt;&lt;/div&gt;
+      &lt;div class=&quot;ydeckbar&quot;&gt;${langSelect(&#x27;oaLang&#x27;)}&lt;input type=&quot;search&quot; id=&quot;oaQ&quot; placeholder=&quot;Nom de carte, code (OP01-001) ou extension (OP-05, Romance Dawn)…&quot; value=&quot;${esc(st.addQ)}&quot; autofocus&gt;&lt;/div&gt;
+      &lt;div class=&quot;yresults&quot; id=&quot;oaRes&quot;&gt;&lt;/div&gt;`, &#x27;tcg op wide&#x27;, &#x27;op-add&#x27;);
+    renderAdd();
+  }
+  // ---------- Extensions : toutes les cartes d&#x27;une extension, pour la compléter ----------
+  const normSet = t =&gt; String(t || &#x27;&#x27;).toUpperCase().replace(/[^A-Z0-9]/g, &#x27;&#x27;);
+  function searchSets(q, max = 8) {
+    q = q.trim().toLowerCase(); if (q.length &lt; 2) return [];
+    const words = q.split(/\s+/), nq = normSet(q);
+    const out = [];
+    st.db.sets.forEach((x, i) =&gt; {
+      if (!st.idx.bySet.has(i)) return;
+      const name = x[0].toLowerCase();
+      if (words.every(w =&gt; name.includes(w)) || (x[1] &amp;&amp; normSet(x[1]) === nq)) out.push(i);
+    });
+    return out.sort((a, b) =&gt; (st.db.sets[b][3] || 0) - (st.db.sets[a][3] || 0)).slice(0, max);
+  }
+  function setPrints(i) {
+    return (st.idx.bySet.get(i) || []).map(([ci, pi]) =&gt; ({ ci, pi, c: st.db.cards[ci], p: st.db.cards[ci].p[pi] }))
+      .sort((a, b) =&gt; a.c.i.localeCompare(b.c.i, &#x27;en&#x27;, { numeric: true }) || (a.p[3] ? 1 : 0) - (b.p[3] ? 1 : 0) || a.p[3].localeCompare(b.p[3]));
+  }
+  // Progression : une carte compte comme possédée si tu as au moins une de ses versions de l&#x27;extension
+  function setProgress(i) {
+    const codes = new Map();
+    for (const x of setPrints(i)) codes.set(x.c.i, (codes.get(x.c.i) || 0) + qtyAny(x.p[1]));
+    let own = 0; for (const q of codes.values()) if (q &gt; 0) own++;
+    return { own, total: codes.size };
+  }
+  // Manquantes : sans filtre, une carte manque si tu n&#x27;en as aucune version ; avec une version choisie, chacune compte.
+  function setMissing(i) {
+    const all = setPrints(i), r = st.setRarity;
+    if (r) return all.filter(y =&gt; rarName(y.p) === r &amp;&amp; !qtyAny(y.p[1]));
+    return all.filter(y =&gt; !all.some(z =&gt; z.c.i === y.c.i &amp;&amp; qtyAny(z.p[1]) &gt; 0));
+  }
+  function setMissingText(i) {
+    const seen = new Set(), lines = [];
+    for (const x of setMissing(i)) {
+      if (seen.has(x.c.i)) continue;
+      seen.add(x.c.i);
+      lines.push(cmLine(1, x.c));
+    }
+    return lines.join(&#x27;\n&#x27;);
+  }
+  function rarityProgress(i) {
+    const m = new Map();
+    for (const x of setPrints(i)) {
+      const k = rarName(x.p); const v = m.get(k) || { own: 0, total: 0 };
+      v.total++; if (qtyAny(x.p[1]) &gt; 0) v.own++; m.set(k, v);
+    }
+    return [...m.entries()].sort((a, b) =&gt; b[1].total - a[1].total || a[0].localeCompare(b[0]));
+  }
+  function renderSet(el) {
+    const i = st.addSet, x = st.db.sets[i];
+    const { own, total } = setProgress(i);
+    const rars = rarityProgress(i);
+    if (st.setRarity &amp;&amp; !rars.some(([k]) =&gt; k === st.setRarity)) st.setRarity = null;
+    const allV = rars.reduce((a, [, v]) =&gt; ({ own: a.own + v.own, total: a.total + v.total }), { own: 0, total: 0 });
+    let rows = setPrints(i);
+    if (st.setRarity) rows = rows.filter(y =&gt; rarName(y.p) === st.setRarity);
+    if (st.setView === &#x27;miss&#x27;) { const m = setMissing(i); rows = rows.filter(y =&gt; m.some(z =&gt; z.ci === y.ci &amp;&amp; z.pi === y.pi)); }
+    const miss = setMissingText(i);
+    const cur = st.setRarity ? rars.find(([k]) =&gt; k === st.setRarity)[1] : null;
+    const missVal = (() =&gt; { const seen = new Set(); let v = 0; for (const y of setMissing(i)) { if (seen.has(y.c.i)) continue; seen.add(y.c.i); v += y.c.cm || 0; } return v; })();
+    el.innerHTML = `&lt;div class=&quot;yset-head&quot;&gt;
+        &lt;button data-o=&quot;unset&quot;&gt;← Retour&lt;/button&gt;
+        &lt;div class=&quot;grow&quot;&gt;&lt;b&gt;${esc(x[0])}&lt;/b&gt; &lt;span class=&quot;code&quot;&gt;${esc(x[1] || &#x27;&#x27;)}&lt;/span&gt;
+          &lt;div class=&quot;bar&quot;&gt;&lt;i style=&quot;width:${(cur ? (cur.total ? cur.own / cur.total : 0) : (total ? own / total : 0)) * 100}%&quot;&gt;&lt;/i&gt;&lt;/div&gt;
+          &lt;span class=&quot;hint&quot;&gt;${cur ? `&lt;b&gt;${cur.own}&lt;/b&gt; / ${cur.total} en ${esc(st.setRarity)}` : `&lt;b&gt;${own}&lt;/b&gt; / ${total} cartes de l&#x27;extension · ${allV.own} / ${allV.total} versions (parallèles comprises)`}${missVal ? ` · manquantes ≈ &lt;b class=&quot;price&quot;&gt;${money(missVal)}&lt;/b&gt;` : &#x27;&#x27;}&lt;/span&gt;&lt;/div&gt;
+        &lt;div class=&quot;seg&quot; id=&quot;osView&quot;&gt;&lt;button data-sv=&quot;all&quot; aria-pressed=&quot;${st.setView === &#x27;all&#x27;}&quot;&gt;Toutes&lt;/button&gt;&lt;button data-sv=&quot;miss&quot; aria-pressed=&quot;${st.setView === &#x27;miss&#x27;}&quot;&gt;Manquantes&lt;/button&gt;&lt;/div&gt;
+        ${miss ? `&lt;button data-o=&quot;copySet&quot; title=&quot;Format wishlist Cardmarket : 1x Nom CODE&quot;&gt;Copier les manquantes&lt;/button&gt;` : &#x27;&#x27;}
+        ${rars.length &gt; 1 ? `&lt;div class=&quot;yrars&quot;&gt;&lt;button class=&quot;chip&quot; data-rar=&quot;&quot; aria-pressed=&quot;${!st.setRarity}&quot;&gt;Toutes&lt;/button&gt;${rars.map(([k, v]) =&gt; `&lt;button class=&quot;chip${v.own === v.total ? &#x27; done&#x27; : &#x27;&#x27;}&quot; data-rar=&quot;${esc(k)}&quot; aria-pressed=&quot;${st.setRarity === k}&quot;&gt;${esc(k)} &lt;b&gt;${v.own}/${v.total}&lt;/b&gt;&lt;/button&gt;`).join(&#x27;&#x27;)}&lt;/div&gt;` : &#x27;&#x27;}&lt;/div&gt;
+      &lt;textarea id=&quot;osCm&quot; hidden readonly&gt;${esc(miss)}&lt;/textarea&gt;
+      ${rows.length ? rows.map(({ ci, pi, c, p }) =&gt; { const q = qtyLang(p[1]), all = qtyAny(p[1]); return `&lt;div class=&quot;yres${all ? &#x27; owned&#x27; : &#x27;&#x27;}&quot; data-id=&quot;${esc(c.i)}&quot;&gt;
+        &lt;button class=&quot;ypic&quot; data-o=&quot;card&quot;&gt;${imgTag(printImg(c, p))}&lt;/button&gt;
+        &lt;div class=&quot;yinfo&quot;&gt;&lt;button class=&quot;nm&quot; data-o=&quot;card&quot;&gt;${esc(label(c))}&lt;/button&gt;
+          &lt;span class=&quot;meta&quot;&gt;&lt;span class=&quot;code&quot;&gt;${esc(c.i)}&lt;/span&gt;&lt;span class=&quot;rar&quot;&gt;${esc(rarName(p))}&lt;/span&gt;${tag(p[4])}${all &gt; q ? `&lt;span class=&quot;own&quot;&gt;${all - q} dans une autre langue&lt;/span&gt;` : &#x27;&#x27;}&lt;/span&gt;&lt;/div&gt;
+        &lt;div class=&quot;yquick&quot; data-ci=&quot;${ci}&quot; data-pi=&quot;${pi}&quot;&gt;${App.qtyHtml(q)}&lt;/div&gt;&lt;/div&gt;`; }).join(&#x27;&#x27;) : `&lt;p class=&quot;hint&quot;&gt;${st.setView === &#x27;miss&#x27; ? &#x27;Rien ne manque ici.&#x27; : &#x27;Aucune carte.&#x27;}&lt;/p&gt;`}`;
+    loadImages(el);
+  }
+
+  function renderAdd() {
+    const el = $(&#x27;oaRes&#x27;); if (!el) return;
+    if (st.addSet != null) return renderSet(el);
+    const q = st.addQ.trim();
+    if (!q) { el.innerHTML = `&lt;p class=&quot;hint&quot;&gt;Tape quelques lettres : la recherche porte sur les ${st.db.cards.length.toLocaleString(&#x27;fr-FR&#x27;)} cartes du jeu. Tape le nom ou le code d&#x27;une extension (ex. OP-05) pour la compléter.&lt;/p&gt;`; return; }
+    const exact = card(q.toUpperCase().replace(/\s+/g, &#x27;&#x27;));
+    const res = searchCards(q).filter(c =&gt; c !== exact);
+    const sets = searchSets(q);
+    const quick = c =&gt; c.p.map((p, pi) =&gt; `&lt;div class=&quot;yquick&quot; data-ci=&quot;${st.idx.byId.get(c.i)}&quot; data-pi=&quot;${pi}&quot;&gt;&lt;span class=&quot;tag&quot;&gt;${esc(rarName(p))}&lt;/span&gt; &lt;span class=&quot;hint&quot;&gt;${esc(setCode(p[0]) || setName(p[0]))}&lt;/span&gt;${App.qtyHtml(qtyLang(p[1]))}&lt;/div&gt;`).join(&#x27;&#x27;);
+    el.innerHTML = (sets.length ? `&lt;h4&gt;Extensions&lt;/h4&gt;&lt;div class=&quot;ysets&quot;&gt;${sets.map(i =&gt; { const { own, total } = setProgress(i); const x = st.db.sets[i];
+      return `&lt;button class=&quot;yset&quot; data-o=&quot;set&quot; data-set=&quot;${i}&quot;&gt;&lt;b&gt;${esc(x[0])}&lt;/b&gt;&lt;span class=&quot;hint&quot;&gt;${esc(x[1] || &#x27;&#x27;)} · ${own}/${total}&lt;/span&gt;&lt;/button&gt;`; }).join(&#x27;&#x27;)}&lt;/div&gt;${res.length || exact ? &#x27;&lt;h4&gt;Cartes&lt;/h4&gt;&#x27; : &#x27;&#x27;}` : &#x27;&#x27;)
+      + (exact ? resultHtml(exact, `&lt;div class=&quot;yquicks&quot;&gt;${quick(exact)}&lt;/div&gt;`) : &#x27;&#x27;)
+      + (res.length ? res.map(c =&gt; resultHtml(c, c.p.length === 1 ? quick(c) : `&lt;button data-o=&quot;card&quot;&gt;Choisir la version&lt;/button&gt;`)).join(&#x27;&#x27;) : (exact || sets.length ? &#x27;&#x27; : &#x27;&lt;p class=&quot;hint&quot;&gt;Aucune carte ni extension trouvée.&lt;/p&gt;&#x27;));
+    loadImages(el);
+  }
+
+  function refreshOpenModal() {
+    const k = App.modalKind;
+    if (k === &#x27;op-deck&#x27;) renderDeck();
+    else if (k === &#x27;op-card&#x27;) renderCard();
+    else if (k === &#x27;op-add&#x27;) renderAdd();
+  }
+
+  async function copyText(t) {
+    let ok = false;
+    try { await navigator.clipboard.writeText(t.value); ok = true; } catch (err) { t.removeAttribute(&#x27;readonly&#x27;); t.hidden = false; t.select(); try { ok = document.execCommand(&#x27;copy&#x27;); } catch (e2) { ok = false; } t.setAttribute(&#x27;readonly&#x27;, &#x27;&#x27;); }
+    return ok;
+  }
+
+  // ---------- Événements ----------
+  $(&#x27;opView&#x27;).addEventListener(&#x27;click&#x27;, e =&gt; {
+    const b = e.target.closest(&#x27;button&#x27;); if (!b) return;
+    st.view = b.dataset.v; App.data.settings.opView = st.view; App.scheduleSave(); render();
+  });
+  $(&#x27;opTools&#x27;).addEventListener(&#x27;click&#x27;, e =&gt; {
+    const b = e.target.closest(&#x27;[data-o]&#x27;);
+    if (b &amp;&amp; b.dataset.o === &#x27;add&#x27;) return st.db ? openAdd() : refreshDb();
+    if (b &amp;&amp; b.dataset.o === &#x27;newDeck&#x27;) return st.db ? newDeck() : refreshDb();
+    const l = e.target.closest(&#x27;#opLayout button&#x27;); if (l) setLayout(l.dataset.v);
+  });
+  let wishTimer = null;
+  $(&#x27;opList&#x27;).addEventListener(&#x27;input&#x27;, e =&gt; {
+    if (e.target.id === &#x27;owQ&#x27;) { st.wishQ = e.target.value; clearTimeout(wishTimer); wishTimer = setTimeout(() =&gt; renderWish(true), 200); }
+  });
+  $(&#x27;opTools&#x27;).addEventListener(&#x27;input&#x27;, e =&gt; { if (e.target.id === &#x27;opQ&#x27;) { st.q = e.target.value; render(); } });
+  $(&#x27;opTools&#x27;).addEventListener(&#x27;change&#x27;, e =&gt; { if (e.target.id === &#x27;opSort&#x27;) { st.sort = e.target.value; render(); } });
+  $(&#x27;opList&#x27;).addEventListener(&#x27;click&#x27;, async e =&gt; {
+    const b = e.target.closest(&#x27;[data-o],[data-act],[data-v]&#x27;); if (!b) return;
+    if (b.dataset.o === &#x27;dl&#x27;) return refreshDb();
+    const y = b.dataset.o, row = b.closest(&#x27;[data-id]&#x27;);
+    if (st.view === &#x27;wish&#x27;) {
+      if (b.dataset.v &amp;&amp; b.closest(&#x27;#owLayout&#x27;)) return setLayout(b.dataset.v);
+      if (y === &#x27;wadd&#x27; &amp;&amp; row) { const n = addToWish(row.dataset.id, 1); App.toast(`Ajoutée à la wishlist (×${n})`); return render(); }
+      if (y === &#x27;wq&#x27; &amp;&amp; row) { addToWish(row.dataset.id, Number(b.dataset.d)); return render(); }
+      if (y === &#x27;wcopy&#x27;) return App.toast(await copyText($(&#x27;owCm&#x27;)) ? &#x27;Liste copiée : colle-la dans ta wishlist Cardmarket&#x27; : &#x27;Sélectionne le texte et copie-le à la main&#x27;);
+      if (y === &#x27;wclear&#x27;) {
+        if (b.dataset.sure) { const d = wishDeck(); d.cards = {}; touchDeck(d); return render(); }
+        b.dataset.sure = &#x27;1&#x27;; b.textContent = &#x27;Confirmer : tout vider&#x27;; return;
+      }
+      if (y === &#x27;card&#x27; &amp;&amp; row) return openCard(row.dataset.id);
+      return;
+    }
+    if (y === &#x27;deck&#x27;) return openDeck(b.dataset.deck);
+    if (y === &#x27;card&#x27; &amp;&amp; row) return openCard(row.dataset.id);
+    if (b.dataset.act &amp;&amp; row &amp;&amp; row.dataset.key) {
+      const key = row.dataset.key;
+      changeEntry(key, col()[key], b.dataset.act === &#x27;inc&#x27; ? 1 : -1);
+      render();
+    }
+  });
+
+  let addTimer = null, deckTimer = null;
+  $(&#x27;sheet&#x27;).addEventListener(&#x27;input&#x27;, e =&gt; {
+    if (e.target.id === &#x27;oaQ&#x27;) { st.addQ = e.target.value; st.addSet = null; clearTimeout(addTimer); addTimer = setTimeout(renderAdd, 150); }
+    if (e.target.id === &#x27;odQ&#x27;) { st.deckQ = e.target.value; clearTimeout(deckTimer); deckTimer = setTimeout(() =&gt; renderDeck(true), 200); }
+  });
+  $(&#x27;sheet&#x27;).addEventListener(&#x27;change&#x27;, e =&gt; {
+    if (e.target.id === &#x27;oaLang&#x27; || e.target.id === &#x27;ocLang&#x27;) { App.data.settings.opLang = e.target.value; App.scheduleSave(); refreshOpenModal(); return; }
+    if (e.target.id === &#x27;odName&#x27;) { const d = decks()[st.deckId]; if (d) { d.name = e.target.value.trim() || &#x27;Deck sans nom&#x27;; touchDeck(d); render(); } }
+  });
+  $(&#x27;sheet&#x27;).addEventListener(&#x27;click&#x27;, async e =&gt; {
+    const k = App.modalKind; if (!k || !k.startsWith(&#x27;op-&#x27;)) return;
+    const b = e.target.closest(&#x27;[data-o],[data-act],[data-v],[data-sv],[data-rar]&#x27;); if (!b) return;
+    const y = b.dataset.o;
+    if (y === &#x27;close&#x27;) return App.closeModal();
+    if (y === &#x27;back&#x27;) { const back = cardBack; cardBack = null; return back &amp;&amp; back(); }
+    const row = b.closest(&#x27;[data-id]&#x27;);
+    if (y === &#x27;card&#x27; &amp;&amp; row) {
+      const back = k === &#x27;op-add&#x27; ? openAdd : k === &#x27;op-deck&#x27; ? (() =&gt; openDeck(st.deckId, true)) : null;
+      return openCard(row.dataset.id, back);
+    }
+    // fiche carte : quantités par version
+    if (k === &#x27;op-card&#x27; &amp;&amp; b.dataset.act) {
+      const id = $(&#x27;ocardSheet&#x27;).dataset.id, pr = b.closest(&#x27;.yprint&#x27;);
+      const delta = b.dataset.act === &#x27;inc&#x27; ? 1 : -1;
+      if (pr.dataset.gen) addGeneric(id, delta); else addPrinting(st.idx.byId.get(id), Number(pr.dataset.pi), delta);
+      renderCard(); render(); return;
+    }
+    if (k === &#x27;op-card&#x27; &amp;&amp; y === &#x27;toWish&#x27;) {
+      const n = addToWish($(&#x27;ocardSheet&#x27;).dataset.id, 1);
+      App.toast(`Ajoutée à la wishlist (×${n})`); renderCard(); render(); return;
+    }
+    if (k === &#x27;op-card&#x27; &amp;&amp; y === &#x27;toDeck&#x27;) {
+      const d = decks()[$(&#x27;ocDeck&#x27;).value], id = $(&#x27;ocardSheet&#x27;).dataset.id;
+      if (d) { d.cards = d.cards || {}; d.cards[id] = (d.cards[id] || 0) + 1; touchDeck(d); App.toast(`Ajoutée à ${d.name}`); render(); }
+      return;
+    }
+    if (k === &#x27;op-card&#x27; &amp;&amp; y === &#x27;cm&#x27;) {
+      const c = card($(&#x27;ocardSheet&#x27;).dataset.id);
+      return window.coffre.openExternal(`https://www.cardmarket.com/fr/OnePiece/Products/Search?searchString=${encodeURIComponent(c.n)}`);
+    }
+    if (k === &#x27;op-add&#x27; &amp;&amp; b.dataset.rar != null) { st.setRarity = b.dataset.rar || null; return renderAdd(); }
+    if (k === &#x27;op-add&#x27; &amp;&amp; y === &#x27;set&#x27;) { st.addSet = Number(b.dataset.set); st.setView = &#x27;all&#x27;; st.setRarity = null; $(&#x27;oaRes&#x27;).scrollTop = 0; return renderAdd(); }
+    if (k === &#x27;op-add&#x27; &amp;&amp; y === &#x27;unset&#x27;) { st.addSet = null; return renderAdd(); }
+    if (k === &#x27;op-add&#x27; &amp;&amp; b.dataset.sv) { st.setView = b.dataset.sv; return renderAdd(); }
+    if (k === &#x27;op-add&#x27; &amp;&amp; y === &#x27;copySet&#x27;) {
+      const t = $(&#x27;osCm&#x27;); const ok = await copyText(t); t.hidden = true;
+      return App.toast(ok ? &#x27;Manquantes copiées : colle-les dans ta wishlist Cardmarket&#x27; : &#x27;Copie impossible sur cet appareil&#x27;);
+    }
+    if (k === &#x27;op-add&#x27; &amp;&amp; b.dataset.act) {
+      const q = b.closest(&#x27;.yquick&#x27;);
+      addPrinting(Number(q.dataset.ci), Number(q.dataset.pi), b.dataset.act === &#x27;inc&#x27; ? 1 : -1);
+      renderAdd(); render(); return;
+    }
+    // deck
+    if (k === &#x27;op-deck&#x27;) {
+      const d = decks()[st.deckId]; if (!d) return;
+      d.cards = d.cards || {};
+      if (b.dataset.v &amp;&amp; b.closest(&#x27;#odLayout&#x27;)) { setLayout(b.dataset.v); return renderDeck(); }
+      if (b.dataset.v) { st.deckView = b.dataset.v; return renderDeck(); }
+      if (y === &#x27;dadd&#x27; &amp;&amp; row) { const id = row.dataset.id; d.cards[id] = (d.cards[id] || 0) + 1; touchDeck(d); renderDeck(); render(); return; }
+      if (y === &#x27;dq&#x27; &amp;&amp; row) {
+        const id = row.dataset.id, n = (d.cards[id] || 0) + Number(b.dataset.d);
+        if (n &gt; 0) d.cards[id] = n; else delete d.cards[id];
+        touchDeck(d); renderDeck(); render(); return;
+      }
+      if (y === &#x27;copy&#x27;) return App.toast(await copyText($(&#x27;odCm&#x27;)) ? &#x27;Liste copiée : colle-la dans ta wishlist Cardmarket&#x27; : &#x27;Sélectionne le texte et copie-le à la main&#x27;);
+      if (y === &#x27;delDeck&#x27;) {
+        if (b.dataset.sure) { decks()[st.deckId] = { deleted: true, mt: now() }; App.scheduleSave(); App.closeModal(); render(); App.toast(&#x27;Deck supprimé&#x27;); }
+        else { b.dataset.sure = &#x27;1&#x27;; b.textContent = &#x27;Confirmer la suppression&#x27;; }
+      }
+    }
+  });
+
+  // ---------- Pour le scan (appli Android) ----------
+  // Code imprimé en bas à droite de la carte (OP01-001). Les versions parallèles ont le même code :
+  // la version normale de l&#x27;extension du code est proposée d&#x27;office, les autres en un toucher.
+  function lookupScan(res) {
+    if (!st.idx) return null;
+    for (const code of Core.opCodesInText(res &amp;&amp; res.text)) {
+      const c = card(code); if (!c) continue;
+      const ci = st.idx.byId.get(code);
+      const prints = c.p.map((p, pi) =&gt; ({ ci, pi, card: c, p }));
+      const home = code.startsWith(&#x27;P-&#x27;) ? &#x27;&#x27; : normSet(code.split(&#x27;-&#x27;)[0]);
+      let auto = prints.findIndex(x =&gt; !x.p[3] &amp;&amp; normSet(setCode(x.p[0])) === home);
+      if (auto &lt; 0) auto = prints.findIndex(x =&gt; !x.p[3]);
+      return { code, card: c, prints, auto: auto &lt; 0 ? null : auto, lang: &#x27;&#x27; };
+    }
+    return null;
+  }
+
+  window.CoffreOp = {
+    get ready() { return !!st.db; },
+    render, refreshDb, lookupScan, curLang, openCard, label,
+    locCode: code =&gt; code,
+    addPrinting: (ci, pi, delta, lang) =&gt; addPrinting(ci, pi, delta, lang),
+    addGeneric: id =&gt; addGeneric(id, 1), removeGeneric: id =&gt; addGeneric(id, -1),
+    imgTag: (id, cls) =&gt; { const c = card(id); return imgTag(c ? c.im : id, cls); },
+    printName: p =&gt; rarName(p),
+    loadImages, ownedOf, money
+  };
+  const start = () =&gt; { st.view = [&#x27;decks&#x27;, &#x27;wish&#x27;].includes(App.data.settings.opView) ? App.data.settings.opView : &#x27;col&#x27;; render(); loadDb(); };
+  if (window.coffreReady) start(); else document.addEventListener(&#x27;coffre:ready&#x27;, start, { once: true });
+})();
+</pre></details>
+<details><summary><code>src/shared/coffre-core.js</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ const PARTS = [&#x27;fm&#x27;, &#x27;vinyls&#x27;, &#x27;ygo&#x27;, &#x27;decks&#x27;, &#x27;op&#x27;, &#x27;opdecks&#x27;];</span>
+<span style="color:#6cc58c">+ const OP_URLS = { sets, decks, setCards, stCards, promoCards }   // optcgapi.com</span>
+<span style="color:#6cc58c">+ function opCompact(sets, decks, ...lists) { … }   // base compacte, versions parallèles regroupées par code</span>
+<span style="color:#6cc58c">+ function opCodesInText(text) { … }   // OP01-001, ST10-005, EB01-012, PRB01-001, P-034</span>
+<span style="color:#6cc58c">+ function opIndex(db) { … }</span></pre></details>
+<details><summary><code>src/main.js</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ const OP_FILE = … &#x27;onepiece-cartes.json&#x27;;  const OP_IMG_DIR = … &#x27;onepiece-images&#x27;;</span>
+<span style="color:#6cc58c">+ function opDownload() { … }   function opImage(id) { … }</span>
+<span style="color:#6cc58c">+ /api/opdb (synchro téléphone)   ipcMain.handle(&#x27;op:db&#x27; | &#x27;op:refresh&#x27; | &#x27;op:img&#x27;)</span>
+<span style="color:#6cc58c">+ sauvegardes : op, opdecks</span></pre></details>
+<details><summary><code>mobile/src/scan.js</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ const game = () =&gt; mode === &#x27;op&#x27; ? window.CoffreOp : window.CoffreYgo;</span>
+<span style="color:#6cc58c">+ mode &#x27;op&#x27; : bande du code en bas à droite, ajout auto de la version normale, choix des versions</span>
+<span style="color:#6cc58c">+ bouton « 📷 Scanner des cartes » dans l&#x27;onglet One Piece</span></pre></details>
+<details><summary><code>mobile/src/mobile.js</code>, <code>mobile.css</code>, <code>mobile/scripts/prepare-www.js</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ opDb(), opRefresh() (depuis le PC, sinon optcgapi.com), opImg() avec cache sur le téléphone</span>
+<span style="color:#6cc58c">+ body.mobile .tabs .long { display: none; }   // « Cartes FM » → « FM »</span>
+<span style="color:#6cc58c">+ copy(path.join(R, &#x27;op.js&#x27;), &#x27;op.js&#x27;);</span></pre></details>
+<details><summary><code>src/renderer/index.html</code>, <code>app.js</code>, <code>styles.css</code>, <code>ygo.js</code>, <code>src/preload.js</code>, <code>LISEZMOI.md</code>, <code>package.json</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ &lt;button role=&quot;tab&quot; data-tab=&quot;op&quot;&gt;☠ One Piece&lt;/button&gt;   &lt;section class=&quot;shelf op tcg&quot;&gt;   &lt;script src=&quot;op.js&quot;&gt;</span>
+<span style="color:#6cc58c">+ const TABS = [[&#x27;fm&#x27;, …], [&#x27;ygo&#x27;, …], [&#x27;op&#x27;, &#x27;One Piece&#x27;], [&#x27;vin&#x27;, …]];   Ctrl+3 = One Piece, Ctrl+4 = Vinyles</span>
+<span style="color:#6cc58c">+ .ygo { --tcg: var(--ygo) } .op { --tcg: var(--op) }   // couleur bleue pour One Piece</span>
+<span style="color:#6cc58c">+ opDb, opRefresh, opImg</span>
+<span style="color:#6cc58c">+ &quot;version&quot;: &quot;1.7.0&quot;,</span></pre></details>
 <h2>v1.6.0 <span class="d">— 16/10/2026</span></h2>
 <ul><li>Réglages : nouvelle section <b>Onglets</b> avec une case pour <b>Cartes FM</b>, <b>Yu-Gi-Oh</b> et <b>Vinyles</b>. Décocher une case cache l’onglet en haut.</li><li>Rien n’est effacé : les cartes, decks et vinyles d’un onglet caché restent enregistrés, continuent de se synchroniser et sont dans les sauvegardes. Recoche la case pour tout retrouver.</li><li>Il reste toujours au moins un onglet ; s’il n’en reste qu’un, la barre d’onglets disparaît. Le choix est propre à chaque appareil (PC et téléphone peuvent être différents).</li></ul>
 <details><summary><code>src/renderer/app.js</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ const TABS = [[&#x27;fm&#x27;, &#x27;Cartes FM&#x27;], [&#x27;ygo&#x27;, &#x27;Yu-Gi-Oh&#x27;], [&#x27;vin&#x27;, &#x27;Vinyles&#x27;]];</span>

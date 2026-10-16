@@ -27,6 +27,8 @@ const COVERS_DIR = path.join(DATA_DIR, 'pochettes');
 const SYNC_FILE = path.join(DATA_DIR, 'synchro.json');
 const YGO_FILE = path.join(DATA_DIR, 'yugioh-cartes.json');     // base de cartes (YGOPRODeck), retéléchargeable
 const YGO_IMG_DIR = path.join(DATA_DIR, 'yugioh-images');       // images des cartes, téléchargées à la demande
+const OP_FILE = path.join(DATA_DIR, 'onepiece-cartes.json');     // base de cartes One Piece (optcgapi.com), retéléchargeable
+const OP_IMG_DIR = path.join(DATA_DIR, 'onepiece-images');
 
 function ensureDirs() {
   fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -34,7 +36,7 @@ function ensureDirs() {
 }
 
 function defaultData() {
-  return { version: 1, fm: {}, vinyls: {}, ygo: {}, decks: {}, settings: { source: 'discogs', discogsToken: '', discogsKey: '', discogsSecret: '', layout: 'gal' } };
+  return { version: 1, fm: {}, vinyls: {}, ygo: {}, decks: {}, op: {}, opdecks: {}, settings: { source: 'discogs', discogsToken: '', discogsKey: '', discogsSecret: '', layout: 'gal' } };
 }
 
 function loadData() {
@@ -179,6 +181,12 @@ async function handleSync(req, res) {
       if (win && !win.isDestroyed()) win.webContents.send('sync:status', s.lastSync);
       return sendJson(res, 200, { ...merged, covers: listCovers(), name: os.hostname() });
     }
+    if (url.pathname === '/api/opdb' && req.method === 'GET') {
+      const txt = opRead();
+      if (!txt) return sendJson(res, 404, { error: 'base de cartes One Piece absente sur le PC' });
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      return res.end(txt);
+    }
     if (url.pathname === '/api/ygodb' && req.method === 'GET') {
       const txt = ygoRead();
       if (!txt) return sendJson(res, 404, { error: 'base de cartes absente sur le PC' });
@@ -267,6 +275,47 @@ function ygoImage(id, big) {
     return pathToFileURL(file).href;
   })().catch(() => '').finally(() => ygoImgJobs.delete(file));
   ygoImgJobs.set(file, job);
+  return job;
+}
+
+// ---------- Base de cartes One Piece ----------
+// Téléchargée depuis optcgapi.com (gratuit, sans clé), compactée puis gardée dans %AppData%\Coffre.
+let opBusy = null;
+function opRead() {
+  try { return fs.existsSync(OP_FILE) ? fs.readFileSync(OP_FILE, 'utf8') : ''; } catch (e) { return ''; }
+}
+function opDownload() {
+  if (opBusy) return opBusy;
+  opBusy = (async () => {
+    const U = Core.OP_URLS;
+    const [sets, decks, setCards, stCards, promos] = await Promise.all([
+      getJson(U.sets).catch(() => []), getJson(U.decks).catch(() => []),
+      getJson(U.setCards), getJson(U.stCards).catch(() => []), getJson(U.promoCards).catch(() => [])
+    ]);
+    const db = Core.opCompact(sets, decks, setCards, stCards, promos);
+    if (!db.cards.length) throw new Error('La base de cartes reçue est vide.');
+    ensureDirs();
+    fs.writeFileSync(OP_FILE + '.tmp', JSON.stringify(db));
+    fs.renameSync(OP_FILE + '.tmp', OP_FILE);
+    return db;
+  })().finally(() => { opBusy = null; });
+  return opBusy;
+}
+const opImgJobs = new Map();
+function opImage(id) {
+  id = String(id || '');
+  if (!/^[A-Za-z0-9_-]{3,40}$/.test(id)) return Promise.resolve('');
+  const file = path.join(OP_IMG_DIR, `${id}.jpg`);
+  if (fs.existsSync(file)) return Promise.resolve(pathToFileURL(file).href);
+  if (opImgJobs.has(file)) return opImgJobs.get(file);
+  const job = (async () => {
+    const res = await fetch(Core.opImgUrl(id), { headers: { 'User-Agent': USER_AGENT } });
+    if (!res.ok) return '';
+    fs.mkdirSync(OP_IMG_DIR, { recursive: true });
+    fs.writeFileSync(file, Buffer.from(await res.arrayBuffer()));
+    return pathToFileURL(file).href;
+  })().catch(() => '').finally(() => opImgJobs.delete(file));
+  opImgJobs.set(file, job);
   return job;
 }
 
@@ -388,7 +437,7 @@ ipcMain.handle('backup:import', async () => {
   if (r.canceled || !r.filePaths[0]) return { ok: false };
   const b = JSON.parse(fs.readFileSync(r.filePaths[0], 'utf8'));
   const data = b.format === 'coffre-backup' ? b.data : b;
-  if (!data || typeof data !== 'object' || (!data.fm && !data.vinyls && !data.ygo && !data.decks)) throw new Error("Ce fichier n'est pas une sauvegarde Coffre.");
+  if (!data || typeof data !== 'object' || (!data.fm && !data.vinyls && !data.ygo && !data.decks && !data.op)) throw new Error("Ce fichier n'est pas une sauvegarde Coffre.");
   ensureDirs();
   for (const [name, b64] of Object.entries(b.covers || {})) {
     const p = safeCoverPath(name);
@@ -398,7 +447,7 @@ ipcMain.handle('backup:import', async () => {
   const now = Date.now();
   const restamp = m => Object.fromEntries(Object.entries(m || {}).map(([k, v]) => [k, { ...v, mt: now }]));
   const cur = loadData();
-  const merged = Core.mergeCollections(cur, { fm: restamp(data.fm), vinyls: restamp(data.vinyls), ygo: restamp(data.ygo), decks: restamp(data.decks) });
+  const merged = Core.mergeCollections(cur, { fm: restamp(data.fm), vinyls: restamp(data.vinyls), ygo: restamp(data.ygo), decks: restamp(data.decks), op: restamp(data.op), opdecks: restamp(data.opdecks) });
   const out = { ...cur, ...merged };
   writeData(out);
   return { ok: true, data: out };
@@ -407,6 +456,9 @@ ipcMain.handle('backup:import', async () => {
 ipcMain.handle('ygo:db', () => { const t = ygoRead(); return t ? JSON.parse(t) : null; });
 ipcMain.handle('ygo:refresh', () => ygoDownload());
 ipcMain.handle('ygo:img', (_e, id, big) => ygoImage(id, big));
+ipcMain.handle('op:db', () => { const t = opRead(); return t ? JSON.parse(t) : null; });
+ipcMain.handle('op:refresh', () => opDownload());
+ipcMain.handle('op:img', (_e, id) => opImage(id));
 
 ipcMain.handle('open:external', (_e, url) => { if (/^https?:\/\//.test(url)) shell.openExternal(url); });
 ipcMain.handle('open:dataDir', () => shell.openPath(DATA_DIR));

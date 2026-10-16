@@ -94,7 +94,7 @@
   }
 
   // ---------- Données ----------
-  const defaultData = () => ({ version: 1, fm: {}, vinyls: {}, ygo: {}, decks: {}, settings: { source: 'discogs', discogsToken: '', layout: 'gal' } });
+  const defaultData = () => ({ version: 1, fm: {}, vinyls: {}, ygo: {}, decks: {}, op: {}, opdecks: {}, settings: { source: 'discogs', discogsToken: '', layout: 'gal' } });
   let coversUrl = '';
   let lastSyncedJson = '';
 
@@ -135,7 +135,7 @@
     async load() {
       try { await FS.mkdir({ path: 'pochettes', directory: DATA, recursive: true }); } catch (e) { /* existe déjà */ }
       const d = await readJson('coffre.json', null) || await readJson('coffre.precedent.json', null) || defaultData();
-      d.fm = d.fm || {}; d.vinyls = d.vinyls || {}; d.ygo = d.ygo || {}; d.decks = d.decks || {}; d.settings = { ...defaultData().settings, ...(d.settings || {}) };
+      d.fm = d.fm || {}; d.vinyls = d.vinyls || {}; d.ygo = d.ygo || {}; d.decks = d.decks || {}; d.op = d.op || {}; d.opdecks = d.opdecks || {}; d.settings = { ...defaultData().settings, ...(d.settings || {}) };
       return d;
     },
     async save(d) {
@@ -188,12 +188,12 @@
       const f = await pickFile('.coffre,.json,application/json,application/octet-stream,*/*'); if (!f) return { ok: false };
       const b = JSON.parse(await f.text());
       const data = b.format === 'coffre-backup' ? b.data : b;
-      if (!data || typeof data !== 'object' || (!data.fm && !data.vinyls && !data.ygo && !data.decks)) throw new Error("Ce fichier n'est pas une sauvegarde Coffre.");
+      if (!data || typeof data !== 'object' || (!data.fm && !data.vinyls && !data.ygo && !data.decks && !data.op)) throw new Error("Ce fichier n'est pas une sauvegarde Coffre.");
       for (const [name, b64] of Object.entries(b.covers || {})) if (COVER_RE.test(name)) await writeB64('pochettes/' + name, b64);
       const now = Date.now();
       const restamp = m => Object.fromEntries(Object.entries(m || {}).map(([k, v]) => [k, { ...v, mt: now }]));
       const cur = window.CoffreApp.data;
-      const merged = Core.mergeCollections(cur, { fm: restamp(data.fm), vinyls: restamp(data.vinyls), ygo: restamp(data.ygo), decks: restamp(data.decks) });
+      const merged = Core.mergeCollections(cur, { fm: restamp(data.fm), vinyls: restamp(data.vinyls), ygo: restamp(data.ygo), decks: restamp(data.decks), op: restamp(data.op), opdecks: restamp(data.opdecks) });
       const out = { ...cur, ...merged };
       await window.coffre.save(out);
       return { ok: true, data: out };
@@ -229,6 +229,31 @@
       return db;
     },
     ygoImg(id, big) { return ygoImage(id, big); },
+    // ---------- One Piece : base de cartes et images ----------
+    async opDb() { return readJson('onepiece-cartes.json', null); },
+    async opRefresh() {
+      let db = null;
+      if (Sync.pair) {
+        try { db = await Sync.reach(h => Sync.call(h, '/api/opdb', { method: 'GET', readTimeout: 120000 })); } catch (e) { db = null; }
+        if (db && !(db.cards && db.cards.length)) db = null;
+      }
+      if (!db) {
+        const get = async url => {
+          const res = await http({ url, headers: { 'User-Agent': UA, Accept: 'application/json' }, readTimeout: 180000 });
+          if (res.status < 200 || res.status >= 300) throw new Error(`optcgapi.com a répondu ${res.status}.`);
+          return asJson(res.data);
+        };
+        const U = Core.OP_URLS;
+        const sets = await get(U.sets).catch(() => []), decks = await get(U.decks).catch(() => []);
+        const setCards = await get(U.setCards);
+        const stCards = await get(U.stCards).catch(() => []), promos = await get(U.promoCards).catch(() => []);
+        db = Core.opCompact(sets, decks, setCards, stCards, promos);
+        if (!db.cards.length) throw new Error('La base de cartes reçue est vide.');
+      }
+      await writeText('onepiece-cartes.json', JSON.stringify(db));
+      return db;
+    },
+    opImg(id) { return cardImage('onepiece-images', String(id || ''), Core.opImgUrl(id)); },
     checkUpdate,
     // L'APK s'ouvre dans le navigateur du téléphone (Chrome…), qui la télécharge vraiment.
     // (L'onglet intégré se refermait avant la fin du téléchargement.)
@@ -271,6 +296,42 @@
     })().catch(() => '');
     ygoImgJobs.set(name, job);
     job.then(u => { if (!u) ygoImgJobs.delete(name); });
+    return job;
+  }
+
+  // Images des cartes One Piece : même principe, dans leur propre dossier
+  const imgDirs = new Map(); const imgJobs = new Map();
+  async function imgDir(dir) {
+    if (imgDirs.has(dir)) return imgDirs.get(dir);
+    const p = (async () => {
+      try { await FS.mkdir({ path: dir, directory: DATA, recursive: true }); } catch (e) { /* existe déjà */ }
+      const u = await FS.getUri({ path: dir, directory: DATA });
+      const have = new Set();
+      try { const r = await FS.readdir({ path: dir, directory: DATA }); (r.files || []).forEach(f => have.add(typeof f === 'string' ? f : f.name)); } catch (e) { /* vide */ }
+      return { base: Cap.convertFileSrc(u.uri) + '/', have };
+    })();
+    imgDirs.set(dir, p);
+    return p;
+  }
+  function cardImage(dir, id, url) {
+    if (!/^[A-Za-z0-9_-]{3,40}$/.test(id)) return Promise.resolve('');
+    const name = id + '.jpg', jk = dir + '/' + name;
+    if (imgJobs.has(jk)) return imgJobs.get(jk);
+    const job = (async () => {
+      const d = await imgDir(dir);
+      if (d.have.has(name)) return d.base + name;
+      if (ygoImgRunning >= 6) await new Promise(r => ygoImgQueue.push(r));
+      ygoImgRunning++;
+      try {
+        const res = await http({ url, responseType: 'blob', headers: { 'User-Agent': UA } });
+        if (res.status < 200 || res.status >= 300 || !res.data) return '';
+        await writeB64(dir + '/' + name, res.data);
+        d.have.add(name);
+        return d.base + name;
+      } finally { ygoImgRunning--; const next = ygoImgQueue.shift(); if (next) next(); }
+    })().catch(() => '');
+    imgJobs.set(jk, job);
+    job.then(u => { if (!u) imgJobs.delete(jk); });
     return job;
   }
 
@@ -490,7 +551,7 @@
     }, { passive: true });
   }
   document.addEventListener('DOMContentLoaded', () => {
-    ['fmList', 'vinList', 'ygoList'].forEach(id => { const el = document.getElementById(id); if (el) watchScroll(el); });
+    ['fmList', 'vinList', 'ygoList', 'opList'].forEach(id => { const el = document.getElementById(id); if (el) watchScroll(el); });
     const tabs = document.getElementById('tabs');
     if (tabs) tabs.addEventListener('click', () => document.body.classList.remove('compact'));
   });
