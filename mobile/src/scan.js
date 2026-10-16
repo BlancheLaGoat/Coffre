@@ -389,19 +389,36 @@
   const TextReader = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.TextReader;
   const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('trop long')), ms))]);
 
-  // Mots lisibles, classés : gros texte d'abord (souvent l'artiste et le titre)
-  function wordsFromLines(lines) {
-    const out = [];
-    for (const l of lines || []) {
-      const h = l.h || 10;
-      for (const raw of String(l.text || '').split(/\s+/)) {
-        const t = raw.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
-        if (t.length < 2 || !/\p{L}{2}|\p{N}{3}/u.test(t)) continue;
-        out.push({ t, score: h });
-      }
-    }
+  // Lignes de texte lisibles, classées : gros texte d'abord (souvent l'artiste et le titre)
+  const JUNK = /^(stereo|mono|records?|recordings?|vinyl|vinyle|lp|ep|side|face|rpm|made|in|feat|ft|presents?|edition|remaster(ed)?|digital|music|inc|ltd|all|rights|reserved|the|and|et|de|la|le|les|of)$/i;
+  function cleanLine(text) {
+    return String(text || '').split(/\s+/)
+      .map(w => w.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ''))
+      .filter(w => w.length >= 2 && /\p{L}{2}|\p{N}{2}/u.test(w))
+      .join(' ');
+  }
+  function linesFrom(raw) {
     const seen = new Set();
-    return out.sort((a, b) => b.score - a.score).filter(w => { const k = w.t.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+    return (raw || [])
+      .map(l => ({ t: cleanLine(l.text), h: l.h || 10 }))
+      .filter(l => l.t && l.t.length <= 48 && l.t.split(' ').some(w => !JUNK.test(w)))
+      .sort((a, b) => b.h - a.h)
+      .filter(l => { const k = l.t.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+  }
+  // Plusieurs recherches courtes plutôt qu'une longue : un mot mal lu ne fait plus tout rater
+  function buildQueries(lines) {
+    const strip = t => t.split(' ').filter(w => !JUNK.test(w)).join(' ');
+    const big = lines.slice(0, 4).map(l => strip(l.t)).filter(Boolean);
+    const qs = [];
+    if (big[0] && big[1]) qs.push(big[0] + ' ' + big[1]);
+    big.slice(0, 3).forEach(t => qs.push(t));
+    if (big[0] && big[2]) qs.push(big[0] + ' ' + big[2]);
+    // Référence catalogue (ex. « SHVL 804 », « 7243 8 49606 »), très précise si elle est lue
+    for (const l of lines) {
+      const m = l.t.match(/\b[A-Z]{1,6}[ .-]?\d{2,6}(?:[ .-]?\d{1,4})?\b/);
+      if (m) { qs.push(m[0]); break; }
+    }
+    return [...new Set(qs.map(q => q.trim()).filter(q => q.replace(/[^\p{L}\p{N}]/gu, '').length >= 3))].slice(0, 5);
   }
 
   const snapCanvas = document.createElement('canvas');
@@ -425,7 +442,7 @@
         msg('Lecture du texte de la pochette…');
         const b64 = snapCanvas.toDataURL('image/jpeg', 0.9).split(',')[1];
         const res = await withTimeout(TextReader.read({ image: b64 }), 15000);
-        words = wordsFromLines(res.lines);
+        words = linesFrom(res.lines);
       } catch (e) { words = []; }
     }
     reading = false;
@@ -435,25 +452,37 @@
     openCoverSearch(words, photo);
   }
 
-  // Mots lus sur la photo, que l'on peut toucher pour corriger la recherche
-  const coverSearch = { words: [], chosen: new Set() };
-  const coverQuery = () => coverSearch.words.filter(w => coverSearch.chosen.has(w.t)).map(w => w.t).join(' ');
-  const coverHint = () => coverSearch.words.length
-    ? `<span>Mots lus sur la pochette (touche pour ajouter / retirer) :</span>` + coverSearch.words.slice(0, 16).map(w => `<button type="button" class="chip" data-ocr="${esc(w.t)}" aria-pressed="${coverSearch.chosen.has(w.t)}">${esc(w.t)}</button>`).join('')
+  // Lignes lues sur la photo : touche une ligne pour chercher avec elle seule
+  let coverLines = [];
+  const coverHint = () => coverLines.length
+    ? `<span>Texte lu sur la pochette (touche une ligne pour chercher avec) :</span>` + coverLines.slice(0, 12).map(l => `<button type="button" class="chip" data-ocr="${esc(l.t)}">${esc(l.t)}</button>`).join('')
     : `<span>Aucun texte lisible sur cette pochette : tape l'artiste ou l'album. Les résultats seront classés selon leur ressemblance avec ta photo.</span>`;
 
-  function openCoverSearch(words, photo) {
-    coverSearch.words = words;
-    coverSearch.chosen = new Set(words.slice(0, 5).map(w => w.t));
-    App.searchFor(coverQuery(), { hint: coverHint(), rerank: list => rerankByCover(list, photo) });
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+  async function openCoverSearch(lines, photo) {
+    coverLines = lines;
+    const queries = buildQueries(lines);
+    App.presetSearch({ q: queries[0] || '', hint: coverHint(), rerank: list => rerankByCover(list, photo) });
+    if (!queries.length) { App.setResults([], { done: true }); return; }
+    // MusicBrainz accepte une requête par seconde ; Discogs est plus souple
+    const gap = App.searchSource === 'discogs' ? 300 : 1100;
+    const merged = []; const ids = new Set(); let lastErr = '';
+    for (let i = 0; i < queries.length; i++) {
+      if (i) await wait(gap);
+      try {
+        const r = await App.searchRaw(queries[i]);
+        for (const x of r.results || []) {
+          const k = x.source + ':' + x.id;
+          if (!ids.has(k)) { ids.add(k); merged.push(x); }
+        }
+      } catch (e) { lastErr = String(e.message || e); }
+      App.setResults(merged.slice(), { loading: i < queries.length - 1 });
+    }
+    App.setResults(merged, { done: true, error: merged.length ? '' : lastErr });
   }
   document.addEventListener('click', e => {
     const b = e.target.closest('#sHint [data-ocr]'); if (!b) return;
-    const t = b.dataset.ocr;
-    if (coverSearch.chosen.has(t)) coverSearch.chosen.delete(t); else coverSearch.chosen.add(t);
-    b.setAttribute('aria-pressed', String(coverSearch.chosen.has(t)));
-    App.setSearchHint(coverHint());
-    App.rerunSearch(coverQuery());
+    App.rerunSearch(b.dataset.ocr);
   });
 
   // Ressemblance entre la photo et la pochette de chaque résultat
@@ -470,7 +499,7 @@
     return p;
   }
   async function rerankByCover(list, photo) {
-    const N = Math.min(list.length, 20);
+    const N = Math.min(list.length, 40);
     const head = list.slice(0, N), tail = list.slice(N);
     const scores = new Map();
     let i = 0;
@@ -482,7 +511,7 @@
         if (d) { let s = 0; for (let j = 0; j < DIM; j++) s += d[j] * photo[j]; scores.set(r, s); }
       }
     };
-    await Promise.all([work(), work(), work(), work()]);
+    await Promise.all([work(), work(), work(), work(), work(), work()]);
     const sorted = head.map((r, idx) => ({ r, idx, s: scores.has(r) ? scores.get(r) : -1 }))
       .sort((a, b) => (b.s - a.s) || (a.idx - b.idx))
       .map(({ r, s }) => ({ ...r, match: s >= 0.75 ? 'Même pochette' : s >= 0.6 ? 'Pochette ressemblante' : '' }));

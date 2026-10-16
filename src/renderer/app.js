@@ -326,22 +326,25 @@ async function runSearch(page) {
     const r = await window.coffre.search({ q: search.q, source: search.source, page, auth: discogsAuth() });
     search.results = page === 1 ? r.results : search.results.concat(r.results);
     search.hasMore = r.hasMore;
-    // Appli Android : les résultats sont ensuite classés selon leur ressemblance avec la photo de la pochette
-    if (page === 1 && search.rerank && search.results.length) {
-      const token = search.token = {};
-      search.reranking = true;
-      search.rerank(search.results).then(sorted => {
-        if (search.token !== token) return;
-        search.reranking = false;
-        if (sorted) search.results = sorted;
-        if (modalKind === 'search') renderResults();
-      }).catch(() => { search.reranking = false; if (modalKind === 'search') renderResults(); });
-    }
+    if (page === 1) startRerank();
   } catch (e) {
     search.error = String(e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
   }
   search.loading = false;
   if (modalKind === 'search') renderResults();
+}
+
+// Appli Android : les résultats sont ensuite classés selon leur ressemblance avec la photo de la pochette
+function startRerank() {
+  if (!search.rerank || !search.results.length) return;
+  const token = search.token = {};
+  search.reranking = true;
+  search.rerank(search.results).then(sorted => {
+    if (search.token !== token) return;
+    search.reranking = false;
+    if (sorted) search.results = sorted;
+    if (modalKind === 'search') renderResults();
+  }).catch(() => { search.reranking = false; if (modalKind === 'search') renderResults(); });
 }
 
 function renderResults() {
@@ -672,6 +675,20 @@ window.CoffreApp = {
     if (q) runSearch(1); else { const i = $('sQ'); if (i) i.focus(); }
   },
   setSearchHint(h) { search.hint = h; },
+  // Recherche faite par le module de scan (plusieurs requêtes fusionnées)
+  presetSearch({ q = '', hint = '', rerank = null } = {}) {
+    search.q = q; search.hint = hint; search.rerank = rerank;
+    search.results = []; search.hasMore = false; search.error = ''; search.page = 1; search.loading = true;
+    search.token = {}; search.reranking = false;
+    openSearch();
+  },
+  setResults(list, { loading = false, done = false, error = '' } = {}) {
+    search.results = list; search.loading = loading; search.error = error;
+    if (done) startRerank();
+    if (modalKind === 'search') renderResults();
+  },
+  searchRaw(q) { return window.coffre.search({ q, source: search.source || data.settings.source || 'musicbrainz', page: 1, auth: discogsAuth() }); },
+  get searchSource() { return search.source || data.settings.source || 'musicbrainz'; },
   rerunSearch(q) { search.q = q; const i = $('sQ'); if (i) i.value = q; if (q) runSearch(1); }
 };
 
