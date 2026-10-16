@@ -611,6 +611,9 @@ function openSettings() {
         <input id="stToken" type="password" value="${esc(data.settings.discogsToken || '')}" placeholder="Seulement si tu en as un" spellcheck="false" autocomplete="off"></label>
     </div>
     <p class="hint">La recherche de vinyles et leurs prix passent par Discogs. Sur Discogs : Paramètres → Développeurs → « Créer une application », puis copie la Consumer Key et le Consumer Secret ici. Ils restent sur cet appareil, jamais dans le code. <a data-act="dgs">Ouvrir la page ↗</a></p>
+    <h3>Onglets</h3>
+    <div class="tabtoggles">${TABS.map(([k, n]) => `<label class="tgl"><input type="checkbox" data-tabtoggle="${k}" ${tabOn(k) ? 'checked' : ''}> ${n}</label>`).join('')}</div>
+    <p class="hint">Un onglet désactivé est seulement caché : tes cartes et vinyles restent enregistrés et continuent de se synchroniser.</p>
     ${phoneSectionHtml()}
     <h3>Sauvegarde</h3>
     <div class="actions" style="justify-content:flex-start">
@@ -653,6 +656,14 @@ async function loadPhoneSection() {
 }
 $('sheet').addEventListener('change', e => {
   if (modalKind !== 'settings') return;
+  const tt = e.target.dataset && e.target.dataset.tabtoggle;
+  if (tt) {
+    const hid = new Set(data.settings.hiddenTabs || []);
+    if (e.target.checked) hid.delete(tt); else hid.add(tt);
+    if (hid.size >= TABS.length) { e.target.checked = true; return; } // au moins un onglet
+    data.settings.hiddenTabs = [...hid];
+    applyTabs(); scheduleSave(); return;
+  }
   if (e.target.id === 'stToken') data.settings.discogsToken = e.target.value.trim();
   if (e.target.id === 'stKey') data.settings.discogsKey = e.target.value.trim();
   if (e.target.id === 'stSecret') data.settings.discogsSecret = e.target.value.trim();
@@ -707,7 +718,17 @@ window.coffre.onUpdate(s => {
 function renderAll() { renderFm(); renderVinyls(); if (window.CoffreYgo) window.CoffreYgo.render(); }
 
 // Onglets Cartes FM / Vinyles (Ctrl+1 et Ctrl+2 au clavier)
+const TABS = [['fm', 'Cartes FM'], ['ygo', 'Yu-Gi-Oh'], ['vin', 'Vinyles']];
+const tabOn = k => !(data.settings.hiddenTabs || []).includes(k);
+// Cache les onglets désactivés dans les réglages (les données ne sont pas touchées)
+function applyTabs() {
+  const on = TABS.map(t => t[0]).filter(tabOn);
+  $('tabs').querySelectorAll('[data-tab]').forEach(b => { b.hidden = !tabOn(b.dataset.tab); });
+  $('tabs').hidden = on.length < 2;
+  if (!on.includes($('shelves').dataset.tab)) showTab(on[0]);
+}
 function showTab(tab) {
+  if (!tabOn(tab)) return;
   $('shelves').dataset.tab = tab;
   $('tabs').querySelectorAll('button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
   if (data.settings.tab !== tab) { data.settings.tab = tab; scheduleSave(); }
@@ -780,7 +801,8 @@ window.CoffreApp = {
   seg('fmView', 'all', v => { fmF.v = v; renderFm(); });
   seg('vinView', 'all', v => { vinF.v = v; renderVinyls(); });
   data.ygo = data.ygo || {}; data.decks = data.decks || {};
-  showTab(['vin', 'ygo'].includes(data.settings.tab) ? data.settings.tab : 'fm');
+  const want = ['vin', 'ygo'].includes(data.settings.tab) ? data.settings.tab : 'fm';
+  $('shelves').dataset.tab = want; applyTabs(); showTab($('shelves').dataset.tab);
   renderAll();
   if (ext.ready) ext.ready();
   // Prix Discogs manquants ou vieux de plus d'une semaine, en arrière-plan

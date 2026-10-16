@@ -109,6 +109,10 @@ Tout se synchronise entre le PC et le téléphone, comme le reste.
 
 ---
 
+## Choisir les onglets
+
+⚙ Réglages → **Onglets** : décoche Cartes FM, Yu-Gi-Oh ou Vinyles pour cacher l'onglet. Rien n'est supprimé : recoche la case et tout revient. Chaque appareil garde son propre choix.
+
 ## Sauvegarde
 
 ⚙ **Réglages → Exporter une sauvegarde** crée un fichier `.coffre` qui contient tout (cartes, vinyles, pochettes). **Importer une sauvegarde** le recharge, sur ce PC ou un autre. Sur le téléphone, l'export arrive dans le dossier **Documents**.

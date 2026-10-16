@@ -30,6 +30,10 @@ button, input, select, textarea { font: inherit; color: var(--fg); }
 .tabs button:hover { color: var(--fg); }
 .tabs button[aria-selected=true] { background: var(--chip); color: var(--fg); }
 .tabs .fm-k { color: var(--gold); } .tabs .vin-k { color: var(--wax); } .tabs .ygo-k { color: var(--ygo); }
+.tabs[hidden], .tabs button[hidden] { display: none; }
+.tabtoggles { display: flex; flex-wrap: wrap; gap: 8px 18px; }
+.tgl { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.tgl input { width: 18px; height: 18px; accent-color: var(--ygo); }
 .tabs .count { font: 12px var(--f-mono); color: var(--muted); font-weight: 400; }
 h1 { font: 800 26px/1.1 var(--f-display); margin: 0; letter-spacing: -.01em; }
 .sub { color: var(--muted); }
