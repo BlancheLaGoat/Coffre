@@ -4,6 +4,27 @@ h1{margin:0 0 4px}h2{margin:28px 0 8px;color:#e3b54a}.d{color:#9a95ad}details{bo
 summary{cursor:pointer;padding:8px 12px}pre{margin:0;padding:12px;overflow:auto;max-height:520px;font:12px Consolas,monospace;background:#100e16;border-top:1px solid #322e42}
 .mod{font-size:11px;background:#3a2f17;color:#e3b54a;padding:1px 6px;border-radius:4px}.new{font-size:11px;background:#1f3a26;color:#6cc58c;padding:1px 6px;border-radius:4px}ul{margin:4px 0 0}</style></head><body>
 <h1>Journal des modifications</h1><p class="d">Coffre — clique sur un fichier pour voir son code.</p>
+<h2>v1.0.2 <span class="d">— 16/10/2026</span></h2>
+<ul><li>Discogs fonctionne maintenant avec la <b>Consumer Key + Consumer Secret</b> d’une application Discogs (le token personnel reste possible).</li>
+<li>Réglages : deux nouveaux champs, et le secret/token sont masqués à l’écran.</li></ul>
+<details><summary><code>src/main.js</code> <span class="mod">modifié</span> — authentification Discogs</summary><pre><span style="color:#6cc58c">+ function discogsAuth(auth = {}) {</span>
+<span style="color:#6cc58c">+   if (auth.token) return { Authorization: `Discogs token=${auth.token}` };</span>
+<span style="color:#6cc58c">+   if (auth.key &amp;&amp; auth.secret) return { Authorization: `Discogs key=${auth.key}, secret=${auth.secret}` };</span>
+<span style="color:#6cc58c">+   return null;</span>
+<span style="color:#6cc58c">+ }</span>
+<span style="color:#ef7a62">- async function searchDiscogs(q, page, token) {</span>
+<span style="color:#6cc58c">+ async function searchDiscogs(q, page, auth) {</span>
+<span style="color:#ef7a62">-   const d = await getJson(url, { Authorization: `Discogs token=${token}` });</span>
+<span style="color:#6cc58c">+   const d = await getJson(url, headers);</span>
+<span style="color:#ef7a62">- ipcMain.handle(&#x27;vinyl:search&#x27;, async (_e, { q, source, page = 1, token }) =&gt; {</span>
+<span style="color:#6cc58c">+ ipcMain.handle(&#x27;vinyl:search&#x27;, async (_e, { q, source, page = 1, auth }) =&gt; {</span></pre></details>
+<details><summary><code>src/renderer/app.js</code> <span class="mod">modifié</span> — réglages et appels de recherche</summary><pre><span style="color:#6cc58c">+ const discogsAuth = () =&gt; ({ token: …discogsToken, key: …discogsKey, secret: …discogsSecret });</span>
+<span style="color:#ef7a62">- window.coffre.search({ q, source, page, token: data.settings.discogsToken })</span>
+<span style="color:#6cc58c">+ window.coffre.search({ q, source, page, auth: discogsAuth() })</span>
+<span style="color:#6cc58c">+ &lt;input id=&quot;stKey&quot;&gt;  Discogs — Consumer Key</span>
+<span style="color:#6cc58c">+ &lt;input id=&quot;stSecret&quot; type=&quot;password&quot;&gt;  Discogs — Consumer Secret</span></pre></details>
+<details><summary><code>package.json</code> <span class="mod">modifié</span></summary><pre><span style="color:#ef7a62">- "version": "1.0.1",</span>
+<span style="color:#6cc58c">+ "version": "1.0.2",</span></pre></details>
 <h2>v1.0.1 <span class="d">— 16/10/2026</span></h2>
 <ul><li>Correction : une fenêtre vide restait affichée au démarrage et bloquait l’appli. Les éléments masqués (fenêtres, bandeau de mise à jour) sont maintenant vraiment cachés.</li></ul>
 <details><summary><code>src/renderer/styles.css</code> <span class="mod">modifié</span> — ligne ajoutée</summary><pre>  * { box-sizing: border-box; }

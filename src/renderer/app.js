@@ -27,6 +27,8 @@ const search = { q: '', source: 'musicbrainz', page: 1, results: [], hasMore: fa
 let modalKind = null;
 
 const coverUrl = name => name ? info.coversUrl + encodeURIComponent(name) : '';
+const discogsAuth = () => ({ token: data.settings.discogsToken || '', key: data.settings.discogsKey || '', secret: data.settings.discogsSecret || '' });
+const hasDiscogs = () => !!(data.settings.discogsToken || (data.settings.discogsKey && data.settings.discogsSecret));
 const uid = () => 'v' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
 // ---------- Sauvegarde ----------
@@ -285,14 +287,14 @@ function findInCollection(r) {
 function openSearch() {
   modalKind = 'search';
   search.source = data.settings.source || 'musicbrainz';
-  const noToken = !data.settings.discogsToken;
+  const noToken = !hasDiscogs();
   openModal(`
     <div class="sheet-head"><h3>Rechercher un vinyle</h3><button class="close" data-act="close">Fermer</button></div>
     <form class="searchbar" id="sForm">
       <input id="sQ" type="search" placeholder="Artiste, album, label ou référence…" value="${esc(search.q)}" autofocus>
       <div class="seg" id="sSrc">
         <button type="button" data-v="musicbrainz">MusicBrainz</button>
-        <button type="button" data-v="discogs" ${noToken ? 'title="Ajoute ton token Discogs dans les réglages"' : ''}>Discogs</button>
+        <button type="button" data-v="discogs" ${noToken ? 'title="Ajoute ta clé Discogs dans les réglages"' : ''}>Discogs</button>
       </div>
       <button class="primary" type="submit">Chercher</button>
     </form>
@@ -313,7 +315,7 @@ async function runSearch(page) {
   if (page === 1) search.results = [];
   renderResults();
   try {
-    const r = await window.coffre.search({ q: search.q, source: search.source, page, token: data.settings.discogsToken });
+    const r = await window.coffre.search({ q: search.q, source: search.source, page, auth: discogsAuth() });
     search.results = page === 1 ? r.results : search.results.concat(r.results);
     search.hasMore = r.hasMore;
   } catch (e) {
@@ -373,7 +375,7 @@ async function openRelease(r) {
   const cover = $('rCover').querySelector('img');
   if (cover) cover.addEventListener('error', () => { $('rCover').innerHTML = `<div class="cover ph"></div>`; }, { once: true });
   try {
-    const d = await window.coffre.details({ source: r.source, id: r.id, token: data.settings.discogsToken });
+    const d = await window.coffre.details({ source: r.source, id: r.id, auth: discogsAuth() });
     if (modalKind !== 'release') return;
     const full = { ...r, ...Object.fromEntries(Object.entries(d).filter(([, x]) => x && (!Array.isArray(x) || x.length))) };
     $('sheet').dataset.release = JSON.stringify(full);
@@ -499,11 +501,15 @@ function openSettings() {
     <div class="sheet-head"><h3>Réglages</h3><button class="close" data-act="close">Fermer</button></div>
     <div class="form">
       <label class="f">Source de recherche par défaut
-        <select id="stSource"><option value="musicbrainz">MusicBrainz (sans clé)</option><option value="discogs">Discogs (token requis)</option></select></label>
-      <label class="f wide">Token Discogs
-        <input id="stToken" value="${esc(data.settings.discogsToken)}" placeholder="Colle ton token personnel ici" spellcheck="false"></label>
+        <select id="stSource"><option value="musicbrainz">MusicBrainz (sans clé)</option><option value="discogs">Discogs (clé requise)</option></select></label>
+      <label class="f">Discogs — Consumer Key
+        <input id="stKey" value="${esc(data.settings.discogsKey || '')}" spellcheck="false" autocomplete="off"></label>
+      <label class="f">Discogs — Consumer Secret
+        <input id="stSecret" type="password" value="${esc(data.settings.discogsSecret || '')}" spellcheck="false" autocomplete="off"></label>
+      <label class="f wide">Ou token personnel Discogs (facultatif)
+        <input id="stToken" type="password" value="${esc(data.settings.discogsToken || '')}" placeholder="Seulement si tu en as un" spellcheck="false" autocomplete="off"></label>
     </div>
-    <p class="hint">Discogs référence plus de pressages vinyles. Pour obtenir un token gratuit : connecte-toi sur Discogs, va dans Paramètres → Développeurs, puis « Générer un token ». <a data-act="dgs">Ouvrir la page ↗</a></p>
+    <p class="hint">Discogs référence plus de pressages vinyles. Sur Discogs : Paramètres → Développeurs → « Créer une application », puis copie la Consumer Key et le Consumer Secret ici. Ils restent sur ton PC, jamais dans le code. <a data-act="dgs">Ouvrir la page ↗</a></p>
     <h3>Sauvegarde</h3>
     <div class="actions" style="justify-content:flex-start">
       <button data-act="export">Exporter une sauvegarde</button>
@@ -522,6 +528,8 @@ $('sheet').addEventListener('change', e => {
   if (modalKind !== 'settings') return;
   if (e.target.id === 'stSource') data.settings.source = e.target.value;
   if (e.target.id === 'stToken') data.settings.discogsToken = e.target.value.trim();
+  if (e.target.id === 'stKey') data.settings.discogsKey = e.target.value.trim();
+  if (e.target.id === 'stSecret') data.settings.discogsSecret = e.target.value.trim();
   scheduleSave();
 });
 $('sheet').addEventListener('click', async e => {

@@ -25,7 +25,7 @@ function ensureDirs() {
 }
 
 function defaultData() {
-  return { version: 1, fm: {}, vinyls: {}, settings: { source: 'musicbrainz', discogsToken: '', layout: 'gal' } };
+  return { version: 1, fm: {}, vinyls: {}, settings: { source: 'musicbrainz', discogsToken: '', discogsKey: '', discogsSecret: '', layout: 'gal' } };
 }
 
 function loadData() {
@@ -54,7 +54,7 @@ function saveData(data) {
 // ---------- Réseau ----------
 async function getJson(url, headers = {}) {
   const res = await fetch(url, { headers: { 'User-Agent': USER_AGENT, Accept: 'application/json', ...headers } });
-  if (res.status === 401 || res.status === 403) throw new Error('Clé Discogs refusée. Vérifie ton token dans les réglages.');
+  if (res.status === 401 || res.status === 403) throw new Error('Discogs a refusé tes identifiants. Vérifie ta clé et ton secret (ou ton token) dans les réglages.');
   if (res.status === 429 || res.status === 503) throw new Error('Le site limite les recherches. Attends quelques secondes et réessaie.');
   if (!res.ok) throw new Error(`Le serveur a répondu ${res.status}.`);
   return res.json();
@@ -118,11 +118,19 @@ async function detailsMusicBrainz(id) {
   };
 }
 
-// Discogs : nécessite un token personnel gratuit (discogs.com/settings/developers).
-async function searchDiscogs(q, page, token) {
-  if (!token) throw new Error('Ajoute ton token Discogs dans les réglages pour chercher sur Discogs.');
+// Discogs : identifiants d'application (Consumer Key + Secret) ou token personnel.
+// Les deux se créent gratuitement sur discogs.com/settings/developers.
+function discogsAuth(auth = {}) {
+  if (auth.token) return { Authorization: `Discogs token=${auth.token}` };
+  if (auth.key && auth.secret) return { Authorization: `Discogs key=${auth.key}, secret=${auth.secret}` };
+  return null;
+}
+
+async function searchDiscogs(q, page, auth) {
+  const headers = discogsAuth(auth);
+  if (!headers) throw new Error('Ajoute ta Consumer Key et ton Consumer Secret Discogs dans les réglages pour chercher sur Discogs.');
   const url = `https://api.discogs.com/database/search?q=${encodeURIComponent(q)}&type=release&format=Vinyl&per_page=30&page=${page}`;
-  const d = await getJson(url, { Authorization: `Discogs token=${token}` });
+  const d = await getJson(url, headers);
   const results = (d.results || []).map(r => {
     const [artist, ...rest] = (r.title || '').split(' - ');
     return {
@@ -142,8 +150,8 @@ async function searchDiscogs(q, page, token) {
   return { results, hasMore: (d.pagination?.pages || 1) > page };
 }
 
-async function detailsDiscogs(id, token) {
-  const d = await getJson(`https://api.discogs.com/releases/${id}`, token ? { Authorization: `Discogs token=${token}` } : {});
+async function detailsDiscogs(id, auth) {
+  const d = await getJson(`https://api.discogs.com/releases/${id}`, discogsAuth(auth) || {});
   const primary = (d.images || []).find(i => i.type === 'primary') || (d.images || [])[0];
   const fmt = (d.formats || [])[0];
   return {
@@ -243,12 +251,12 @@ ipcMain.handle('app:info', () => ({
 ipcMain.handle('data:load', () => loadData());
 ipcMain.handle('data:save', (_e, data) => saveData(data));
 
-ipcMain.handle('vinyl:search', async (_e, { q, source, page = 1, token }) => {
-  return source === 'discogs' ? searchDiscogs(q, page, token) : searchMusicBrainz(q, page);
+ipcMain.handle('vinyl:search', async (_e, { q, source, page = 1, auth }) => {
+  return source === 'discogs' ? searchDiscogs(q, page, auth) : searchMusicBrainz(q, page);
 });
 
-ipcMain.handle('vinyl:details', async (_e, { source, id, token }) => {
-  return source === 'discogs' ? detailsDiscogs(id, token) : detailsMusicBrainz(id);
+ipcMain.handle('vinyl:details', async (_e, { source, id, auth }) => {
+  return source === 'discogs' ? detailsDiscogs(id, auth) : detailsMusicBrainz(id);
 });
 
 ipcMain.handle('cover:download', async (_e, url) => {
