@@ -2,8 +2,14 @@
 <style>body{font:14px/1.5 "Segoe UI",system-ui,sans-serif;max-width:1000px;margin:30px auto;padding:0 20px;background:#14121b;color:#ece9f5}
 h1{margin:0 0 4px}h2{margin:28px 0 8px;color:#e3b54a}.d{color:#9a95ad}details{border:1px solid #322e42;border-radius:8px;margin:6px 0;background:#1d1a27}
 summary{cursor:pointer;padding:8px 12px}pre{margin:0;padding:12px;overflow:auto;max-height:520px;font:12px Consolas,monospace;background:#100e16;border-top:1px solid #322e42}
-.new{font-size:11px;background:#1f3a26;color:#6cc58c;padding:1px 6px;border-radius:4px}ul{margin:4px 0 0}</style></head><body>
+.mod{font-size:11px;background:#3a2f17;color:#e3b54a;padding:1px 6px;border-radius:4px}.new{font-size:11px;background:#1f3a26;color:#6cc58c;padding:1px 6px;border-radius:4px}ul{margin:4px 0 0}</style></head><body>
 <h1>Journal des modifications</h1><p class="d">Coffre — clique sur un fichier pour voir son code.</p>
+<h2>v1.0.1 <span class="d">— 16/10/2026</span></h2>
+<ul><li>Correction : une fenêtre vide restait affichée au démarrage et bloquait l’appli. Les éléments masqués (fenêtres, bandeau de mise à jour) sont maintenant vraiment cachés.</li></ul>
+<details><summary><code>src/renderer/styles.css</code> <span class="mod">modifié</span> — ligne ajoutée</summary><pre>  * { box-sizing: border-box; }
+<span style="color:#6cc58c">+ [hidden] { display: none !important; }</span></pre></details>
+<details><summary><code>package.json</code> <span class="mod">modifié</span></summary><pre><span style="color:#ef7a62">-  "version": "1.0.0",</span>
+<span style="color:#6cc58c">+  "version": "1.0.1",</span></pre></details>
 <h2>v1.0.0 <span class="d">— 16/10/2026</span></h2>
 <ul><li>Création de l’appli : cartes Forbidden Memories (722, dont 709 avec image) et vinyles côte à côte.</li>
 <li>Recherche de vinyles en ligne avec pochettes (MusicBrainz sans clé, Discogs avec token), fiche détaillée avec pistes, ajout au coffre.</li>

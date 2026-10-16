@@ -17,6 +17,7 @@
   }
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { height: 100%; margin: 0; }
 body { background: var(--bg); color: var(--fg); font: 14px/1.45 var(--f-body); display: flex; flex-direction: column; overflow: hidden; }
 button, input, select, textarea { font: inherit; color: var(--fg); }
