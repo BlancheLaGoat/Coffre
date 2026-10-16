@@ -19,15 +19,6 @@ copy(path.join(ROOT, 'src', 'shared', 'coffre-core.js'), 'coffre-core.js');
 copy(path.join(M, 'node_modules', '@zxing', 'library', 'umd', 'index.min.js'), 'zxing.js');
 for (const f of fs.readdirSync(path.join(M, 'src'))) copy(path.join(M, 'src', f), f);
 
-// Lecture du texte des pochettes (Tesseract, fonctionne sans internet)
-const OCR = path.join(WWW, 'ocr');
-for (const d of ['core', 'lang']) fs.mkdirSync(path.join(OCR, d), { recursive: true });
-const nm = p => path.join(M, 'node_modules', p);
-fs.copyFileSync(nm('tesseract.js/dist/tesseract.min.js'), path.join(OCR, 'tesseract.min.js'));
-fs.copyFileSync(nm('tesseract.js/dist/worker.min.js'), path.join(OCR, 'worker.min.js'));
-for (const f of ['tesseract-core-lstm.wasm.js', 'tesseract-core-simd-lstm.wasm.js', 'tesseract-core-relaxedsimd-lstm.wasm.js']) fs.copyFileSync(nm('tesseract.js-core/' + f), path.join(OCR, 'core', f));
-for (const l of ['eng', 'fra']) fs.copyFileSync(nm(`@tesseract.js-data/${l}/4.0.0_best_int/${l}.traineddata.gz`), path.join(OCR, 'lang', `${l}.traineddata.gz`));
-
 const cards = path.join(ROOT, 'src', 'assets', 'cards');
 let n = 0;
 for (const f of fs.readdirSync(cards)) if (f.endsWith('.webp')) { fs.copyFileSync(path.join(cards, f), path.join(WWW, 'cards', f)); n++; }
@@ -38,7 +29,7 @@ const version = process.env.APP_VERSION || require(path.join(ROOT, 'package.json
 let html = fs.readFileSync(path.join(R, 'index.html'), 'utf8');
 html = html
   .replace(/<meta http-equiv="Content-Security-Policy"[^>]*>/,
-    `<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob: https: http:; media-src 'self' blob: mediastream:; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' https: http:">
+    `<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob: https: http:; media-src 'self' blob: mediastream:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https: http:">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#1b1a1f">`)
   .replace('<link rel="stylesheet" href="styles.css">', '<link rel="stylesheet" href="styles.css">\n  <link rel="stylesheet" href="mobile.css">')
@@ -47,7 +38,6 @@ html = html
   <script src="fm-data.js"></script>
   <script src="coffre-core.js"></script>
   <script src="zxing.js"></script>
-  <script src="ocr/tesseract.min.js"></script>
   <script src="mobile.js"></script>`)
   .replace('<script src="app.js"></script>', '<script src="app.js"></script>\n  <script src="scan.js"></script>');
 if (!html.includes('mobile.js') || !html.includes('scan.js')) throw new Error("index.html n'a pas pu être adapté");

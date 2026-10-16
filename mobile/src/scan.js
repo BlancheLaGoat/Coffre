@@ -385,29 +385,19 @@
   //  2. on cherche avec ces mots ;
   //  3. on classe les résultats selon la ressemblance de leur pochette avec la photo.
   // ============================================================
-  let ocrWorker = null;
-  async function getOcr() {
-    if (ocrWorker) return ocrWorker;
-    const base = new URL('ocr/', location.href).href;
-    ocrWorker = window.Tesseract.createWorker(['eng', 'fra'], 1, {
-      workerPath: base + 'worker.min.js', corePath: base + 'core', langPath: base + 'lang',
-      workerBlobURL: false, cacheMethod: 'none', gzip: true
-    }).then(async w => { await w.setParameters({ tessedit_pageseg_mode: '3' }); return w; });
-    ocrWorker.catch(() => { ocrWorker = null; });
-    return ocrWorker;
-  }
+  // Lecture du texte par le module Android (ML Kit) : rapide et sans internet.
+  const TextReader = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.TextReader;
+  const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('trop long')), ms))]);
 
   // Mots lisibles, classés : gros texte d'abord (souvent l'artiste et le titre)
-  function wordsFromOcr(data) {
+  function wordsFromLines(lines) {
     const out = [];
-    const lines = [];
-    for (const b of data.blocks || []) for (const p of b.paragraphs || []) for (const l of p.lines || []) lines.push(l);
-    for (const l of lines) {
-      const h = l.bbox.y1 - l.bbox.y0;
-      for (const w of l.words || []) {
-        const t = String(w.text || '').replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
-        if (w.confidence < 65 || t.length < 2 || (t.length === 2 && w.confidence < 85) || !/\p{L}{2}|\p{N}{3}/u.test(t)) continue;
-        out.push({ t, score: h * (w.confidence / 100), conf: w.confidence });
+    for (const l of lines || []) {
+      const h = l.h || 10;
+      for (const raw of String(l.text || '').split(/\s+/)) {
+        const t = raw.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
+        if (t.length < 2 || !/\p{L}{2}|\p{N}{3}/u.test(t)) continue;
+        out.push({ t, score: h });
       }
     }
     const seen = new Set();
@@ -415,11 +405,14 @@
   }
 
   const snapCanvas = document.createElement('canvas');
+  let reading = false;
   async function recognizeCover() {
     const v = $('scanVideo'), r = frameInVideo();
-    if (!r || !stream) return;
-    // Photo carrée de la pochette, en pleine résolution
-    const k = Math.min(1, 1400 / r.w);
+    if (!r || !stream || reading) return;
+    reading = true;
+    // Photo carrée de la pochette ; on arrête la recherche de code-barres pendant la lecture
+    clearTimeout(loopTimer); loopTimer = null;
+    const k = Math.min(1, 1200 / r.w);
     snapCanvas.width = Math.round(r.w * k); snapCanvas.height = Math.round(r.h * k);
     snapCanvas.getContext('2d').drawImage(v, r.x, r.y, r.w, r.h, 0, 0, snapCanvas.width, snapCanvas.height);
     v.pause();
@@ -427,14 +420,15 @@
     const btn = $('scanView').querySelector('[data-scan=cover]'); if (btn) btn.disabled = true;
     const photo = describe(snapCanvas, 0, 0, snapCanvas.width, snapCanvas.height);
     let words = [];
-    try {
-      msg('Lecture du texte de la pochette…');
-      const w = await getOcr();
-      const res = await w.recognize(snapCanvas, {}, { blocks: true, text: false });
-      words = wordsFromOcr(res.data);
-    } catch (e) {
-      words = [];
+    if (TextReader) {
+      try {
+        msg('Lecture du texte de la pochette…');
+        const b64 = snapCanvas.toDataURL('image/jpeg', 0.9).split(',')[1];
+        const res = await withTimeout(TextReader.read({ image: b64 }), 15000);
+        words = wordsFromLines(res.lines);
+      } catch (e) { words = []; }
     }
+    reading = false;
     if (mode !== 'vinyl') return;
     close();
     App.showTab('vin');

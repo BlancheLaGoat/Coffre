@@ -26,7 +26,17 @@ gradle = gradle.replace(/versionCode \d+/, `versionCode ${versionCode}`).replace
 if (!gradle.includes(`versionName "${version}"`)) throw new Error('build.gradle : version introuvable');
 fs.writeFileSync(bg, gradle);
 
-// 3. Icône et écran de démarrage
+// 3. Module maison de lecture du texte des pochettes (ML Kit, sur le téléphone)
+const javaDir = path.join(A, 'src', 'main', 'java', 'com', 'blanchelagoat', 'coffre');
+for (const f of fs.readdirSync(path.join(M, 'native-android'))) fs.copyFileSync(path.join(M, 'native-android', f), path.join(javaDir, f));
+let g2 = fs.readFileSync(bg, 'utf8');
+if (!g2.includes('mlkit:text-recognition')) {
+  g2 = g2.replace("implementation project(':capacitor-android')", "implementation project(':capacitor-android')\n    implementation 'com.google.mlkit:text-recognition:16.0.1'");
+  if (!g2.includes('mlkit:text-recognition')) throw new Error('build.gradle : dépendance ML Kit non ajoutée');
+  fs.writeFileSync(bg, g2);
+}
+
+// 4. Icône et écran de démarrage
 const copyDir = (from, to) => {
   for (const e of fs.readdirSync(from, { withFileTypes: true })) {
     const s = path.join(from, e.name), d = path.join(to, e.name);
