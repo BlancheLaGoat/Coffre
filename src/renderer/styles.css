@@ -210,3 +210,7 @@ body.mobile .desktop-only { display: none !important; }
 .yrars .chip[aria-pressed=true] { background: var(--ygo-soft); border-color: var(--ygo); }
 .yrars .chip.done b { color: var(--ygo); }
 .yres .rar { font-weight: 600; }
+
+.ylang { flex: none; width: auto; font-weight: 700; }
+.yaddh { display: flex; align-items: center; gap: 10px; }
+.yaddh .ylang { font-size: 13px; padding: 3px 8px; }

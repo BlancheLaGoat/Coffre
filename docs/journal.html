@@ -4,6 +4,624 @@ h1{margin:0 0 4px}h2{margin:28px 0 8px;color:#e3b54a}.d{color:#9a95ad}details{bo
 summary{cursor:pointer;padding:8px 12px}pre{margin:0;padding:12px;overflow:auto;max-height:520px;font:12px Consolas,monospace;background:#100e16;border-top:1px solid #322e42}
 .mod{font-size:11px;background:#3a2f17;color:#e3b54a;padding:1px 6px;border-radius:4px}.new{font-size:11px;background:#1f3a26;color:#6cc58c;padding:1px 6px;border-radius:4px}ul{margin:4px 0 0}</style></head><body>
 <h1>Journal des modifications</h1><p class="d">Coffre — clique sur un fichier pour voir son code.</p>
+<h2>v1.3.7 <span class="d">— 16/10/2026</span></h2>
+<ul><li>Yu-Gi-Oh : la <b>langue</b> de chaque carte est enregistrée. Une carte scannée avec un code français (ex. DUAD-FR053, LDD-F092) est rangée en FR et affichée avec son code français, plus seulement le code anglais.</li><li>Choix de la langue (FR par défaut) dans « Ajouter des cartes » et dans la fiche d’une carte. Les extensions comptent toutes les langues ensemble pour la progression.</li><li>Scan : le code est vérifié avec le <b>nom</b> lu en haut de la carte. Si un chiffre du code est mal lu (ex. DUAD-FR033 au lieu de DUAD-FR053), la carte est corrigée d’après son nom.</li></ul>
+<details><summary><code>src/renderer/ygo.js</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ const LANGS = [&#x27;FR&#x27;, &#x27;EN&#x27;, &#x27;DE&#x27;, &#x27;IT&#x27;, &#x27;ES&#x27;, &#x27;PT&#x27;];</span>
+<span style="color:#6cc58c">+ function locCode(code, lang) { … }   // SGX1-ENA18 + FR → SGX1-FRA18</span>
+<span style="color:#6cc58c">+ const keyFor = (code, r, lang) =&gt; « CODE|RARETÉ|LANGUE »</span>
+<span style="color:#6cc58c">+ function addPrinting(ci, pi, delta, lang, lcode) { … }</span>
+<span style="color:#6cc58c">+ function langOfCode(code) { … }   // DUAD-FR053 → FR, LDD-F092 → FR</span>
+<span style="color:#6cc58c">+ lookupScan : le nom lu doit correspondre à la carte du code, sinon correction</span></pre></details>
+<details><summary><code>mobile/src/scan.js</code> <span class="mod">modifié</span></summary><pre>// Coffre Android — appareil photo : reconnaissance des cartes FM par l&#x27;illustration,
+// lecture du code-barres des vinyles et du QR code d&#x27;appairage. Chargé après app.js.
+(function () {
+  &#x27;use strict&#x27;;
+  const App = window.CoffreApp;
+  const $ = id =&gt; document.getElementById(id);
+  const esc = App.esc;
+
+  // ============================================================
+  //  RECONNAISSANCE DES CARTES
+  //  On regarde seulement l&#x27;illustration (pas le texte ni le code),
+  //  donc une vieille carte japonaise est reconnue comme une carte récente.
+  // ============================================================
+  const ART = [0.12, 0.185, 0.88, 0.70];   // zone de l&#x27;illustration dans la carte (x0, y0, x1, y1)
+  const CARD_RATIO = 421 / 614;            // largeur / hauteur d&#x27;une carte
+  const G = 12, DIM = G * G * 3;
+  const DESC_VERSION = &#x27;v1&#x27;;
+
+  const cA = document.createElement(&#x27;canvas&#x27;); cA.width = cA.height = 192;
+  const cB = document.createElement(&#x27;canvas&#x27;); cB.width = cB.height = 48;
+  const xA = cA.getContext(&#x27;2d&#x27;, { willReadFrequently: true });
+  const xB = cB.getContext(&#x27;2d&#x27;, { willReadFrequently: true });
+  xA.imageSmoothingQuality = &#x27;high&#x27;; xB.imageSmoothingQuality = &#x27;high&#x27;;
+
+  const lin = c =&gt; { c /= 255; return c &lt;= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+  const LIN = new Float32Array(256); for (let i = 0; i &lt; 256; i++) LIN[i] = lin(i);
+  const f = t =&gt; t &gt; 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116;
+
+  // Empreinte d&#x27;une zone d&#x27;image : grille 12×12 en couleurs LAB, normalisée
+  // (insensible à la luminosité et à la balance des blancs).
+  function describe(src, sx, sy, sw, sh) {
+    xA.clearRect(0, 0, 192, 192);
+    xA.drawImage(src, sx, sy, sw, sh, 0, 0, 192, 192);
+    xB.drawImage(cA, 0, 0, 48, 48);
+    const px = xB.getImageData(0, 0, 48, 48).data;
+    const L = new Float32Array(G * G), A = new Float32Array(G * G), B = new Float32Array(G * G);
+    for (let gy = 0; gy &lt; G; gy++) for (let gx = 0; gx &lt; G; gx++) {
+      let r = 0, g = 0, b = 0;
+      for (let y = 0; y &lt; 4; y++) for (let x = 0; x &lt; 4; x++) {
+        const i = ((gy * 4 + y) * 48 + gx * 4 + x) * 4;
+        r += px[i]; g += px[i + 1]; b += px[i + 2];
+      }
+      const R = LIN[Math.round(r / 16)], Gc = LIN[Math.round(g / 16)], Bc = LIN[Math.round(b / 16)];
+      const X = (0.4124 * R + 0.3576 * Gc + 0.1805 * Bc) / 0.95047;
+      const Y = 0.2126 * R + 0.7152 * Gc + 0.0722 * Bc;
+      const Z = (0.0193 * R + 0.1192 * Gc + 0.9505 * Bc) / 1.08883;
+      const fx = f(X), fy = f(Y), fz = f(Z);
+      const k = gy * G + gx;
+      L[k] = 116 * fy - 16; A[k] = 500 * (fx - fy); B[k] = 200 * (fy - fz);
+    }
+    const out = new Float32Array(DIM);
+    [[L, 0.6], [A, 1], [B, 1]].forEach(([ch, w], c) =&gt; {
+      let m = 0; for (const v of ch) m += v; m /= ch.length;
+      let s = 0; for (const v of ch) s += (v - m) * (v - m); s = Math.sqrt(s / ch.length) + 1e-3;
+      for (let i = 0; i &lt; ch.length; i++) out[c * G * G + i] = (ch[i] - m) / s * w;
+    });
+    let n = 0; for (const v of out) n += v * v; n = Math.sqrt(n) || 1;
+    for (let i = 0; i &lt; DIM; i++) out[i] /= n;
+    return out;
+  }
+
+  // Empreinte de l&#x27;illustration d&#x27;une carte occupant le rectangle (x, y, w, h) de l&#x27;image source
+  function describeCard(src, x, y, w, h) {
+    return describe(src, x + ART[0] * w, y + ART[1] * h, (ART[2] - ART[0]) * w, (ART[3] - ART[1]) * h);
+  }
+
+  // ---------- Empreintes de référence (calculées une fois sur le téléphone) ----------
+  const REF = { ids: [], mat: null, ready: null };
+  function loadImg(url) {
+    return new Promise((resolve, reject) =&gt; { const i = new Image(); i.onload = () =&gt; resolve(i); i.onerror = reject; i.src = url; });
+  }
+  function b64ToF32(b64) { const s = atob(b64); const u = new Uint8Array(s.length); for (let i = 0; i &lt; s.length; i++) u[i] = s.charCodeAt(i); return new Float32Array(u.buffer); }
+  function f32ToB64(a) { const u = new Uint8Array(a.buffer); let s = &#x27;&#x27;; for (let i = 0; i &lt; u.length; i += 32768) s += String.fromCharCode.apply(null, u.subarray(i, i + 32768)); return btoa(s); }
+
+  function prepareRefs(onProgress) {
+    if (REF.ready) return REF.ready;
+    REF.ready = (async () =&gt; {
+      const ids = [...App.HAS_IMG].sort();
+      const key = `empreintes-${DESC_VERSION}-${ids.length}.bin`;
+      const FS = window.Capacitor &amp;&amp; window.Capacitor.Plugins &amp;&amp; window.Capacitor.Plugins.Filesystem;
+      try {
+        const c = FS ? (await FS.readFile({ path: key, directory: &#x27;DATA&#x27; })).data : null;
+        if (c) { const m = b64ToF32(c); if (m.length === ids.length * DIM) { REF.ids = ids; REF.mat = m; return; } }
+      } catch (e) { /* pas encore calculées */ }
+      const mat = new Float32Array(ids.length * DIM);
+      for (let i = 0; i &lt; ids.length; i++) {
+        try {
+          const img = await loadImg(App.cardImg(ids[i]));
+          mat.set(describeCard(img, 0, 0, img.naturalWidth, img.naturalHeight), i * DIM);
+        } catch (e) { /* image manquante : empreinte nulle, jamais proposée */ }
+        if (onProgress &amp;&amp; i % 25 === 0) { onProgress(i / ids.length); await new Promise(r =&gt; setTimeout(r, 0)); }
+      }
+      REF.ids = ids; REF.mat = mat;
+      try { if (FS) await FS.writeFile({ path: key, directory: &#x27;DATA&#x27;, data: f32ToB64(mat) }); } catch (e) { /* on recalculera la prochaine fois */ }
+    })();
+    return REF.ready;
+  }
+
+  // Compare plusieurs cadrages légèrement décalés et garde, pour chaque carte, le meilleur score.
+  const CROPS = [[0, 0, 1], [0, 0, 0.95], [0, 0, 1.05], [-0.03, 0, 1], [0.03, 0, 1], [0, -0.025, 1], [0, 0.025, 1]];
+  function scoreRect(src, x, y, w, h) {
+    const n = REF.ids.length, mat = REF.mat;
+    const best = new Float32Array(n).fill(-2);
+    for (const [dx, dy, s] of CROPS) {
+      const cw = w * s, ch = h * s;
+      const q = describeCard(src, x + (w - cw) / 2 + dx * w, y + (h - ch) / 2 + dy * h, cw, ch);
+      for (let i = 0; i &lt; n; i++) {
+        let d = 0; const o = i * DIM;
+        for (let j = 0; j &lt; DIM; j++) d += mat[o + j] * q[j];
+        if (d &gt; best[i]) best[i] = d;
+      }
+    }
+    return best;
+  }
+  function topK(scores, k) {
+    const idx = Array.from(scores.keys()).sort((a, b) =&gt; scores[b] - scores[a]).slice(0, k);
+    return idx.map(i =&gt; ({ n: REF.ids[i], score: scores[i] }));
+  }
+
+  // ============================================================
+  //  APPAREIL PHOTO
+  // ============================================================
+  let stream = null, loopTimer = null, mode = &#x27;&#x27;, qrResolve = null;
+  const cam = { smooth: null, lead: &#x27;&#x27;, leadCount: 0, armed: true, pauseUntil: 0, added: [] };
+  // Réglages de l&#x27;ajout automatique (score de ressemblance entre -1 et 1)
+  const AUTO = { score: 0.68, margin: 0.15, frames: 4, rearm: 0.55, rearmFrames: 3 };
+
+  function buildOverlay() {
+    if ($(&#x27;scanView&#x27;)) return;
+    const el = document.createElement(&#x27;div&#x27;);
+    el.id = &#x27;scanView&#x27;; el.className = &#x27;scan&#x27;; el.hidden = true;
+    el.innerHTML = `
+      &lt;video id=&quot;scanVideo&quot; playsinline muted autoplay&gt;&lt;/video&gt;
+      &lt;div class=&quot;scan-frame&quot; id=&quot;scanFrame&quot;&gt;&lt;i&gt;&lt;/i&gt;&lt;/div&gt;
+      &lt;div class=&quot;scan-top&quot;&gt;
+        &lt;button class=&quot;scan-close&quot; data-scan=&quot;close&quot; aria-label=&quot;Fermer&quot;&gt;✕&lt;/button&gt;
+        &lt;div class=&quot;scan-title&quot; id=&quot;scanTitle&quot;&gt;&lt;/div&gt;
+        &lt;button class=&quot;scan-tool&quot; id=&quot;scanZoom&quot; data-scan=&quot;zoom&quot; hidden&gt;×2&lt;/button&gt;
+        &lt;button class=&quot;scan-tool&quot; id=&quot;scanCam&quot; data-scan=&quot;cam&quot; hidden aria-label=&quot;Changer d&#x27;objectif&quot;&gt;🔄&lt;/button&gt;
+        &lt;label class=&quot;scan-auto&quot; id=&quot;scanAutoWrap&quot;&gt;&lt;input type=&quot;checkbox&quot; id=&quot;scanAuto&quot;&gt; Ajout auto&lt;/label&gt;
+      &lt;/div&gt;
+      &lt;div class=&quot;scan-bottom&quot;&gt;
+        &lt;p class=&quot;scan-msg&quot; id=&quot;scanMsg&quot;&gt;&lt;/p&gt;
+        &lt;div class=&quot;scan-cands&quot; id=&quot;scanCands&quot;&gt;&lt;/div&gt;
+        &lt;div class=&quot;scan-actions&quot; id=&quot;scanActions&quot;&gt;&lt;/div&gt;
+      &lt;/div&gt;`;
+    document.body.appendChild(el);
+    el.addEventListener(&#x27;click&#x27;, onClick);
+    el.querySelector(&#x27;#scanVideo&#x27;).addEventListener(&#x27;click&#x27;, refocus);
+    const cands = el.querySelector(&#x27;#scanCands&#x27;);
+    const hold = () =&gt; { cam.pauseUntil = Date.now() + 1500; };
+    cands.addEventListener(&#x27;touchstart&#x27;, hold, { passive: true });
+    cands.addEventListener(&#x27;pointerdown&#x27;, hold);
+    el.querySelector(&#x27;#scanAuto&#x27;).addEventListener(&#x27;change&#x27;, e =&gt; {
+      App.data.settings.scanAuto = e.target.checked; App.scheduleSave();
+      cam.armed = true; cam.leadCount = 0;
+    });
+  }
+
+  // ---------- Caméra : objectif principal, zoom et mise au point ----------
+  // Sur les téléphones à plusieurs objectifs, le navigateur choisit parfois le grand-angle,
+  // qui ne fait pas la mise au point de près. On prend l&#x27;objectif principal et on zoome ×2
+  // pour pouvoir tenir le téléphone plus loin (là où la mise au point fonctionne).
+  let backCams = [];
+  const camSet = () =&gt; App.data.settings;
+  async function openStream(deviceId) {
+    return navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: deviceId
+        ? { deviceId: { exact: deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } }
+        : { facingMode: { ideal: &#x27;environment&#x27; }, width: { ideal: 1920 }, height: { ideal: 1080 } }
+    });
+  }
+  async function listBackCams() {
+    try {
+      const all = (await navigator.mediaDevices.enumerateDevices()).filter(d =&gt; d.kind === &#x27;videoinput&#x27;);
+      const back = all.filter(d =&gt; /back|arri[eè]re|rear|environment/i.test(d.label));
+      // « camera2 0 » (le premier) est en général l&#x27;objectif principal
+      backCams = (back.length ? back : all).sort((a, b) =&gt; a.label.localeCompare(b.label, &#x27;en&#x27;, { numeric: true }));
+    } catch (e) { backCams = []; }
+  }
+  async function startCamera() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error(&quot;L&#x27;appareil photo n&#x27;est pas disponible.&quot;);
+    stream = await openStream(camSet().camId || null).catch(() =&gt; openStream(null));
+    await listBackCams();
+    const want = camSet().camId &amp;&amp; backCams.find(d =&gt; d.deviceId === camSet().camId) ? camSet().camId : (backCams[0] &amp;&amp; backCams[0].deviceId);
+    const cur = stream.getVideoTracks()[0].getSettings().deviceId;
+    if (want &amp;&amp; cur &amp;&amp; want !== cur) {
+      stream.getTracks().forEach(t =&gt; t.stop());
+      stream = await openStream(want).catch(() =&gt; openStream(null));
+    }
+    const v = $(&#x27;scanVideo&#x27;);
+    v.srcObject = stream;
+    await v.play().catch(() =&gt; {});
+    await new Promise(r =&gt; { if (v.videoWidth) r(); else v.onloadedmetadata = () =&gt; r(); });
+    await setupTrack();
+  }
+  async function setupTrack() {
+    const track = stream &amp;&amp; stream.getVideoTracks()[0]; if (!track) return;
+    const caps = track.getCapabilities ? track.getCapabilities() : {};
+    const adv = {};
+    if (caps.focusMode &amp;&amp; caps.focusMode.includes(&#x27;continuous&#x27;)) adv.focusMode = &#x27;continuous&#x27;;
+    if (caps.zoom &amp;&amp; mode !== &#x27;qr&#x27;) {
+      const z = camSet().camZoom != null ? camSet().camZoom : 2;
+      adv.zoom = Math.max(caps.zoom.min, Math.min(caps.zoom.max, z));
+    }
+    try { if (Object.keys(adv).length) await track.applyConstraints({ advanced: [adv] }); } catch (e) { /* pas grave */ }
+    const zb = $(&#x27;scanZoom&#x27;);
+    if (zb) { zb.hidden = !caps.zoom || mode === &#x27;qr&#x27;; zb.textContent = &#x27;×&#x27; + (track.getSettings().zoom ? Math.round(track.getSettings().zoom * 10) / 10 : 1); }
+    const cb = $(&#x27;scanCam&#x27;); if (cb) cb.hidden = backCams.length &lt; 2;
+  }
+  async function switchCam() {
+    if (backCams.length &lt; 2 || !stream) return;
+    const cur = stream.getVideoTracks()[0].getSettings().deviceId;
+    const i = backCams.findIndex(d =&gt; d.deviceId === cur);
+    const next = backCams[(i + 1) % backCams.length];
+    camSet().camId = next.deviceId; App.scheduleSave();
+    stream.getTracks().forEach(t =&gt; t.stop());
+    stream = await openStream(next.deviceId).catch(() =&gt; openStream(null));
+    $(&#x27;scanVideo&#x27;).srcObject = stream;
+    await $(&#x27;scanVideo&#x27;).play().catch(() =&gt; {});
+    await setupTrack();
+    App.toast(`Objectif ${(i + 1) % backCams.length + 1} sur ${backCams.length}`);
+  }
+  async function toggleZoom() {
+    const track = stream &amp;&amp; stream.getVideoTracks()[0]; if (!track) return;
+    const caps = track.getCapabilities ? track.getCapabilities() : {}; if (!caps.zoom) return;
+    const cur = track.getSettings().zoom || 1;
+    const steps = [1, 2, 3].filter(z =&gt; z &gt;= caps.zoom.min &amp;&amp; z &lt;= caps.zoom.max);
+    const next = steps[(steps.findIndex(z =&gt; z &gt;= cur - 0.05) + 1) % steps.length] || 1;
+    camSet().camZoom = next; App.scheduleSave();
+    await setupTrack();
+  }
+  // Toucher l&#x27;image relance la mise au point
+  async function refocus(e) {
+    const track = stream &amp;&amp; stream.getVideoTracks()[0]; if (!track) return;
+    const caps = track.getCapabilities ? track.getCapabilities() : {};
+    const v = $(&#x27;scanVideo&#x27;), r = v.getBoundingClientRect();
+    const adv = {};
+    if (caps.pointsOfInterest) adv.pointsOfInterest = [{ x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height }];
+    if (caps.focusMode &amp;&amp; caps.focusMode.includes(&#x27;single-shot&#x27;)) adv.focusMode = &#x27;single-shot&#x27;;
+    try { if (Object.keys(adv).length) await track.applyConstraints({ advanced: [adv] }); } catch (err) { /* pas grave */ }
+    if (adv.focusMode) setTimeout(() =&gt; setupTrack(), 1500);
+  }
+
+  function stopCamera() {
+    clearTimeout(loopTimer); loopTimer = null;
+    if (stream) stream.getTracks().forEach(t =&gt; t.stop());
+    stream = null;
+    const v = $(&#x27;scanVideo&#x27;); if (v) v.srcObject = null;
+  }
+
+  async function open(m) {
+    buildOverlay();
+    mode = m;
+    const view = $(&#x27;scanView&#x27;);
+    view.dataset.mode = m;
+    view.hidden = false;
+    $(&#x27;scanCands&#x27;).innerHTML = &#x27;&#x27;; $(&#x27;scanActions&#x27;).innerHTML = &#x27;&#x27;;
+    $(&#x27;scanAutoWrap&#x27;).hidden = m !== &#x27;card&#x27; &amp;&amp; m !== &#x27;ygo&#x27;;
+    $(&#x27;scanAuto&#x27;).checked = App.data.settings.scanAuto !== false;
+    $(&#x27;scanTitle&#x27;).textContent = m === &#x27;card&#x27; ? &#x27;Scanner des cartes FM&#x27; : m === &#x27;ygo&#x27; ? &#x27;Scanner des cartes Yu-Gi-Oh&#x27; : m === &#x27;vinyl&#x27; ? &#x27;Code-barres du vinyle&#x27; : &#x27;QR code du PC&#x27;;
+    Object.assign(yg, { busy: false, last: &#x27;&#x27;, seen: 0, armed: true, missing: 0, hit: null, added: [] });
+    cam.smooth = null; cam.lead = &#x27;&#x27;; cam.leadCount = 0; cam.armed = true; cam.lastAuto = &#x27;&#x27;; cam.added = [];
+    msg(m === &#x27;card&#x27; ? &#x27;Place la carte dans le cadre, bien à plat. Flou ? Éloigne un peu le téléphone ou touche l\&#x27;image.&#x27; : m === &#x27;vinyl&#x27; ? &#x27;Vise le code-barres au dos de la pochette.&#x27; : m === &#x27;ygo&#x27; ? (TextReader ? &#x27;Place la carte dans le cadre : le code sous l\&#x27;illustration (ex. SGX1-FRA18) est lu tout seul. Flou ? Éloigne un peu le téléphone ou touche l\&#x27;image.&#x27; : &#x27;La lecture du code n\&#x27;est pas disponible sur cet appareil.&#x27;) : &#x27;Vise le QR code affiché dans les réglages de Coffre sur le PC.&#x27;);
+    layoutFrame();
+    try {
+      if (m === &#x27;card&#x27;) {
+        await prepareRefs(p =&gt; msg(`Préparation de la reconnaissance… ${Math.round(p * 100)} %`));
+        if (mode !== m || view.hidden) return;
+        msg(&#x27;Place la carte dans le cadre, bien à plat. Flou ? Éloigne un peu le téléphone ou touche l\&#x27;image.&#x27;);
+      }
+      await startCamera();
+      if (view.hidden) return stopCamera();
+      layoutFrame();
+      loop();
+    } catch (e) {
+      msg(e &amp;&amp; e.name === &#x27;NotAllowedError&#x27;
+        ? &quot;Coffre n&#x27;a pas accès à l&#x27;appareil photo. Autorise-le dans les paramètres Android (Applis → Coffre → Autorisations).&quot;
+        : &quot;Impossible d&#x27;ouvrir l&#x27;appareil photo : &quot; + (e.message || e));
+    }
+  }
+
+  function close() {
+    stopCamera();
+    const view = $(&#x27;scanView&#x27;); if (view) view.hidden = true;
+    if (qrResolve) { qrResolve(&#x27;&#x27;); qrResolve = null; }
+    if (mode === &#x27;ygo&#x27; &amp;&amp; yg.added.length) App.toast(`${yg.added.length} carte${yg.added.length &gt; 1 ? &#x27;s&#x27; : &#x27;&#x27;} Yu-Gi-Oh ajoutée${yg.added.length &gt; 1 ? &#x27;s&#x27; : &#x27;&#x27;}`);
+    if (mode === &#x27;card&#x27; &amp;&amp; cam.added.length) App.toast(`${cam.added.length} carte${cam.added.length &gt; 1 ? &#x27;s&#x27; : &#x27;&#x27;} ajoutée${cam.added.length &gt; 1 ? &#x27;s&#x27; : &#x27;&#x27;}`);
+    mode = &#x27;&#x27;;
+  }
+
+  const msg = t =&gt; { const m = $(&#x27;scanMsg&#x27;); if (m) m.textContent = t; };
+
+  // Cadre de visée : carte (portrait) ou bande large (code-barres / QR)
+  function layoutFrame() {
+    const fr = $(&#x27;scanFrame&#x27;); if (!fr) return;
+    const W = window.innerWidth, H = window.innerHeight;
+    let w, h;
+    if (mode === &#x27;card&#x27; || mode === &#x27;ygo&#x27;) {
+      const maxH = H * 0.56, maxW = W * 0.78;
+      h = Math.min(maxH, maxW / CARD_RATIO); w = h * CARD_RATIO;
+    } else if (mode === &#x27;vinyl&#x27;) { w = W * 0.86; h = Math.min(H * 0.22, w * 0.5); }
+    else { w = Math.min(W * 0.7, H * 0.45); h = w; }
+    fr.style.width = w + &#x27;px&#x27;; fr.style.height = h + &#x27;px&#x27;;
+    fr.style.left = (W - w) / 2 + &#x27;px&#x27;; fr.style.top = Math.max(64, H * 0.40 - h / 2) + &#x27;px&#x27;;
+  }
+  window.addEventListener(&#x27;resize&#x27;, layoutFrame);
+
+  // Rectangle du cadre converti en pixels de la vidéo (la vidéo remplit l&#x27;écran en « cover »)
+  function frameInVideo() {
+    const v = $(&#x27;scanVideo&#x27;), fr = $(&#x27;scanFrame&#x27;);
+    const vw = v.videoWidth, vh = v.videoHeight;
+    if (!vw || !vh) return null;
+    const vr = v.getBoundingClientRect(), r = fr.getBoundingClientRect();
+    const s = Math.max(vr.width / vw, vr.height / vh);
+    const ox = vr.left + (vr.width - vw * s) / 2, oy = vr.top + (vr.height - vh * s) / 2;
+    return { x: (r.left - ox) / s, y: (r.top - oy) / s, w: r.width / s, h: r.height / s, vw, vh };
+  }
+
+  function loop() {
+    clearTimeout(loopTimer);
+    if (!stream || !mode) return;
+    const t0 = performance.now();
+    try {
+      if (mode === &#x27;card&#x27;) tickCard();
+      else if (mode === &#x27;ygo&#x27;) tickYgo();
+      else tickCode();
+    } catch (e) { /* image pas prête */ }
+    if (!stream) return;
+    const spent = performance.now() - t0;
+    loopTimer = setTimeout(loop, Math.max(120, (mode === &#x27;card&#x27; ? 380 : mode === &#x27;ygo&#x27; ? 500 : 220) - spent));
+  }
+
+  // ---------- Cartes ----------
+  function tickCard() {
+    const r = frameInVideo(); if (!r) return;
+    const raw = scoreRect($(&#x27;scanVideo&#x27;), r.x, r.y, r.w, r.h);
+    // Lissage sur quelques images pour éviter que les propositions sautent
+    if (!cam.smooth) cam.smooth = raw;
+    else for (let i = 0; i &lt; raw.length; i++) cam.smooth[i] = cam.smooth[i] * 0.45 + raw[i] * 0.55;
+    const top = topK(cam.smooth, 6);
+    if (Date.now() &gt;= cam.pauseUntil) renderCands(top);
+
+    // Ajout automatique : la même carte en tête plusieurs fois de suite, nettement devant la 2e
+    const [a, b] = top;
+    const sure = a.score &gt;= AUTO.score &amp;&amp; a.score - b.score &gt;= AUTO.margin;
+    if (a.n === cam.lead &amp;&amp; sure) cam.leadCount++; else { cam.lead = a.n; cam.leadCount = sure ? 1 : 0; }
+    cam.lowCount = a.score &lt; AUTO.rearm ? (cam.lowCount || 0) + 1 : 0;
+    if (cam.lowCount &gt;= AUTO.rearmFrames) cam.armed = true;   // carte retirée du cadre
+    if (cam.armed === false &amp;&amp; cam.lastAuto &amp;&amp; a.n !== cam.lastAuto &amp;&amp; sure &amp;&amp; cam.leadCount &gt;= AUTO.frames) cam.armed = true; // autre carte
+    if ($(&#x27;scanAuto&#x27;).checked &amp;&amp; cam.armed &amp;&amp; cam.leadCount &gt;= AUTO.frames) {
+      cam.armed = false; cam.lastAuto = a.n;
+      addCard(a.n, true);
+    }
+  }
+
+  function renderCands(top) {
+    const box = $(&#x27;scanCands&#x27;);
+    box.innerHTML = top.map((c, i) =&gt; {
+      const card = App.CARDS[Number(c.n) - 1];
+      return `&lt;button class=&quot;cand${i === 0 ? &#x27; first&#x27; : &#x27;&#x27;}&quot; data-scan=&quot;add&quot; data-n=&quot;${c.n}&quot;&gt;
+        &lt;img src=&quot;${App.cardImg(c.n)}&quot; alt=&quot;&quot;&gt;
+        &lt;span class=&quot;nm&quot;&gt;${esc(card.name)}&lt;/span&gt;
+        &lt;span class=&quot;sc&quot;&gt;${Math.max(0, Math.round(c.score * 100))} %&lt;/span&gt;&lt;/button&gt;`;
+    }).join(&#x27;&#x27;);
+    const own = n =&gt; (App.data.fm[n] &amp;&amp; App.data.fm[n].qty) || 0;
+    $(&#x27;scanActions&#x27;).innerHTML = cam.added.length
+      ? `&lt;span&gt;Ajoutées : &lt;b&gt;${cam.added.length}&lt;/b&gt; · dernière : ${esc(App.CARDS[Number(cam.added[cam.added.length - 1]) - 1].name)} (×${own(cam.added[cam.added.length - 1])})&lt;/span&gt;&lt;button data-scan=&quot;undo&quot;&gt;Annuler&lt;/button&gt;`
+      : `&lt;span&gt;Touche une carte pour l&#x27;ajouter${$(&#x27;scanAuto&#x27;).checked ? &#x27;, ou laisse-la dans le cadre pour l\&#x27;ajout auto&#x27; : &#x27;&#x27;}.&lt;/span&gt;`;
+  }
+
+  function addCard(n, auto) {
+    const q = App.changeQty(n, +1);
+    cam.added.push(n);
+    App.renderFm();
+    if (navigator.vibrate) navigator.vibrate(auto ? [30, 40, 30] : 30);
+    const card = App.CARDS[Number(n) - 1];
+    App.toast(`${card.name} ajoutée (×${q})`);
+    const fr = $(&#x27;scanFrame&#x27;); fr.classList.remove(&#x27;ok&#x27;); void fr.offsetWidth; fr.classList.add(&#x27;ok&#x27;);
+    cam.pauseUntil = 0;
+    if (cam.smooth) renderCands(topK(cam.smooth, 6));
+  }
+
+  // ---------- Codes-barres et QR codes ----------
+  const cC = document.createElement(&#x27;canvas&#x27;);
+  const xC = cC.getContext(&#x27;2d&#x27;, { willReadFrequently: true });
+  let detector = null, zx = null, busyDetect = false;
+
+  function getDetector() {
+    const formats = mode === &#x27;qr&#x27; ? [&#x27;qr_code&#x27;] : [&#x27;ean_13&#x27;, &#x27;ean_8&#x27;, &#x27;upc_a&#x27;, &#x27;upc_e&#x27;];
+    try {
+      if (&#x27;BarcodeDetector&#x27; in window) return { kind: &#x27;native&#x27;, mode, d: new window.BarcodeDetector({ formats }) };
+    } catch (e) { /* non disponible */ }
+    return null;
+  }
+  function getZxing() {
+    const Z = window.ZXing;
+    const hints = new Map();
+    hints.set(Z.DecodeHintType.POSSIBLE_FORMATS, mode === &#x27;qr&#x27; ? [Z.BarcodeFormat.QR_CODE] : [Z.BarcodeFormat.EAN_13, Z.BarcodeFormat.EAN_8, Z.BarcodeFormat.UPC_A, Z.BarcodeFormat.UPC_E]);
+    hints.set(Z.DecodeHintType.TRY_HARDER, true);
+    const r = new Z.MultiFormatReader(); r.setHints(hints);
+    return { mode, r };
+  }
+
+  function tickCode() {
+    if (busyDetect) return;
+    const v = $(&#x27;scanVideo&#x27;), r = frameInVideo(); if (!r) return;
+    // Zone visée un peu élargie, à la résolution de la vidéo
+    const pad = 0.25;
+    const x = Math.max(0, r.x - r.w * pad), y = Math.max(0, r.y - r.h * pad);
+    const w = Math.min(r.vw - x, r.w * (1 + 2 * pad)), h = Math.min(r.vh - y, r.h * (1 + 2 * pad));
+    const k = Math.min(1, 1280 / w);
+    cC.width = Math.round(w * k); cC.height = Math.round(h * k);
+    xC.drawImage(v, x, y, w, h, 0, 0, cC.width, cC.height);
+    if (!detector || detector.mode !== mode) detector = getDetector() || { kind: &#x27;none&#x27;, mode };
+    if (detector.kind === &#x27;native&#x27;) {
+      busyDetect = true;
+      detector.d.detect(cC).then(list =&gt; { busyDetect = false; if (list &amp;&amp; list[0]) found(list[0].rawValue); else tryZxing(); })
+        .catch(() =&gt; { busyDetect = false; detector = { kind: &#x27;none&#x27;, mode }; });
+      return;
+    }
+    tryZxing();
+  }
+  function tryZxing() {
+    if (!window.ZXing || !mode) return;
+    if (!zx || zx.mode !== mode) zx = getZxing();
+    try {
+      const Z = window.ZXing;
+      const bmp = new Z.BinaryBitmap(new Z.HybridBinarizer(new Z.HTMLCanvasElementLuminanceSource(cC)));
+      const res = zx.r.decode(bmp);
+      if (res) found(res.getText());
+    } catch (e) { /* rien trouvé sur cette image */ }
+  }
+
+  function found(text) {
+    if (!text || !mode) return;
+    const m = mode;
+    if (navigator.vibrate) navigator.vibrate(40);
+    if (m === &#x27;qr&#x27;) {
+      const res = qrResolve; qrResolve = null;
+      close();
+      if (res) res(text);
+      return;
+    }
+    if (m === &#x27;vinyl&#x27;) {
+      const code = String(text).replace(/\D/g, &#x27;&#x27;);
+      close();
+      App.showTab(&#x27;vin&#x27;);
+      App.searchFor(code);
+    }
+  }
+
+
+  // ============================================================
+  //  YU-GI-OH : lecture du code imprimé sous l&#x27;illustration (ex. SGX1-FRA18)
+  //  par le module Android ML Kit, puis recherche de l&#x27;impression dans la base.
+  // ============================================================
+  const TextReader = window.Capacitor &amp;&amp; window.Capacitor.Plugins &amp;&amp; window.Capacitor.Plugins.TextReader;
+  const withTimeout = (p, ms) =&gt; Promise.race([p, new Promise((_, rej) =&gt; setTimeout(() =&gt; rej(new Error(&#x27;trop long&#x27;)), ms))]);
+  const ycv = document.createElement(&#x27;canvas&#x27;);
+  const yg = { busy: false, last: &#x27;&#x27;, seen: 0, armed: true, missing: 0, hit: null, added: [] };
+
+  async function tickYgo() {
+    if (yg.busy || !TextReader) return;
+    const Y = window.CoffreYgo;
+    if (!Y || !Y.ready) { msg(&quot;La base de cartes n&#x27;est pas encore téléchargée : ouvre l&#x27;onglet Yu-Gi-Oh.&quot;); return; }
+    const v = $(&#x27;scanVideo&#x27;), r = frameInVideo(); if (!r) return;
+    // Toute la carte : le code sous l&#x27;illustration, et le nom en haut si le code n&#x27;est pas reconnu
+    const k = Math.min(2, 1100 / r.w);
+    ycv.width = Math.round(r.w * k); ycv.height = Math.round(r.h * k);
+    ycv.getContext(&#x27;2d&#x27;).drawImage(v, r.x, r.y, r.w, r.h, 0, 0, ycv.width, ycv.height);
+    yg.busy = true;
+    try {
+      const res = await withTimeout(TextReader.read({ image: ycv.toDataURL(&#x27;image/jpeg&#x27;, 0.92).split(&#x27;,&#x27;)[1] }), 4000);
+      if (mode !== &#x27;ygo&#x27;) return;
+      onYgoHit(Y.lookupScan(res));
+    } catch (e) { /* lecture ratée : on réessaie à la prochaine image */ }
+    finally { yg.busy = false; }
+  }
+
+  function onYgoHit(hit) {
+    if (!hit) {
+      yg.missing++;
+      if (yg.missing &gt;= 2) { yg.armed = true; yg.last = &#x27;&#x27;; yg.seen = 0; }   // carte retirée : prêt pour la suivante
+      if (!yg.hit) msg(&#x27;Vise la carte entière : le code sous l\&#x27;illustration (ex. SGX1-FRA18) ou son nom en haut, bien net.&#x27;);
+      return;
+    }
+    yg.missing = 0;
+    const key = hit.prints.map(p =&gt; p.ci + &#x27;:&#x27; + p.pi).join(&#x27;,&#x27;);
+    if (key === yg.last) yg.seen++; else { yg.last = key; yg.seen = 1; if (yg.hit &amp;&amp; !yg.armed) yg.armed = true; }
+    yg.hit = hit;
+    renderYgo();
+    // Ajout automatique : même code lu deux fois de suite, une seule rareté possible
+    if ($(&#x27;scanAuto&#x27;).checked &amp;&amp; yg.armed &amp;&amp; yg.seen &gt;= 2 &amp;&amp; hit.prints.length === 1) {
+      yg.armed = false;
+      addYgo(hit.prints[0], true);
+    }
+  }
+
+  function renderYgo() {
+    const Y = window.CoffreYgo, hit = yg.hit;
+    if (!hit) return;
+    const c = hit.prints[0].card;
+    msg(hit.fixed ? &#x27;Code mal lu : carte corrigée d\&#x27;après son nom.&#x27; : hit.byName ? (hit.prints.length &gt; 1 ? &#x27;Carte reconnue par son nom : touche son extension, ou « Peu importe ».&#x27; : &#x27;Carte reconnue par son nom.&#x27;) : hit.prints.length &gt; 1 ? &#x27;Plusieurs raretés existent pour ce code : touche la bonne.&#x27; : &#x27;&#x27;);
+    $(&#x27;scanCands&#x27;).innerHTML = `&lt;div class=&quot;ycand&quot;&gt;${Y.imgTag(c.i)}&lt;div&gt;&lt;b&gt;${esc(Y.label(c))}&lt;/b&gt;${c.f ? `&lt;span&gt;${esc(c.n)}&lt;/span&gt;` : &#x27;&#x27;}
+      ${hit.byName &amp;&amp; hit.prints.length &gt; 1 ? &#x27;&#x27; : `&lt;span class=&quot;code&quot;&gt;${esc((hit.prints.length === 1 &amp;&amp; hit.lcode) || Y.locCode(hit.prints[0].p[1], hit.lang || Y.curLang()))}&lt;/span&gt; · `}${hit.lang ? `&lt;span class=&quot;code&quot;&gt;${esc(hit.lang)}&lt;/span&gt; · ` : &#x27;&#x27;}${Y.ownedOf(c.i)} dans ta collection&lt;/div&gt;&lt;/div&gt;
+      &lt;div class=&quot;ychoices&quot;&gt;${hit.prints.slice(0, 10).map((x, i) =&gt; `&lt;button class=&quot;primary&quot; data-scan=&quot;yadd&quot; data-i=&quot;${i}&quot;&gt;+ ${hit.byName &amp;&amp; hit.prints.length &gt; 1 ? esc(Y.locCode(x.p[1], hit.lang || Y.curLang())) + &#x27; &#x27; : &#x27;&#x27;}${esc(x.p[3] || x.p[2])}&lt;/button&gt;`).join(&#x27;&#x27;)}
+        ${hit.byName &amp;&amp; hit.prints.length &gt; 1 ? `&lt;button data-scan=&quot;ygen&quot;&gt;+ Peu importe l&#x27;extension&lt;/button&gt;` : &#x27;&#x27;}&lt;/div&gt;`;
+    Y.loadImages($(&#x27;scanCands&#x27;));
+    $(&#x27;scanActions&#x27;).innerHTML = yg.added.length
+      ? `&lt;span&gt;Ajoutées : &lt;b&gt;${yg.added.length}&lt;/b&gt;&lt;/span&gt;&lt;button data-scan=&quot;yundo&quot;&gt;Annuler&lt;/button&gt;`
+      : `&lt;span&gt;${$(&#x27;scanAuto&#x27;).checked ? &#x27;Ajout automatique dès que le code est lu deux fois.&#x27; : &#x27;Touche la rareté pour ajouter la carte.&#x27;}&lt;/span&gt;`;
+  }
+
+  function addYgo(x, auto) {
+    const Y = window.CoffreYgo;
+    const h = yg.hit || {};
+    const lang = h.lang || Y.curLang();
+    const lcode = (h.prints &amp;&amp; h.prints.length === 1 &amp;&amp; h.lcode) || Y.locCode(x.p[1], lang);
+    const q = Y.addPrinting(x.ci, x.pi, 1, lang, lcode);
+    yg.added.push({ ...x, lang, lcode });
+    Y.render();
+    if (navigator.vibrate) navigator.vibrate(auto ? [30, 40, 30] : 30);
+    App.toast(`${Y.label(x.card)} (${lcode}) ajoutée · ×${q}`);
+    const fr = $(&#x27;scanFrame&#x27;); fr.classList.remove(&#x27;ok&#x27;); void fr.offsetWidth; fr.classList.add(&#x27;ok&#x27;);
+    renderYgo();
+  }
+
+  // ---------- Boutons ----------
+  function onClick(e) {
+    const b = e.target.closest(&#x27;[data-scan]&#x27;); if (!b) return;
+    const act = b.dataset.scan;
+    if (act === &#x27;close&#x27;) return close();
+    if (act === &#x27;zoom&#x27;) return toggleZoom();
+    if (act === &#x27;cam&#x27;) return switchCam();
+    if (act === &#x27;yadd&#x27; &amp;&amp; yg.hit) return addYgo(yg.hit.prints[Number(b.dataset.i)], false);
+    if (act === &#x27;ygen&#x27; &amp;&amp; yg.hit) {
+      const Y = window.CoffreYgo, c = yg.hit.card;
+      const q = Y.addGeneric(c.i); yg.added.push({ generic: true, card: c }); Y.render();
+      if (navigator.vibrate) navigator.vibrate(30);
+      App.toast(`${Y.label(c)} ajoutée · ×${q}`);
+      return renderYgo();
+    }
+    if (act === &#x27;yundo&#x27;) {
+      const x = yg.added.pop(); if (!x) return;
+      if (x.generic) window.CoffreYgo.removeGeneric(x.card.i); else window.CoffreYgo.addPrinting(x.ci, x.pi, -1, x.lang, x.lcode);
+      window.CoffreYgo.render();
+      App.toast(`${window.CoffreYgo.label(x.card)} retirée`);
+      return renderYgo();
+    }
+    if (act === &#x27;add&#x27;) return addCard(b.dataset.n, false);
+    if (act === &#x27;undo&#x27;) {
+      const n = cam.added.pop(); if (!n) return;
+      App.changeQty(n, -1); App.renderFm();
+      App.toast(`${App.CARDS[Number(n) - 1].name} retirée`);
+      if (cam.smooth) renderCands(topK(cam.smooth, 6));
+    }
+  }
+
+  // Boutons « Scanner » ajoutés aux barres d&#x27;outils
+  function addButtons() {
+    const fmTools = document.querySelector(&#x27;.shelf.fm .tools&#x27;);
+    const vinTools = document.querySelector(&#x27;.shelf.vin .tools&#x27;);
+    if (fmTools &amp;&amp; !$(&#x27;scanCardBtn&#x27;)) {
+      const b = document.createElement(&#x27;button&#x27;);
+      b.id = &#x27;scanCardBtn&#x27;; b.className = &#x27;primary scan-btn&#x27;; b.textContent = &#x27;📷 Scanner des cartes&#x27;;
+      b.addEventListener(&#x27;click&#x27;, () =&gt; open(&#x27;card&#x27;));
+      fmTools.prepend(b);
+    }
+    if (vinTools &amp;&amp; !$(&#x27;scanVinBtn&#x27;)) {
+      const b = document.createElement(&#x27;button&#x27;);
+      b.id = &#x27;scanVinBtn&#x27;; b.className = &#x27;primary scan-btn&#x27;; b.textContent = &#x27;📷 Scanner un code-barres&#x27;;
+      b.addEventListener(&#x27;click&#x27;, () =&gt; open(&#x27;vinyl&#x27;));
+      vinTools.prepend(b);
+    }
+    const ygoTools = document.querySelector(&#x27;.shelf.ygo .tools&#x27;);
+    if (ygoTools &amp;&amp; !$(&#x27;scanYgoBtn&#x27;)) {
+      const b = document.createElement(&#x27;button&#x27;);
+      b.id = &#x27;scanYgoBtn&#x27;; b.className = &#x27;primary scan-btn&#x27;; b.textContent = &#x27;📷 Scanner des cartes&#x27;;
+      b.addEventListener(&#x27;click&#x27;, () =&gt; open(&#x27;ygo&#x27;));
+      ygoTools.prepend(b);
+    }
+    // Bouton rond qui reste visible quand l&#x27;en-tête est replié
+    if (!$(&#x27;scanFab&#x27;)) {
+      const f = document.createElement(&#x27;button&#x27;);
+      f.id = &#x27;scanFab&#x27;; f.className = &#x27;scan-fab&#x27;; f.textContent = &#x27;📷&#x27;; f.setAttribute(&#x27;aria-label&#x27;, &#x27;Scanner&#x27;);
+      f.addEventListener(&#x27;click&#x27;, () =&gt; open({ vin: &#x27;vinyl&#x27;, ygo: &#x27;ygo&#x27; }[$(&#x27;shelves&#x27;).dataset.tab] || &#x27;card&#x27;));
+      document.body.appendChild(f);
+    }
+  }
+  addButtons();
+  // Prépare la reconnaissance en arrière-plan pour que le premier scan soit immédiat
+  setTimeout(() =&gt; prepareRefs(), 5000);
+
+  window.CoffreScan = {
+    openCards: () =&gt; open(&#x27;card&#x27;),
+    openBarcode: () =&gt; open(&#x27;vinyl&#x27;),
+    openYgo: () =&gt; open(&#x27;ygo&#x27;),
+    _ygoHit: onYgoHit,
+    scanQr() { return new Promise(resolve =&gt; { if (qrResolve) qrResolve(&#x27;&#x27;); qrResolve = resolve; open(&#x27;qr&#x27;); }); },
+    isOpen: () =&gt; !!$(&#x27;scanView&#x27;) &amp;&amp; !$(&#x27;scanView&#x27;).hidden,
+    close,
+    // pour les tests
+    _describeCard: describeCard, _scoreRect: scoreRect, _topK: topK, _prepareRefs: prepareRefs, _ref: REF
+  };
+})();
+</pre></details>
+<details><summary><code>src/renderer/styles.css</code>, <code>LISEZMOI.md</code>, <code>package.json</code>, <code>mobile/package.json</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ .ylang, .yaddh { … }   /* choix de la langue */</span>
+<span style="color:#6cc58c">+ &quot;version&quot;: &quot;1.3.7&quot;,</span></pre></details>
 <h2>v1.3.6 <span class="d">— 16/10/2026</span></h2>
 <ul><li>Scan Yu-Gi-Oh : les <b>anciennes cartes européennes</b> (ex. <code>LDD-F092</code>, Légende du Dragon Blanc aux Yeux Bleus) ont un autre préfixe et d’autres numéros que la base anglaise (<code>LOB-092</code>), donc le code seul ne suffisait pas. Si le code n’est pas trouvé, Coffre lit maintenant le <b>nom de la carte</b> (français ou anglais, avec une tolérance aux erreurs de lecture).</li><li>Le préfixe lu sert à choisir l’extension : LDD → LOB, DDY → SDY, DDK → SDK, DDP → SDP… Si l’extension reste incertaine, Coffre propose les extensions de la carte et « Peu importe l’extension ».</li><li>Le scan lit maintenant la carte entière (le nom en haut et le code).</li></ul>
 <details><summary><code>src/renderer/ygo.js</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ const PREFIX_ALIAS = { LDD: &#x27;LOB&#x27;, DDY: &#x27;SDY&#x27;, DDK: &#x27;SDK&#x27;, DDP: &#x27;SDP&#x27;, … };</span>

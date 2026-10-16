@@ -72,9 +72,28 @@
     App.scheduleSave();
     return e.qty;
   }
-  function addPrinting(ci, pi, delta = 1) {
+  // Langue de la carte physique : FR, EN, DE, IT, ES, PT. Le code affiché suit la langue (SGX1-ENA18 → SGX1-FRA18).
+  const LANGS = ['FR', 'EN', 'DE', 'IT', 'ES', 'PT'];
+  const curLang = () => LANGS.includes(App.data.settings.ygoLang) ? App.data.settings.ygoLang : 'FR';
+  function locCode(code, lang) {
+    if (!lang || lang === 'EN') return code;
+    const m = String(code).match(/^([A-Z0-9]+)-EN([A-Z]?\d+)$/);
+    return m ? `${m[1]}-${lang === 'ES' ? 'SP' : lang}${m[2]}` : code;
+  }
+  const keyFor = (code, r, lang) => Core.ygoKey(code, r) + (lang && lang !== 'EN' ? '|' + lang : '');
+  const langSelect = id => `<select id="${id}" class="ylang" aria-label="Langue de tes cartes" title="Langue de tes cartes">${LANGS.map(l => `<option${l === curLang() ? ' selected' : ''}>${l}</option>`).join('')}</select>`;
+  function addPrinting(ci, pi, delta = 1, lang, lcode) {
     const c = st.db.cards[ci], p = c.p[pi];
-    return changeEntry(Core.ygoKey(p[1], p[2]), { id: c.i, code: p[1], r: p[2] }, delta);
+    lang = lang || curLang();
+    const base = { id: c.i, code: p[1], r: p[2] };
+    if (lang !== 'EN') { base.lang = lang; base.lcode = lcode || locCode(p[1], lang); }
+    return changeEntry(keyFor(p[1], p[2], lang), base, delta);
+  }
+  // Exemplaires d'une impression, toutes langues confondues
+  function qtyAny(code, r) {
+    let n = 0;
+    for (const e of Object.values(col())) if (e && e.code === code && e.r === r) n += e.qty || 0;
+    return n;
   }
   function addGeneric(id, delta = 1) { return changeEntry(`${id}|*`, { id, code: '', r: '' }, delta); }
 
@@ -124,7 +143,7 @@
     for (const [key, e] of Object.entries(col())) {
       if (!e || !(e.qty > 0)) continue;
       const c = card(e.id); if (!c) continue;
-      if (q && !(c.s.includes(q) || (e.code || '').toLowerCase().includes(q))) continue;
+      if (q && !(c.s.includes(q) || (e.code || '').toLowerCase().includes(q) || (e.lcode || '').toLowerCase().includes(q))) continue;
       const p = e.code ? c.p.find(x => x[1] === e.code && x[2] === e.r) : null;
       rows.push({ key, e, c, p });
     }
@@ -135,11 +154,11 @@
     rows.sort(by[st.sort] || by.name);
     if (gal()) return `<div class="gal">` + rows.map(({ key, e, c, p }) => `<div class="gcard own" data-key="${esc(key)}" data-id="${c.i}">
         <button class="pic" data-y="card" aria-label="Détails de ${esc(label(c))}">${imgTag(c.i)}<span class="badge">×${e.qty}</span></button>
-        <div class="cap"><span class="num">${esc(e.code || "toute extension")}${p ? ' · ' + esc(p[2]) : ''}</span>${esc(label(c))}</div>${App.qtyHtml(e.qty)}</div>`).join('') + `</div>`;
+        <div class="cap"><span class="num">${esc(e.code ? (e.lcode || e.code) : 'toute extension')}${p ? ' · ' + esc(p[2]) : ''}${e.lang ? ' · ' + esc(e.lang) : ''}</span>${esc(label(c))}</div>${App.qtyHtml(e.qty)}</div>`).join('') + `</div>`;
     return rows.map(({ key, e, c, p }) => `<div class="yrow" data-key="${esc(key)}" data-id="${c.i}">
         <button class="ypic" data-y="card">${imgTag(c.i)}</button>
         <div class="yinfo"><button class="nm" data-y="card">${esc(label(c))}</button>${sub(c) ? `<span class="en">${esc(sub(c))}</span>` : ''}
-          <span class="meta">${e.code ? `<span class="code">${esc(e.code)}</span><span>${esc(p ? p[3] : e.r)}</span><span>${esc(p ? setName(p[0]) : '')}</span>` : `<span class="tag">peu importe l'extension</span>`}</span></div>
+          <span class="meta">${e.code ? `<span class="code">${esc(e.lcode || e.code)}</span>${e.lang ? `<span class="tag">${esc(e.lang)}</span>` : ''}<span>${esc(p ? p[3] : e.r)}</span><span>${esc(p ? setName(p[0]) : '')}</span>` : `<span class="tag">peu importe l'extension</span>`}</span></div>
         ${App.qtyHtml(e.qty)}</div>`).join('');
   }
 
@@ -257,7 +276,7 @@
     const box = $('ycardSheet'); if (!box) return;
     const c = card(Number(box.dataset.id)); if (!c) return;
     const gen = col()[`${c.i}|*`];
-    const prints = c.p.map((p, pi) => ({ p, pi, e: col()[Core.ygoKey(p[1], p[2])] }))
+    const prints = c.p.map((p, pi) => ({ p, pi, e: col()[keyFor(p[1], p[2], curLang())], all: qtyAny(p[1], p[2]) }))
       .sort((a, b) => ((b.e && b.e.qty) || 0) - ((a.e && a.e.qty) || 0) || a.p[1].localeCompare(b.p[1]));
     const ds = liveDecks();
     box.innerHTML = `
@@ -273,11 +292,11 @@
           <div class="actions" style="justify-content:flex-start">
             ${ds.length ? `<select id="ycDeck">${ds.map(([id, d]) => `<option value="${id}">${esc(d.name || 'Deck')}</option>`).join('')}</select><button data-y="toDeck">Ajouter au deck</button>` : ''}
             <a data-y="cm">Voir sur Cardmarket ↗</a></div>
-          <h4>Ajouter à ma collection</h4>
+          <h4 class="yaddh">Ajouter à ma collection ${langSelect('ycLang')}</h4>
           <div class="yprints">
             <div class="yprint" data-gen="1"><div><b>Peu importe l'extension</b></div>${App.qtyHtml((gen && gen.qty) || 0)}</div>
-            ${prints.map(({ p, pi, e }) => `<div class="yprint${e && e.qty ? ' own' : ''}" data-pi="${pi}">
-              <div><span class="code">${esc(p[1])}</span> <span class="tag">${esc(p[3] || p[2])}</span><div class="hint">${esc(setName(p[0]))}</div></div>
+            ${prints.map(({ p, pi, e, all }) => `<div class="yprint${all ? ' own' : ''}" data-pi="${pi}">
+              <div><span class="code">${esc(locCode(p[1], curLang()))}</span>${all > ((e && e.qty) || 0) ? ` <span class="own">+${all - ((e && e.qty) || 0)} autre langue</span>` : ''} <span class="tag">${esc(p[3] || p[2])}</span><div class="hint">${esc(setName(p[0]))}</div></div>
               ${App.qtyHtml((e && e.qty) || 0)}</div>`).join('')}
           </div>
         </div></div>`;
@@ -288,7 +307,7 @@
   function openAdd() {
     App.openModal(`
       <div class="sheet-head"><h3>Ajouter des cartes</h3><button class="close" data-y="close">Fermer</button></div>
-      <input type="search" id="yaQ" placeholder="Nom de carte (français ou anglais), code (SGX1-FRA18) ou extension…" value="${esc(st.addQ)}" autofocus>
+ <div class="ydeckbar">${langSelect('yaLang')}<input type="search" id="yaQ" placeholder="Nom de carte (français ou anglais), code (SGX1-FRA18) ou extension…" value="${esc(st.addQ)}" autofocus></div>
       <div class="yresults" id="yaRes"></div>`, 'ygo wide', 'ygo-add');
     renderAdd();
   }
@@ -308,7 +327,8 @@
     return (st.idx.bySet.get(i) || []).map(([ci, pi]) => ({ ci, pi, c: st.db.cards[ci], p: st.db.cards[ci].p[pi] }))
       .sort((a, b) => a.p[1].localeCompare(b.p[1], 'en', { numeric: true }) || a.p[2].localeCompare(b.p[2]));
   }
-  const qtyOf = (code, r) => { const e = col()[Core.ygoKey(code, r)]; return (e && e.qty) || 0; };
+  const qtyOf = (code, r) => qtyAny(code, r);
+  const qtyLang = (code, r) => { const e = col()[keyFor(code, r, curLang())]; return (e && e.qty) || 0; };
   // Progression : un numéro de carte compte comme possédé si tu as au moins une de ses raretés
   function setProgress(i) {
     const codes = new Map();
@@ -362,10 +382,10 @@
         ${miss ? `<button data-y="copySet" title="Format wishlist Cardmarket : 1 Nom (Extension)">Copier les manquantes</button>` : ''}
         ${rars.length > 1 ? `<div class="yrars"><button class="chip" data-rar="" aria-pressed="${!st.setRarity}">Toutes raretés</button>${rars.map(([k, v]) => `<button class="chip${v.own === v.total ? ' done' : ''}" data-rar="${esc(k)}" aria-pressed="${st.setRarity === k}">${esc(k)} <b>${v.own}/${v.total}</b></button>`).join('')}</div>` : ''}</div>
       <textarea id="ysCm" hidden readonly>${esc(miss)}</textarea>
-      ${rows.length ? rows.map(({ ci, pi, c, p }) => { const q = qtyOf(p[1], p[2]); return `<div class="yres${q ? ' owned' : ''}" data-id="${c.i}">
+      ${rows.length ? rows.map(({ ci, pi, c, p }) => { const q = qtyLang(p[1], p[2]), all = qtyOf(p[1], p[2]); return `<div class="yres${all ? ' owned' : ''}" data-id="${c.i}">
         <button class="ypic" data-y="card">${imgTag(c.i)}</button>
         <div class="yinfo"><button class="nm" data-y="card">${esc(label(c))}</button>${sub(c) ? `<span class="en">${esc(sub(c))}</span>` : ''}
-          <span class="meta"><span class="code">${esc(p[1])}</span><span class="rar">${esc(rarName(p))}</span></span></div>
+          <span class="meta"><span class="code">${esc(locCode(p[1], curLang()))}</span><span class="rar">${esc(rarName(p))}</span>${all > q ? `<span class="own">${all - q} dans une autre langue</span>` : ''}</span></div>
         <div class="yquick" data-ci="${ci}" data-pi="${pi}">${App.qtyHtml(q)}</div></div>`; }).join('') : `<p class="hint">${st.setView === 'miss' ? 'Rien ne manque ici.' : 'Aucune carte.'}</p>`}`;
     loadImages(el);
   }
@@ -381,8 +401,8 @@
     const sets = searchSets(q);
     el.innerHTML = (sets.length ? `<h4>Extensions</h4><div class="ysets">${sets.map(i => { const { own, total } = setProgress(i); const x = st.db.sets[i];
       return `<button class="yset" data-y="set" data-set="${i}"><b>${esc(x[0])}</b><span class="hint">${esc(x[1] || '')}${x[2] ? ' · ' + esc(x[2].slice(0, 4)) : ''} · ${own}/${total}</span></button>`; }).join('')}</div>${res.length || exact.length ? '<h4>Cartes</h4>' : ''}` : '') + (exact.length ? exact.map(([ci, pi]) => {
-      const c = st.db.cards[ci], p = c.p[pi], e = col()[Core.ygoKey(p[1], p[2])];
-      return resultHtml(c, `<div class="yquick" data-ci="${ci}" data-pi="${pi}"><span class="code">${esc(p[1])}</span> <span class="tag">${esc(p[3] || p[2])}</span>${App.qtyHtml((e && e.qty) || 0)}</div>`);
+      const c = st.db.cards[ci], p = c.p[pi], e = col()[keyFor(p[1], p[2], curLang())];
+      return resultHtml(c, `<div class="yquick" data-ci="${ci}" data-pi="${pi}"><span class="code">${esc(locCode(p[1], curLang()))}</span> <span class="tag">${esc(p[3] || p[2])}</span>${App.qtyHtml((e && e.qty) || 0)}</div>`);
     }).join('') : '') + (res.length ? res.map(c => resultHtml(c, `<button data-y="card">Choisir l'extension</button>`)).join('') : (exact.length || sets.length ? '' : '<p class="hint">Aucune carte ni extension trouvée.</p>'));
     loadImages(el);
   }
@@ -426,6 +446,7 @@
     if (e.target.id === 'ydQ') { st.deckQ = e.target.value; clearTimeout(deckTimer); deckTimer = setTimeout(() => renderDeck(true), 200); }
   });
   $('sheet').addEventListener('change', e => {
+    if (e.target.id === 'yaLang' || e.target.id === 'ycLang') { App.data.settings.ygoLang = e.target.value; App.scheduleSave(); refreshOpenModal(); return; }
     if (e.target.id === 'ydName') { const d = decks()[st.deckId]; if (d) { d.name = e.target.value.trim() || 'Deck sans nom'; touchDeck(d); render(); } }
   });
   $('sheet').addEventListener('click', async e => {
@@ -517,14 +538,15 @@
   let nameIdx = null;
   function nameIndex() {
     if (nameIdx && nameIdx.db === st.db) return nameIdx;
-    const map = new Map(), list = [];
+    const map = new Map(), list = [], byPrefix = new Map();
     st.db.cards.forEach((c, ci) => {
+      for (const p of c.p) { const px = p[1].split('-')[0]; if (!byPrefix.has(px)) byPrefix.set(px, new Set()); byPrefix.get(px).add(ci); }
       for (const n of [c.n, c.f]) {
         const k = normName(n); if (!k) continue;
         if (!map.has(k)) { map.set(k, ci); list.push([k, ci]); }
       }
     });
-    nameIdx = { db: st.db, map, list };
+    nameIdx = { db: st.db, map, list, byPrefix };
     return nameIdx;
   }
   function editDistance(a, b, max) {
@@ -542,7 +564,7 @@
     return prev[b.length];
   }
   // Nom de la carte lu en haut (français ou anglais), avec une petite tolérance aux erreurs de lecture
-  function findByName(lines) {
+  function findByName(lines, onlyIn) {
     const ni = nameIndex();
     const cand = (lines || []).slice().sort((a, b) => (a.y || 0) - (b.y || 0))
       .map(l => normName(l.text)).filter(t => t.replace(/[^a-z]/g, '').length >= 4).slice(0, 5);
@@ -551,6 +573,7 @@
       if (ni.map.has(t)) return ni.map.get(t);
       const max = Math.max(1, Math.floor(t.length * 0.15));
       for (const [k, ci] of ni.list) {
+        if (onlyIn && !onlyIn.has(ci)) continue;
         const d = editDistance(t, k, max);
         if (d <= max && (!best || d / k.length < best.score)) best = { ci, score: d / k.length };
       }
@@ -558,24 +581,45 @@
     return best ? best.ci : null;
   }
   // Ce que le scan a lu → impressions possibles. D'abord le code exact, sinon le nom de la carte.
+  // Langue d'après le code imprimé : DUAD-FR053 → FR, LDD-F092 → FR
+  const LANG_OF = { EN: 'EN', E: 'EN', FR: 'FR', F: 'FR', DE: 'DE', G: 'DE', IT: 'IT', I: 'IT', SP: 'ES', ES: 'ES', S: 'ES', PT: 'PT', P: 'PT' };
+  function langOfCode(code) {
+    const m = String(code || '').match(/^[A-Z0-9]+-(EN|FR|DE|IT|SP|ES|PT|E|F|G|I|S|P)(?=[A-Z]?\d)/);
+    return m ? LANG_OF[m[1]] : '';
+  }
   function lookupScan(res) {
     if (!st.idx) return null;
     const codes = Core.ygoCodesInText(res && res.text);
+    const lines = res && res.lines;
+    const prefixes = codes.map(x => x.split('-')[0]).map(x => PREFIX_ALIAS[x] || x);
+    const lang = codes.map(langOfCode).find(Boolean) || '';
     const hits = lookupCodes(codes);
-    if (hits.length) return hits[0];
-    const ci = findByName(res && res.lines);
+    if (hits.length) {
+      const hit = hits[0];
+      hit.lang = langOfCode(hit.code) || lang; hit.lcode = hit.code;
+      // Vérification : le nom lu doit être celui de la carte du code (un chiffre mal lu donne une autre carte)
+      const px = hit.prints[0].p[1].split('-')[0];
+      const inSet = nameIndex().byPrefix.get(px);
+      const ci = findByName(lines, inSet);
+      if (ci != null && ci !== hit.prints[0].ci) {
+        const c = st.db.cards[ci];
+        const prints = c.p.map((p, pi) => ({ ci, pi, card: c, p })).filter(x => x.p[1].split('-')[0] === px);
+        if (prints.length) return { code: '', byName: true, fixed: true, card: c, prints, lang: hit.lang, lcode: '' };
+      }
+      return hit;
+    }
+    const ci = findByName(lines);
     if (ci == null) return null;
     const c = st.db.cards[ci];
     let prints = c.p.map((p, pi) => ({ ci, pi, card: c, p }));
     // Le préfixe lu (ex. LDD → LOB) indique l'extension, même si le numéro diffère
-    const prefixes = codes.map(x => x.split('-')[0]).map(x => PREFIX_ALIAS[x] || x);
     const inSet = prints.filter(x => prefixes.includes(x.p[1].split('-')[0]));
     if (inSet.length) prints = inSet;
-    return { code: '', byName: true, card: c, prints };
+    return { code: '', byName: true, card: c, prints, lang, lcode: inSet.length && codes.length ? codes[0] : '' };
   }
 
   window.CoffreYgo = {
-    render, refreshDb, lookupCodes, lookupScan, addGeneric: id => addGeneric(id, 1), removeGeneric: id => addGeneric(id, -1), addPrinting, openCard, label,
+    render, refreshDb, lookupCodes, lookupScan, locCode, curLang, addGeneric: id => addGeneric(id, 1), removeGeneric: id => addGeneric(id, -1), addPrinting, openCard, label,
     get ready() { return !!st.db; },
     imgTag, loadImages,
     ownedOf

@@ -502,10 +502,10 @@
     const Y = window.CoffreYgo, hit = yg.hit;
     if (!hit) return;
     const c = hit.prints[0].card;
-    msg(hit.byName ? (hit.prints.length > 1 ? 'Carte reconnue par son nom : touche son extension, ou « Peu importe ».' : 'Carte reconnue par son nom.') : hit.prints.length > 1 ? 'Plusieurs raretés existent pour ce code : touche la bonne.' : '');
+    msg(hit.fixed ? 'Code mal lu : carte corrigée d\'après son nom.' : hit.byName ? (hit.prints.length > 1 ? 'Carte reconnue par son nom : touche son extension, ou « Peu importe ».' : 'Carte reconnue par son nom.') : hit.prints.length > 1 ? 'Plusieurs raretés existent pour ce code : touche la bonne.' : '');
     $('scanCands').innerHTML = `<div class="ycand">${Y.imgTag(c.i)}<div><b>${esc(Y.label(c))}</b>${c.f ? `<span>${esc(c.n)}</span>` : ''}
-      ${hit.byName && hit.prints.length > 1 ? '' : `<span class="code">${esc(hit.prints[0].p[1])}</span> · `}${Y.ownedOf(c.i)} dans ta collection</div></div>
-      <div class="ychoices">${hit.prints.slice(0, 10).map((x, i) => `<button class="primary" data-scan="yadd" data-i="${i}">+ ${hit.byName && hit.prints.length > 1 ? esc(x.p[1]) + ' ' : ''}${esc(x.p[3] || x.p[2])}</button>`).join('')}
+      ${hit.byName && hit.prints.length > 1 ? '' : `<span class="code">${esc((hit.prints.length === 1 && hit.lcode) || Y.locCode(hit.prints[0].p[1], hit.lang || Y.curLang()))}</span> · `}${hit.lang ? `<span class="code">${esc(hit.lang)}</span> · ` : ''}${Y.ownedOf(c.i)} dans ta collection</div></div>
+      <div class="ychoices">${hit.prints.slice(0, 10).map((x, i) => `<button class="primary" data-scan="yadd" data-i="${i}">+ ${hit.byName && hit.prints.length > 1 ? esc(Y.locCode(x.p[1], hit.lang || Y.curLang())) + ' ' : ''}${esc(x.p[3] || x.p[2])}</button>`).join('')}
         ${hit.byName && hit.prints.length > 1 ? `<button data-scan="ygen">+ Peu importe l'extension</button>` : ''}</div>`;
     Y.loadImages($('scanCands'));
     $('scanActions').innerHTML = yg.added.length
@@ -515,11 +515,14 @@
 
   function addYgo(x, auto) {
     const Y = window.CoffreYgo;
-    const q = Y.addPrinting(x.ci, x.pi, 1);
-    yg.added.push(x);
+    const h = yg.hit || {};
+    const lang = h.lang || Y.curLang();
+    const lcode = (h.prints && h.prints.length === 1 && h.lcode) || Y.locCode(x.p[1], lang);
+    const q = Y.addPrinting(x.ci, x.pi, 1, lang, lcode);
+    yg.added.push({ ...x, lang, lcode });
     Y.render();
     if (navigator.vibrate) navigator.vibrate(auto ? [30, 40, 30] : 30);
-    App.toast(`${Y.label(x.card)} (${x.p[1]}) ajoutée · ×${q}`);
+    App.toast(`${Y.label(x.card)} (${lcode}) ajoutée · ×${q}`);
     const fr = $('scanFrame'); fr.classList.remove('ok'); void fr.offsetWidth; fr.classList.add('ok');
     renderYgo();
   }
@@ -541,7 +544,7 @@
     }
     if (act === 'yundo') {
       const x = yg.added.pop(); if (!x) return;
-      if (x.generic) window.CoffreYgo.removeGeneric(x.card.i); else window.CoffreYgo.addPrinting(x.ci, x.pi, -1);
+      if (x.generic) window.CoffreYgo.removeGeneric(x.card.i); else window.CoffreYgo.addPrinting(x.ci, x.pi, -1, x.lang, x.lcode);
       window.CoffreYgo.render();
       App.toast(`${window.CoffreYgo.label(x.card)} retirée`);
       return renderYgo();
