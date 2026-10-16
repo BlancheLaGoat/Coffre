@@ -10,7 +10,10 @@
   <header class="top">
     <div class="brand">
       <h1>Coffre de Blanche</h1>
-      <span class="sub">Cartes Forbidden Memories et vinyles</span>
+      <nav class="tabs" id="tabs" role="tablist">
+        <button role="tab" data-tab="fm"><span class="k fm-k">◆</span> Cartes FM <span class="count" id="tabFmCount"></span></button>
+        <button role="tab" data-tab="vin"><span class="k vin-k">●</span> Vinyles <span class="count" id="tabVinCount"></span></button>
+      </nav>
     </div>
     <div class="top-right">
       <div class="update" id="updateBar" hidden></div>
@@ -19,7 +22,7 @@
     </div>
   </header>
 
-  <main class="shelves">
+  <main class="shelves" id="shelves" data-tab="fm">
     <!-- ===== CARTES FM ===== -->
     <section class="shelf fm">
       <div class="shelf-head">

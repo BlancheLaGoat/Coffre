@@ -4,6 +4,17 @@ h1{margin:0 0 4px}h2{margin:28px 0 8px;color:#e3b54a}.d{color:#9a95ad}details{bo
 summary{cursor:pointer;padding:8px 12px}pre{margin:0;padding:12px;overflow:auto;max-height:520px;font:12px Consolas,monospace;background:#100e16;border-top:1px solid #322e42}
 .mod{font-size:11px;background:#3a2f17;color:#e3b54a;padding:1px 6px;border-radius:4px}.new{font-size:11px;background:#1f3a26;color:#6cc58c;padding:1px 6px;border-radius:4px}ul{margin:4px 0 0}</style></head><body>
 <h1>Journal des modifications</h1><p class="d">Coffre — clique sur un fichier pour voir son code.</p>
+<h2>v1.0.3 <span class="d">— 16/10/2026</span></h2>
+<ul><li>Cartes FM et Vinyles sont maintenant dans deux <b>onglets</b> séparés en haut de la fenêtre, chacun en pleine largeur.</li>
+<li>Chaque onglet affiche son compteur (cartes possédées / disques). L’appli se rouvre sur le dernier onglet utilisé. Raccourcis : Ctrl+1 et Ctrl+2.</li></ul>
+<details><summary><code>src/renderer/index.html</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ &lt;nav class=&quot;tabs&quot; id=&quot;tabs&quot; role=&quot;tablist&quot;&gt;</span>
+<span style="color:#6cc58c">+   &lt;button role=&quot;tab&quot; data-tab=&quot;fm&quot;&gt;◆ Cartes FM &lt;span class=&quot;count&quot; id=&quot;tabFmCount&quot;&gt;&lt;/span&gt;&lt;/button&gt;</span>
+<span style="color:#6cc58c">+   &lt;button role=&quot;tab&quot; data-tab=&quot;vin&quot;&gt;● Vinyles &lt;span class=&quot;count&quot; id=&quot;tabVinCount&quot;&gt;&lt;/span&gt;&lt;/button&gt;</span>
+<span style="color:#6cc58c">+ &lt;/nav&gt;</span></pre></details>
+<details><summary><code>src/renderer/styles.css</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ .shelves[data-tab=fm] .vin, .shelves[data-tab=vin] .fm { display: none; }</span>
+<span style="color:#6cc58c">+ .tabs button[aria-selected=true] { background: var(--chip); color: var(--fg); }</span></pre></details>
+<details><summary><code>src/renderer/app.js</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ function showTab(tab) { … data.settings.tab = tab; … }</span>
+<span style="color:#6cc58c">+ document.addEventListener(&#x27;keydown&#x27;, … Ctrl+1 → Cartes FM, Ctrl+2 → Vinyles)</span></pre></details>
 <h2>v1.0.2 <span class="d">— 16/10/2026</span></h2>
 <ul><li>Discogs fonctionne maintenant avec la <b>Consumer Key + Consumer Secret</b> d’une application Discogs (le token personnel reste possible).</li>
 <li>Réglages : deux nouveaux champs, et le secret/token sont masqués à l’écran.</li></ul>

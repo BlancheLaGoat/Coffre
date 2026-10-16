@@ -24,7 +24,13 @@ button, input, select, textarea { font: inherit; color: var(--fg); }
 
 /* ---------- En-tête ---------- */
 .top { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 14px 20px 10px; }
-.brand { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 28px; flex-wrap: wrap; }
+.tabs { display: flex; gap: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 4px; }
+.tabs button { border: 0; background: transparent; border-radius: 9px; padding: 8px 16px; font-weight: 600; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+.tabs button:hover { color: var(--fg); }
+.tabs button[aria-selected=true] { background: var(--chip); color: var(--fg); }
+.tabs .fm-k { color: var(--gold); } .tabs .vin-k { color: var(--wax); }
+.tabs .count { font: 12px var(--f-mono); color: var(--muted); font-weight: 400; }
 h1 { font: 800 26px/1.1 var(--f-display); margin: 0; letter-spacing: -.01em; }
 .sub { color: var(--muted); }
 .top-right { display: flex; align-items: center; gap: 12px; }
@@ -34,7 +40,8 @@ h1 { font: 800 26px/1.1 var(--f-display); margin: 0; letter-spacing: -.01em; }
 .update button { padding: 4px 10px; }
 
 /* ---------- Étagères ---------- */
-.shelves { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 16px; padding: 0 20px 18px; }
+.shelves { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); padding: 0 20px 18px; }
+.shelves[data-tab=fm] .vin, .shelves[data-tab=vin] .fm { display: none; }
 .shelf { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .shelf-head { padding: 14px 16px 12px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; }
 .title-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
@@ -71,7 +78,7 @@ a { color: var(--wax); cursor: pointer; }
 /* ---------- Cartes FM ---------- */
 .num { font: 12px var(--f-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
 .noimg { display: flex; align-items: center; justify-content: center; text-align: center; font-size: 10px; color: var(--muted); border: 1px dashed var(--line); border-radius: 4px; aspect-ratio: 421/614; padding: 4px; }
-.gal { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 14px; padding: 14px 16px; }
+.gal { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 14px; padding: 14px 16px; }
 .gcard { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .gcard .pic { position: relative; border: 0; padding: 0; background: none; border-radius: 6px; }
 .gcard .pic img, .gcard .pic .noimg { width: 100%; aspect-ratio: 421/614; object-fit: cover; border-radius: 6px; display: block; }
@@ -93,7 +100,7 @@ a { color: var(--wax); cursor: pointer; }
 .tag { font-size: 11px; letter-spacing: .04em; text-transform: uppercase; padding: 1px 6px; border-radius: 4px; background: var(--chip); }
 
 /* ---------- Vinyles ---------- */
-.vgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px; padding: 16px; }
+.vgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; padding: 16px; }
 .vcard { display: flex; flex-direction: column; gap: 6px; border: 0; background: none; padding: 0; text-align: left; min-width: 0; }
 .cover { width: 100%; aspect-ratio: 1; border-radius: 6px; object-fit: cover; background: var(--chip); display: block; box-shadow: 0 2px 8px rgba(0,0,0,.18); }
 .cover.ph { display: flex; align-items: center; justify-content: center; background: radial-gradient(circle, var(--wax) 0 14%, var(--panel) 15% 18%, #1a1720 19% 100%); }
@@ -137,6 +144,5 @@ a { color: var(--wax); cursor: pointer; }
 .more { grid-column: 1 / -1; justify-self: center; }
 .spinner { grid-column: 1 / -1; text-align: center; color: var(--muted); padding: 30px; }
 
-@media (max-width: 1100px) { .shelves { grid-template-columns: minmax(0, 1fr); overflow: auto; } .shelf { min-height: 70vh; } }
 @media (max-width: 640px) { .split { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) { .bar i { transition: none; } }

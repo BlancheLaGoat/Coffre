@@ -70,6 +70,7 @@ function fmStats() {
   $('fmOwned').textContent = owned;
   $('fmCopies').textContent = copies;
   $('fmBar').style.width = (owned / 722 * 100).toFixed(2) + '%';
+  $('tabFmCount').textContent = `${owned}/722`;
 }
 
 function qtyHtml(qty) {
@@ -179,6 +180,7 @@ function renderVinyls() {
   const all = Object.entries(data.vinyls);
   $('vinOwned').textContent = all.filter(([, v]) => v.status !== 'wish').length;
   $('vinWish').textContent = all.filter(([, v]) => v.status === 'wish').length;
+  $('tabVinCount').textContent = all.filter(([, v]) => v.status !== 'wish').length;
   if (!all.length) {
     $('vinList').innerHTML = `<div class="empty">Ton bac est vide.<br>Clique sur <b>Rechercher un vinyle</b>, tape un artiste ou un album, puis ajoute le disque avec sa pochette.</div>`;
     return;
@@ -578,11 +580,25 @@ window.coffre.onUpdate(s => {
 // ============================================================
 function renderAll() { renderFm(); renderVinyls(); }
 
+// Onglets Cartes FM / Vinyles (Ctrl+1 et Ctrl+2 au clavier)
+function showTab(tab) {
+  $('shelves').dataset.tab = tab;
+  $('tabs').querySelectorAll('button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
+  if (data.settings.tab !== tab) { data.settings.tab = tab; scheduleSave(); }
+}
+$('tabs').addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (b) showTab(b.dataset.tab); });
+document.addEventListener('keydown', e => {
+  if (!e.ctrlKey || !$('modal').hidden) return;
+  if (e.key === '1') showTab('fm');
+  if (e.key === '2') showTab('vin');
+});
+
 (async () => {
   info = await window.coffre.info();
   data = await window.coffre.load();
   seg('fmLayout', data.settings.layout || 'gal', v => { data.settings.layout = v; scheduleSave(); renderFm(); });
   seg('fmView', 'all', v => { fmF.v = v; renderFm(); });
   seg('vinView', 'all', v => { vinF.v = v; renderVinyls(); });
+  showTab(data.settings.tab === 'vin' ? 'vin' : 'fm');
   renderAll();
 })();
