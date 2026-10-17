@@ -554,7 +554,7 @@
     }
     msg(hit.unsure ? 'Le nom lu ne correspond pas au code : vérifie que c\'est bien cette carte, puis touche sa rareté.' : hit.fixed ? 'Code mal lu : carte corrigée d\'après son nom (touche pour confirmer).' : hit.byName ? (hit.prints.length > 1 ? 'Carte reconnue par son nom : touche son extension, ou « Peu importe ».' : 'Carte reconnue par son nom.') : hit.prints.length > 1 ? 'Plusieurs raretés existent pour ce code : touche la bonne.' : '');
     $('scanCands').innerHTML = `<div class="ycand">${Y.imgTag(c.i)}<div><b>${esc(Y.label(c))}</b>${c.f ? `<span>${esc(c.n)}</span>` : ''}
-      ${hit.byName && hit.prints.length > 1 ? '' : `<span class="code">${esc((hit.prints.length === 1 && hit.lcode) || Y.locCode(hit.prints[0].p[1], hit.lang || Y.curLang()))}</span> · `}${hit.lang ? `<span class="code">${esc(hit.lang)}</span> · ` : ''}${Y.ownedOf(c.i)} dans ta collection</div></div>
+      ${hit.byName && hit.prints.length > 1 ? '' : `<span class="code">${esc(Y.locCode(hit.prints[0].p[1], hit.lang || Y.curLang()))}</span> · `}${hit.lang ? `<span class="code">${esc(hit.lang)}</span> · ` : ''}${Y.ownedOf(c.i)} dans ta collection</div></div>
       <div class="ychoices">${hit.prints.slice(0, 10).map((x, i) => `<button class="primary" data-scan="yadd" data-i="${i}">+ ${hit.byName && hit.prints.length > 1 ? esc(Y.locCode(x.p[1], hit.lang || Y.curLang())) + ' ' : ''}${esc(x.p[3] || x.p[2])}</button>`).join('')}
         ${hit.byName && hit.prints.length > 1 ? `<button data-scan="ygen">+ Peu importe l'extension</button>` : ''}</div>`;
     Y.loadImages($('scanCands'));
@@ -567,7 +567,8 @@
     const Y = game();
     const h = yg.hit || {};
     const lang = h.lang || Y.curLang();
-    const lcode = mode === 'op' ? x.card.i : (h.prints && h.prints.length === 1 && h.lcode) || Y.locCode(x.p[1], lang);
+    // Code de la carte pris dans la base (impression touchée), dans la langue de la carte — jamais le texte lu
+    const lcode = mode === 'op' ? x.card.i : Y.locCode(x.p[1], lang);
     const q = Y.addPrinting(x.ci, x.pi, 1, lang, lcode);
     yg.added.push({ ...x, lang, lcode });
     yg.lastAdded = yg.hit ? yg.hit.prints.map(p => p.ci + ':' + p.pi).join(',') : '';

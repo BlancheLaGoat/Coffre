@@ -81,13 +81,24 @@
     const m = String(code).match(/^([A-Z0-9]+)-EN([A-Z]?\d+)$/);
     return m ? `${m[1]}-${lang === 'ES' ? 'SP' : lang}${m[2]}` : code;
   }
+  // Code imprimé lu par le scan : gardé seulement s'il a la bonne forme et correspond à l'impression
+  // (ex. DUAD-FR053 pour DUAD-EN053). Sinon (« MP24-NT27 », « MP25-BIN229 »…) on prend le vrai code dans la langue.
+  const LANG_RE = 'EN|FR|DE|IT|SP|ES|PT|E|F|G|I|S|P';
+  function validPrinted(raw, code) {
+    const r = String(raw || '').toUpperCase().match(new RegExp(`^([A-Z0-9]{2,5})-(?:${LANG_RE})?([A-Z]?\\d{2,3})$`));
+    if (!r) return false;
+    const [px, rest] = Core.ygoNormCode(code).split('-');
+    if (PREFIX_ALIAS[r[1]] === px) return true;          // anciennes cartes européennes (LDD-F092 = LOB-092)
+    return r[1] === px && r[2] === rest;
+  }
+  const printedCode = (raw, code, lang) => validPrinted(raw, code) ? String(raw).toUpperCase() : locCode(code, lang);
   const keyFor = (code, r, lang) => Core.ygoKey(code, r) + (lang && lang !== 'EN' ? '|' + lang : '');
   const langSelect = id => `<select id="${id}" class="ylang" aria-label="Langue de tes cartes" title="Langue de tes cartes">${LANGS.map(l => `<option${l === curLang() ? ' selected' : ''}>${l}</option>`).join('')}</select>`;
   function addPrinting(ci, pi, delta = 1, lang, lcode) {
     const c = st.db.cards[ci], p = c.p[pi];
     lang = lang || curLang();
     const base = { id: c.i, code: p[1], r: p[2] };
-    if (lang !== 'EN') { base.lang = lang; base.lcode = lcode || locCode(p[1], lang); }
+    if (lang !== 'EN') { base.lang = lang; base.lcode = printedCode(lcode, p[1], lang); }
     return changeEntry(keyFor(p[1], p[2], lang), base, delta);
   }
   // Exemplaires d'une impression, toutes langues confondues
@@ -710,7 +721,7 @@
     const hits = lookupCodes(codes);
     if (hits.length) {
       const hit = hits[0];
-      hit.lang = langOfCode(hit.code) || lang; hit.lcode = hit.code;
+      hit.lang = langOfCode(hit.code) || lang; hit.lcode = locCode(hit.prints[0].p[1], hit.lang || curLang());   // code de la base, dans la langue lue
       const c0 = hit.prints[0].card;
       if (!cand.length || nameMatches(cand, c0)) { hit.sure = true; return hit; }
       // Le nom lu n'est pas celui du code : un chiffre a sans doute été mal lu. On cherche la carte de l'extension qui porte ce nom.
@@ -731,7 +742,8 @@
     // Le préfixe lu (ex. LDD → LOB) indique l'extension, même si le numéro diffère
     const inSet = prints.filter(x => prefixes.includes(x.p[1].split('-')[0]));
     if (inSet.length) prints = inSet;
-    return { code: '', byName: true, sure: !!inSet.length, card: c, prints, lang, lcode: inSet.length && codes.length ? codes[0] : '' };
+    // Reconnue par son nom : le code viendra de la base (impression choisie), jamais de la lecture
+    return { code: '', byName: true, sure: !!inSet.length, card: c, prints, lang, lcode: '' };
   }
 
   window.CoffreYgo = {
@@ -747,9 +759,19 @@
     money: v => eur.format(v || 0),
     render, refreshDb, lookupCodes, lookupScan, locCode, curLang, addGeneric: id => addGeneric(id, 1), removeGeneric: id => addGeneric(id, -1), addPrinting, openCard, label,
     get ready() { return !!st.db; },
-    imgTag, loadImages,
+    imgTag, loadImages, validPrinted, repairCodes,
     ownedOf
   };
-  const start = () => { st.view = ['decks', 'wish'].includes(App.data.settings.ygoView) ? App.data.settings.ygoView : 'col'; render(); loadDb(); };
+  // Répare les codes mal lus enregistrés par d'anciennes versions du scan (« MP24-NT27 » → MP24-FR127)
+  function repairCodes() {
+    let n = 0;
+    for (const [k, e] of Object.entries(col())) {
+      if (!e || !e.code || !e.lcode || validPrinted(e.lcode, e.code)) continue;
+      col()[k] = { ...e, lcode: locCode(e.code, e.lang || 'EN'), mt: now() }; n++;
+    }
+    if (n) App.scheduleSave();
+    return n;
+  }
+  const start = () => { st.view = ['decks', 'wish'].includes(App.data.settings.ygoView) ? App.data.settings.ygoView : 'col'; repairCodes(); render(); loadDb(); };
   if (window.coffreReady) start(); else document.addEventListener('coffre:ready', start, { once: true });
 })();
