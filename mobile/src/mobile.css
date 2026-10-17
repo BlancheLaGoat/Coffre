@@ -58,7 +58,11 @@ body.mobile .split img.big, body.mobile .split .noimg, body.mobile .split .cover
 .scan-actions button { background: rgba(255, 255, 255, .18); color: #fff; border: 0; }
 
 /* ---------- En-tête replié pendant le défilement ---------- */
-body.mobile.compact .top, body.mobile.compact .shelf-head { display: none; }
+/* Sur téléphone, tout l'onglet défile d'un bloc : les boutons du haut (Scanner, Ajouter, filtres…) partent avec le défilement,
+   même quand ils prennent presque tout l'écran (Yu-Gi-Oh, One Piece). Le titre et les onglets se cachent en plus. */
+body.mobile .shelf { overflow-y: auto; overscroll-behavior: contain; }
+body.mobile .shelf > .list { flex: none; overflow: visible; min-height: auto; }
+body.mobile.compact .top { display: none; }
 body.mobile.compact .shelves { padding-top: 6px; }
 .scan-fab { display: none; }
 body.mobile.compact .scan-fab { display: flex; align-items: center; justify-content: center; position: fixed; right: 16px; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); width: 58px; height: 58px; border-radius: 99px; border: 0; background: var(--fg); color: var(--bg); font-size: 24px; box-shadow: var(--shadow); z-index: 15; padding: 0; }

@@ -521,7 +521,9 @@
 
   // ---------- En-tête qui se replie quand on fait défiler la liste ----------
   // L'en-tête se replie dès qu'on descend, et ne revient qu'une fois remonté tout en haut de la liste
+  // L'onglet entier défile (en-tête compris) : on suit le défilement de l'onglet
   function watchScroll(list) {
+    list = list.closest('.shelf') || list;
     list.addEventListener('scroll', () => {
       const y = list.scrollTop;
       if (y < 20) document.body.classList.remove('compact');

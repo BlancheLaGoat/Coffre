@@ -4,6 +4,12 @@ h1{margin:0 0 4px}h2{margin:28px 0 8px;color:#e3b54a}.d{color:#9a95ad}details{bo
 summary{cursor:pointer;padding:8px 12px}pre{margin:0;padding:12px;overflow:auto;max-height:520px;font:12px Consolas,monospace;background:#100e16;border-top:1px solid #322e42}
 .mod{font-size:11px;background:#3a2f17;color:#e3b54a;padding:1px 6px;border-radius:4px}.new{font-size:11px;background:#1f3a26;color:#6cc58c;padding:1px 6px;border-radius:4px}ul{margin:4px 0 0}</style></head><body>
 <h1>Journal des modifications</h1><p class="d">Coffre — clique sur un fichier pour voir son code.</p>
+<h2>v1.8.2 <span class="d">— 17/10/2026</span></h2>
+<ul><li>Téléphone : dans Yu-Gi-Oh et One Piece, quand tu descends dans ta collection, les boutons du haut (Scanner, Ajouter des cartes, filtre, Galerie/Liste…) partent avec le défilement et le titre et les onglets se cachent, comme pour les cartes FM. Ils reviennent quand tu remontes tout en haut.</li><li>Avant, ces boutons prenaient presque tout l'écran sur un petit téléphone : la collection n'avait plus qu'une petite bande, et glisser le doigt sur les boutons ne faisait rien défiler.</li></ul>
+<details><summary><code>mobile/src/mobile.css</code>, <code>mobile/src/mobile.js</code>, <code>package.json</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ body.mobile .shelf {{ overflow-y: auto; }}   body.mobile .shelf &gt; .list {{ overflow: visible; }}   // tout l&#x27;onglet défile d&#x27;un bloc</span>
+<span style="color:#6cc58c">+ watchScroll : suit le défilement de l&#x27;onglet (list.closest(&#x27;.shelf&#x27;))</span>
+<span style="color:#ef7a62">- body.mobile.compact .shelf-head {{ display: none; }}   // l&#x27;en-tête part maintenant avec le défilement</span>
+<span style="color:#6cc58c">+ &quot;version&quot;: &quot;1.8.2&quot;,</span></pre></details>
 <h2>v1.8.1 <span class="d">— 17/10/2026</span></h2>
 <ul><li>Cache des images de cartes : <b>200 Mo au total sur le PC</b> et <b>50 Mo au total sur le téléphone</b>, partagés entre Yu-Gi-Oh et One Piece (avant : 25 Mo par jeu). Au-delà, les images vues le moins récemment, tous jeux confondus, s'effacent toutes seules.</li></ul>
 <details><summary><code>src/main.js</code>, <code>mobile/src/mobile.js</code>, <code>src/renderer/app.js</code>, <code>LISEZMOI.md</code>, <code>package.json</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ const IMG_CACHE_MAX = 200 * 1024 * 1024;   // PC, les deux jeux ensemble</span>
