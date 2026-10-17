@@ -105,6 +105,7 @@ La première fois, l'onglet **Yu-Gi-Oh** propose de **télécharger la base de c
 - **Wishlist** : les cartes que tu veux en dehors de tes decks. Ajoute-les depuis l'onglet Wishlist (recherche) ou depuis la fiche d'une carte (« ☆ Ajouter à la wishlist »), puis **Copier la liste** pour Cardmarket.
 - **Wishlist Cardmarket** : dans un deck, **Copier la liste** copie les cartes manquantes au format Cardmarket (`2 Dark Magician`, une carte par ligne). Sur Cardmarket : Wishlist → ajouter des cartes → colle la liste.
 
+- **Banlist** : la banlist TCG (celle de l'Europe, mise à jour avec la base chaque semaine) est affichée sur les cartes : pastille rouge 0 = interdite, orange 1 = limitée, jaune 2 = semi-limitée. Un deck qui ne la respecte pas est signalé (⚠ banlist).
 - **Texte des cartes** : la fiche d'une carte affiche son texte (en français quand YGOPRODeck l'a, sinon en anglais).
 - **Prix** : la valeur de ta collection, le prix de chaque deck (et de ce qu'il te manque) et le coût des manquantes d'une extension utilisent le prix de référence Cardmarket de chaque carte, toutes éditions confondues (données YGOPRODeck, mises à jour chaque semaine). C'est une estimation : une rareté chère peut valoir bien plus.
 

@@ -103,6 +103,7 @@
   // Garde seulement ce dont l'appli a besoin (quelques Mo au lieu de plusieurs dizaines).
   // Carte : { i: id, n: nom anglais, f: nom français, t: cadre, ty: type, r: race, a: attribut,
   //           l: niveau/lien, k: ATK, d: DEF, im: [ids d'images], p: [[n° extension, code, rareté courte, rareté]] }
+  const BAN = { Banned: 0, Forbidden: 0, Limited: 1, 'Semi-Limited': 2 };
   function ygoCompact(en, fr, sets) {
     const frName = new Map(((fr && fr.data) || []).map(c => [c.id, c.name]));
     const frDesc = new Map(((fr && fr.data) || []).map(c => [c.id, c.desc]));
@@ -130,10 +131,12 @@
         // Prix de référence Cardmarket de la carte (en €), toutes éditions confondues
         cm: parseFloat(((c.card_prices || [])[0] || {}).cardmarket_price) || 0,
         // Texte de la carte : en français si YGOPRODeck l'a, sinon en anglais
-        x: String(frDesc.get(c.id) || c.desc || '').trim()
+        x: String(frDesc.get(c.id) || c.desc || '').trim(),
+        // Banlist TCG (Europe) : 0 interdite, 1 limitée, 2 semi-limitée ; absente = 3 exemplaires autorisés
+        ...(BAN[(c.banlist_info || {}).ban_tcg] != null ? { b: BAN[c.banlist_info.ban_tcg] } : {})
       });
     }
-    return { v: 3, at: Date.now(), cards, sets: setList };
+    return { v: 4, at: Date.now(), cards, sets: setList };
   }
 
   // Clé d'une impression dans la collection : « SGX1-ENA18|C »

@@ -213,6 +213,11 @@ body.mobile .desktop-only { display: none !important; }
 .yrars { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 6px; }
 .yrars .chip { padding: 4px 10px; border-radius: 99px; font-size: 12px; min-height: 0; }
 .yrars .chip[aria-pressed=true] { background: var(--tcg-soft, var(--ygo-soft)); border-color: var(--tcg, var(--ygo)); }
+.ban { position: absolute; top: 4px; left: 4px; width: 20px; height: 20px; border-radius: 99px; display: grid; place-items: center; font: 700 12px var(--f-mono); color: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.4); }
+.ban.b0 { background: #c62828; } .ban.b1 { background: #e07b00; } .ban.b2 { background: #c9a400; }
+.bantag { font-weight: 700; font-size: 11px; padding: 1px 6px; border-radius: 4px; color: #fff; }
+.bantag.b0 { background: #c62828; } .bantag.b1 { background: #e07b00; } .bantag.b2 { background: #b39200; }
+.banwarn { color: #c62828; font-weight: 600; font-size: 13px; margin: 2px 0 6px; }
 .ycol { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .ytext { white-space: pre-line; font-size: 13px; line-height: 1.45; background: var(--chip); border-radius: 10px; padding: 10px 12px; }
 .yquicks { display: flex; flex-direction: column; gap: 4px; align-items: flex-end; }

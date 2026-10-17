@@ -22,7 +22,7 @@
     render();
     // Mise à jour discrète toutes les deux semaines (nouvelles extensions)
     // Mise à jour discrète (nouvelles cartes, prix Cardmarket) chaque semaine, ou si la base est d'un ancien format
-    if (st.db && (st.db.v !== 3 || now() - (st.db.at || 0) > 7 * 864e5)) refreshDb(true);
+    if (st.db && (st.db.v !== 4 || now() - (st.db.at || 0) > 7 * 864e5)) refreshDb(true);
   }
   async function refreshDb(silent) {
     if (st.loading) return;
@@ -39,6 +39,11 @@
   const label = c => c.f || c.n;                       // nom français si connu
   const sub = c => c.f ? c.n : '';                     // nom anglais en dessous
   const isExtra = c => EXTRA.test(c.t || '');
+  // Banlist TCG : nombre d'exemplaires autorisés dans un deck (3 si la carte n'est pas sur la liste)
+  const BAN_TXT = ['Interdite', 'Limitée', 'Semi-limitée'];
+  const banMax = c => c.b != null ? c.b : 3;
+  const banIcon = c => c.b != null ? `<span class="ban b${c.b}" title="Banlist TCG : ${BAN_TXT[c.b]}">${c.b}</span>` : '';
+  const banTag = c => c.b != null ? `<span class="bantag b${c.b}">${BAN_TXT[c.b]}${c.b ? ' (' + c.b + ')' : ''}</span>` : '';
   const gal = () => App.data.settings.ygoLayout !== 'list';
   const layoutSeg = id => `<div class="seg" id="${id}"><button data-v="gal" aria-pressed="${gal()}">Galerie</button><button data-v="list" aria-pressed="${!gal()}">Liste</button></div>`;
   function setLayout(v) { App.data.settings.ygoLayout = v; App.scheduleSave(); render(); }
@@ -174,12 +179,12 @@
     const by = { name: (a, b) => label(a.c).localeCompare(label(b.c), 'fr'), added: (a, b) => (b.e.mt || 0) - (a.e.mt || 0), code: (a, b) => (a.e.code || '~').localeCompare(b.e.code || '~') };
     rows.sort(by[st.sort] || by.name);
     if (gal()) return `<div class="gal">` + rows.map(({ key, e, c, p }) => `<div class="gcard own" data-key="${esc(key)}" data-id="${c.i}">
-        <button class="pic" data-y="card" aria-label="Détails de ${esc(label(c))}">${imgTag(c.i)}<span class="badge">×${e.qty}</span></button>
+        <button class="pic" data-y="card" aria-label="Détails de ${esc(label(c))}">${imgTag(c.i)}${banIcon(c)}<span class="badge">×${e.qty}</span></button>
         <div class="cap"><span class="num">${esc(e.code ? (e.lcode || e.code) : 'toute extension')}${p ? ' · ' + esc(p[2]) : ''}${e.lang ? ' · ' + esc(e.lang) : ''}</span>${priceTag(c.i)}${esc(label(c))}</div>${App.qtyHtml(e.qty)}</div>`).join('') + `</div>`;
     return rows.map(({ key, e, c, p }) => `<div class="yrow" data-key="${esc(key)}" data-id="${c.i}">
         <button class="ypic" data-y="card">${imgTag(c.i)}</button>
         <div class="yinfo"><button class="nm" data-y="card">${esc(label(c))}</button>${sub(c) ? `<span class="en">${esc(sub(c))}</span>` : ''}
-          <span class="meta">${e.code ? `<span class="code">${esc(e.lcode || e.code)}</span>${e.lang ? `<span class="tag">${esc(e.lang)}</span>` : ''}<span>${esc(p ? p[3] : e.r)}</span><span>${esc(p ? setName(p[0]) : '')}</span>` : `<span class="tag">peu importe l'extension</span>`}${priceTag(c.i)}</span></div>
+          <span class="meta">${e.code ? `<span class="code">${esc(e.lcode || e.code)}</span>${e.lang ? `<span class="tag">${esc(e.lang)}</span>` : ''}<span>${esc(p ? p[3] : e.r)}</span><span>${esc(p ? setName(p[0]) : '')}</span>` : `<span class="tag">peu importe l'extension</span>`}${banTag(c)}${priceTag(c.i)}</span></div>
         ${App.qtyHtml(e.qty)}</div>`).join('');
   }
 
@@ -201,6 +206,11 @@
     }
     return { total, missing };
   }
+  function banIssues(d) {
+    let n = 0;
+    for (const [id, q] of Object.entries(d.cards || {})) { const c = card(Number(id)); if (c && q > banMax(c)) n++; }
+    return n;
+  }
   function missingCost(d) {
     let v = 0;
     for (const [id, q] of Object.entries(d.cards || {})) v += Math.max(0, q - ownedOf(Number(id))) * priceOf(Number(id));
@@ -215,7 +225,7 @@
       return `<button class="ydeck" data-y="deck" data-deck="${id}">
         <span class="ycover">${cover ? imgTag(cover) : ''}</span>
         <span class="t">${esc(d.name || 'Deck sans nom')}</span>
-        <span class="a">${total} cartes · ${missing ? `<b class="miss">${missing} manquante${missing > 1 ? 's' : ''}</b>` : 'complet'}${missingCost(d) ? ` · ≈ ${money(missingCost(d))} à acheter` : ''}</span></button>`;
+        <span class="a">${banIssues(d) ? '<b class="miss">⚠ banlist</b> · ' : ''}${total} cartes · ${missing ? `<b class="miss">${missing} manquante${missing > 1 ? 's' : ''}</b>` : 'complet'}${missingCost(d) ? ` · ≈ ${money(missingCost(d))} à acheter` : ''}</span></button>`;
     }).join('') + `</div>`;
   }
 
@@ -248,7 +258,7 @@
   const resultHtml = (c, act) => `<div class="yres" data-id="${c.i}">
       <button class="ypic" data-y="card">${imgTag(c.i)}</button>
       <div class="yinfo"><button class="nm" data-y="card">${esc(label(c))}</button>${sub(c) ? `<span class="en">${esc(sub(c))}</span>` : ''}
-        <span class="meta"><span>${esc(c.ty)}</span>${c.k !== '' ? `<span>${c.k}/${c.d === '' ? '—' : c.d}</span>` : ''}${ownedOf(c.i) ? `<span class="own">${ownedOf(c.i)} dans ta collection</span>` : ''}</span></div>
+        <span class="meta">${banTag(c)}<span>${esc(c.ty)}</span>${c.k !== '' ? `<span>${c.k}/${c.d === '' ? '—' : c.d}</span>` : ''}${ownedOf(c.i) ? `<span class="own">${ownedOf(c.i)} dans ta collection</span>` : ''}</span></div>
       ${act}</div>`;
 
   function openDeck(id, keep) {
@@ -265,16 +275,17 @@
     const shown = st.deckView === 'miss' ? missingList : entries;
     const dq = q => `<div class="qty"><button data-y="dq" data-d="-1" aria-label="Retirer du deck">−</button><output>${q}</output><button data-y="dq" data-d="1" aria-label="Ajouter au deck">+</button></div>`;
     const tile = ({ c, q, owned }) => `<div class="gcard${owned >= q ? ' own' : ' short'}" data-id="${c.i}">
-        <button class="pic" data-y="card" aria-label="Détails de ${esc(label(c))}">${imgTag(c.i)}<span class="badge">×${q}</span></button>
+        <button class="pic" data-y="card" aria-label="Détails de ${esc(label(c))}">${imgTag(c.i)}${banIcon(c)}<span class="badge">×${q}</span></button>
         <div class="cap"><span class="num">${owned >= q ? `<span class="own">${owned} possédée${owned > 1 ? 's' : ''}</span>` : `<span class="miss">il en manque ${q - owned}</span>`}</span>${esc(label(c))}${priceTag(c.i)}</div>${dq(q)}</div>`;
     const group = (title, arr) => arr.length ? `<h4>${title} <span class="num">${arr.reduce((a, x) => a + x.q, 0)}</span></h4>` + (gal() ? `<div class="gal">${arr.sort((a, b) => label(a.c).localeCompare(label(b.c), 'fr')).map(tile).join('')}</div>` : arr.sort((a, b) => label(a.c).localeCompare(label(b.c), 'fr')).map(({ c, q, owned }) => `
       <div class="yrow${owned >= q ? ' ok' : ' short'}" data-id="${c.i}">
         <button class="ypic" data-y="card">${imgTag(c.i)}</button>
         <div class="yinfo"><button class="nm" data-y="card">${esc(label(c))}</button>${sub(c) ? `<span class="en">${esc(sub(c))}</span>` : ''}
-          <span class="meta">${owned >= q ? `<span class="own">${owned} possédée${owned > 1 ? 's' : ''}</span>` : `<span class="miss">il en manque ${q - owned}</span><span>(${owned} possédée${owned > 1 ? 's' : ''})</span>`}${priceTag(c.i)}</span></div>
+          <span class="meta">${banTag(c)}${q > banMax(c) ? `<span class="miss">max ${banMax(c)} en deck</span>` : ''}${owned >= q ? `<span class="own">${owned} possédée${owned > 1 ? 's' : ''}</span>` : `<span class="miss">il en manque ${q - owned}</span><span>(${owned} possédée${owned > 1 ? 's' : ''})</span>`}${priceTag(c.i)}</span></div>
         ${dq(q)}</div>`).join('')) : '';
     const main = shown.filter(x => !isExtra(x.c)), extra = shown.filter(x => isExtra(x.c));
     const mainCount = entries.filter(x => !isExtra(x.c)).reduce((a, x) => a + x.q, 0);
+    const banBad = entries.filter(x => x.q > banMax(x.c));
     const extraCount = entries.filter(x => isExtra(x.c)).reduce((a, x) => a + x.q, 0);
     const results = searchCards(st.deckQ, 30);
     const cm = missingList.map(x => Core.cmLine(x.q - x.owned, x.c.n)).join('\n');
@@ -286,6 +297,7 @@
         <button class="close" data-y="close">Fermer</button></div>
       <p class="hint">${mainCount} cartes dans le Main Deck${extraCount ? ` · ${extraCount} dans l'Extra Deck` : ''} · ${missingList.length ? `<b class="miss">${missingList.reduce((a, x) => a + x.q - x.owned, 0)} carte(s) manquante(s)</b>` : 'tu as toutes les cartes'}
         ${deckValue ? `<br>Prix du deck ≈ <b class="price">${money(deckValue)}</b>${missValue ? ` · ce qu'il te manque ≈ <b class="price miss">${money(missValue)}</b>` : ''} <span class="hint">(Cardmarket, ${pricesDate()})</span>` : ''}</p>
+      ${banBad.length ? `<p class="banwarn">⚠ Pas conforme à la banlist TCG : ${banBad.map(x => `${esc(label(x.c))} (${x.q}, max ${banMax(x.c)})`).join(' · ')}</p>` : ''}
       <div class="ydeckbar">
         <input type="search" id="ydQ" placeholder="Ajouter une carte : nom (français ou anglais) ou code…" value="${esc(st.deckQ)}">
         <div class="seg" id="ydView"><button data-v="all" aria-pressed="${st.deckView === 'all'}">Toutes</button><button data-v="miss" aria-pressed="${st.deckView === 'miss'}">Manquantes</button></div>
@@ -322,7 +334,7 @@
       </div>
       ${st.wishQ ? `<div class="yresults">${results.length ? results.map(c => resultHtml(c, `<button class="primary" data-y="wadd">+ Wishlist</button>`)).join('') : '<p class="hint">Aucune carte trouvée.</p>'}</div>` : ''}
       ${entries.length ? (gal() ? `<div class="gal">${entries.map(({ c, q, owned }) => `<div class="gcard own" data-id="${c.i}">
-          <button class="pic" data-y="card" aria-label="Détails de ${esc(label(c))}">${imgTag(c.i)}<span class="badge">×${q}</span></button>
+          <button class="pic" data-y="card" aria-label="Détails de ${esc(label(c))}">${imgTag(c.i)}${banIcon(c)}<span class="badge">×${q}</span></button>
           <div class="cap"><span class="num">${ownTxt(owned)}</span>${esc(label(c))}${priceTag(c.i, q)}</div>${wq(q)}</div>`).join('')}</div>`
         : entries.map(({ c, q, owned }) => `<div class="yrow" data-id="${c.i}">
           <button class="ypic" data-y="card">${imgTag(c.i)}</button>
@@ -370,6 +382,7 @@
             ${c.l !== '' ? `<dt>${/link/.test(c.t) ? 'Lien' : /xyz/.test(c.t) ? 'Rang' : 'Niveau'}</dt><dd>${c.l}</dd>` : ''}
             ${c.k !== '' ? `<dt>ATK / DEF</dt><dd>${c.k} / ${c.d === '' ? '—' : c.d}</dd>` : ''}
             <dt>Dans ta collection</dt><dd><b>${ownedOf(c.i)}</b></dd>
+            <dt>Banlist TCG</dt><dd>${c.b != null ? banTag(c) : 'Illimitée (3)'}</dd>
             ${c.cm ? `<dt>Prix Cardmarket</dt><dd><b class="price">${money(c.cm)}</b> <span class="hint">(prix de référence, toutes éditions)</span></dd>` : ''}</dl>
           <div class="actions" style="justify-content:flex-start">
             ${ds.length ? `<select id="ycDeck">${ds.map(([id, d]) => `<option value="${id}">${esc(d.name || 'Deck')}</option>`).join('')}</select><button data-y="toDeck">Ajouter au deck</button>` : ''}
