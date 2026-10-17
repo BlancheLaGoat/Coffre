@@ -260,7 +260,7 @@
     $('scanAutoWrap').hidden = m !== 'card' && m !== 'ygo' && m !== 'op';
     $('scanAuto').checked = App.data.settings.scanAuto !== false;
     $('scanTitle').textContent = m === 'card' ? 'Scanner des cartes FM' : m === 'ygo' ? 'Scanner des cartes Yu-Gi-Oh' : m === 'op' ? 'Scanner des cartes One Piece' : m === 'vinyl' ? 'Code-barres du vinyle' : 'QR code du PC';
-    Object.assign(yg, { busy: false, last: '', seen: 0, armed: true, missing: 0, hit: null, added: [], full: null, band: null });
+    Object.assign(yg, { busy: false, last: '', seen: 0, armed: true, missing: 0, hit: null, added: [], full: null, band: null, lastAdded: '' });
     cam.smooth = null; cam.lead = ''; cam.leadCount = 0; cam.armed = true; cam.lastAuto = ''; cam.added = [];
     msg(m === 'card' ? 'Place la carte dans le cadre, bien à plat. Flou ? Éloigne un peu le téléphone ou touche l\'image.' : m === 'vinyl' ? 'Vise le code-barres au dos de la pochette.' : m === 'ygo' ? (TextReader ? 'Place la carte dans le cadre : le code sous l\'illustration (ex. SGX1-FRA18) est lu tout seul. Flou ? Éloigne un peu le téléphone ou touche l\'image.' : 'La lecture du code n\'est pas disponible sur cet appareil.') : m === 'op' ? (TextReader ? 'Place la carte dans le cadre : le code en bas à droite (ex. OP01-001) est lu tout seul. Flou ? Éloigne un peu le téléphone ou touche l\'image.' : 'La lecture du code n\'est pas disponible sur cet appareil.') : 'Vise le QR code affiché dans les réglages de Coffre sur le PC.');
     layoutFrame();
@@ -498,20 +498,28 @@
       const res = await withTimeout(TextReader.read({ image: ycv.toDataURL('image/jpeg', 0.92).split(',')[1] }), 4000);
       if (mode !== m0) return;
       const t = Date.now();
-      if (pass === 1) yg.full = { res, t }; else yg.band = { res, t };
+      if (pass === 1) yg.full = { res, t, h: ycv.height }; else yg.band = { res, t };
       const fresh = x => x && t - x.t < 1600;
       const full = fresh(yg.full) ? yg.full.res : null, band = fresh(yg.band) ? yg.band.res : null;
-      const merged = { text: [band && band.text, full && full.text].filter(Boolean).join('\n'), lines: (full && full.lines) || [] };
+      const merged = { text: [band && band.text, full && full.text].filter(Boolean).join('\n'), lines: (full && full.lines) || [], h: full ? yg.full.h : 0 };
       onYgoHit(Y.lookupScan(merged));
     } catch (e) { /* lecture ratée : on réessaie à la prochaine image */ }
     finally { yg.busy = false; }
   }
 
+  // Ajout automatique, sans cartes fantômes :
+  //  - il faut lire deux fois de suite la même chose, et une lecture fiable (code confirmé par le nom, ou seul) ;
+  //  - une carte reconnue seulement par son nom, ou dont le nom ne colle pas au code, attend un toucher ;
+  //  - la même carte n'est pas rajoutée tant qu'elle reste devant l'appareil (il faut la retirer ~3 s).
   function onYgoHit(hit) {
     if (!hit) {
       yg.missing++;
       if (yg.missing >= 3) { yg.armed = true; yg.last = ''; yg.seen = 0; }   // carte retirée : prêt pour la suivante
-      if (!yg.hit) msg(mode === 'op' ? 'Vise la carte entière : le code en bas à droite (ex. OP01-001), bien net.' : 'Vise la carte entière : le code sous l\'illustration (ex. SGX1-FRA18) ou son nom en haut, bien net.');
+      if (yg.missing >= 10) {                                                  // retirée assez longtemps : on peut la rescanner
+        yg.lastAdded = '';
+        if (yg.hit) { yg.hit = null; $('scanCands').innerHTML = ''; }
+      }
+      if (!yg.hit) msg(mode === 'op' ? 'Vise la carte entière : le code en bas à droite (ex. OP01-001), bien net.' : 'Vise la carte entière : le code sous l\'illustration (ex. SGX1-FRA18) et son nom en haut, bien nets.');
       return;
     }
     yg.missing = 0;
@@ -519,10 +527,10 @@
     if (key === yg.last) yg.seen++; else { yg.last = key; yg.seen = 1; if (yg.hit && !yg.armed) yg.armed = true; }
     yg.hit = hit;
     renderYgo();
-    // Ajout automatique : même code lu deux fois de suite, une seule rareté possible
-    // (One Piece : la version normale est ajoutée d'office ; une parallèle se choisit en un toucher)
     const auto = hit.prints.length === 1 ? 0 : hit.auto;
-    if ($('scanAuto').checked && yg.armed && yg.seen >= 2 && auto != null) {
+    const reliable = mode === 'op' || hit.sure;
+    if ($('scanAuto').checked && yg.armed && yg.seen >= 2 && auto != null && reliable) {
+      if (key === yg.lastAdded) { msg('Même carte que la précédente : retire-la du cadre, ou touche sa version pour en ajouter un autre exemplaire.'); return; }
       yg.armed = false;
       addYgo(hit.prints[auto], true);
     }
@@ -544,7 +552,7 @@
         : `<span>${$('scanAuto').checked ? 'Ajout automatique de la version normale dès que le code est lu deux fois.' : 'Touche la version pour ajouter la carte.'}</span>`;
       return;
     }
-    msg(hit.fixed ? 'Code mal lu : carte corrigée d\'après son nom.' : hit.byName ? (hit.prints.length > 1 ? 'Carte reconnue par son nom : touche son extension, ou « Peu importe ».' : 'Carte reconnue par son nom.') : hit.prints.length > 1 ? 'Plusieurs raretés existent pour ce code : touche la bonne.' : '');
+    msg(hit.unsure ? 'Le nom lu ne correspond pas au code : vérifie que c\'est bien cette carte, puis touche sa rareté.' : hit.fixed ? 'Code mal lu : carte corrigée d\'après son nom (touche pour confirmer).' : hit.byName ? (hit.prints.length > 1 ? 'Carte reconnue par son nom : touche son extension, ou « Peu importe ».' : 'Carte reconnue par son nom.') : hit.prints.length > 1 ? 'Plusieurs raretés existent pour ce code : touche la bonne.' : '');
     $('scanCands').innerHTML = `<div class="ycand">${Y.imgTag(c.i)}<div><b>${esc(Y.label(c))}</b>${c.f ? `<span>${esc(c.n)}</span>` : ''}
       ${hit.byName && hit.prints.length > 1 ? '' : `<span class="code">${esc((hit.prints.length === 1 && hit.lcode) || Y.locCode(hit.prints[0].p[1], hit.lang || Y.curLang()))}</span> · `}${hit.lang ? `<span class="code">${esc(hit.lang)}</span> · ` : ''}${Y.ownedOf(c.i)} dans ta collection</div></div>
       <div class="ychoices">${hit.prints.slice(0, 10).map((x, i) => `<button class="primary" data-scan="yadd" data-i="${i}">+ ${hit.byName && hit.prints.length > 1 ? esc(Y.locCode(x.p[1], hit.lang || Y.curLang())) + ' ' : ''}${esc(x.p[3] || x.p[2])}</button>`).join('')}
@@ -562,6 +570,7 @@
     const lcode = mode === 'op' ? x.card.i : (h.prints && h.prints.length === 1 && h.lcode) || Y.locCode(x.p[1], lang);
     const q = Y.addPrinting(x.ci, x.pi, 1, lang, lcode);
     yg.added.push({ ...x, lang, lcode });
+    yg.lastAdded = yg.hit ? yg.hit.prints.map(p => p.ci + ':' + p.pi).join(',') : '';
     Y.render();
     if (navigator.vibrate) navigator.vibrate(auto ? [30, 40, 30] : 30);
     App.toast(`${Y.label(x.card)} (${lcode}) ajoutée · ×${q}`);

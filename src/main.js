@@ -208,9 +208,7 @@ async function handleSync(req, res) {
         let buf = await readBody(req, 20 * 1024 * 1024);
         if (asJson) buf = Buffer.from(String(JSON.parse(buf.toString('utf8')).data || ''), 'base64');
         if (!buf.length) return sendJson(res, 400, { error: 'image vide' });
-        ensureDirs();
-        fs.writeFileSync(p, buf);
-        return sendJson(res, 200, { ok: true });
+        return sendJson(res, 200, { ok: true });   // pochettes plus enregistrées (affichées depuis Discogs)
       }
     }
     sendJson(res, 404, { error: 'inconnu' });
@@ -234,6 +232,35 @@ async function syncInfo() {
   if (QRCode) { try { qr = await QRCode.toDataURL(payload, { margin: 1, width: 320, errorCorrectionLevel: 'M' }); } catch (e) { qr = ''; } }
   return { ips, port: SYNC_PORT, code: s.token.slice(0, 8).toUpperCase(), token: s.token, qr, lastSync: s.lastSync, running: !!(syncServer && syncServer.listening), error: syncError };
 }
+
+// ---------- Cache des images de cartes (plafonné) ----------
+// Les images Yu-Gi-Oh et One Piece sont gardées dans un petit cache : 200 Mo au total sur le PC.
+// Au-delà, les images vues le moins récemment (tous jeux confondus) sont effacées.
+// (YGOPRODeck interdit de recharger ses images sans arrêt, d'où ce cache.)
+const IMG_CACHE_MAX = 200 * 1024 * 1024;
+let trimTimer = null;
+function touchFile(file) { try { const t = new Date(); fs.utimesSync(file, t, t); } catch (e) { /* ignoré */ } }
+function trimCache(max = IMG_CACHE_MAX) {
+  try {
+    const files = [];
+    for (const dir of [YGO_IMG_DIR, OP_IMG_DIR]) {
+      if (!fs.existsSync(dir)) continue;
+      for (const n of fs.readdirSync(dir)) { const p = path.join(dir, n); const st = fs.statSync(p); files.push({ p, size: st.size, t: st.mtimeMs }); }
+    }
+    let total = files.reduce((a, f) => a + f.size, 0);
+    if (total <= max) return;
+    files.sort((a, b) => a.t - b.t);
+    for (const f of files) { if (total <= max * 0.9) break; try { fs.unlinkSync(f.p); total -= f.size; } catch (e) { /* ignoré */ } }
+  } catch (e) { /* ignoré */ }
+}
+function trimSoon() {
+  clearTimeout(trimTimer);
+  trimTimer = setTimeout(() => trimCache(), 2000);
+}
+function dirSize(dir) {
+  try { return fs.readdirSync(dir).reduce((a, n) => a + fs.statSync(path.join(dir, n)).size, 0); } catch (e) { return 0; }
+}
+function clearDir(dir) { try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) { /* ignoré */ } }
 
 // ---------- Base de cartes Yu-Gi-Oh ----------
 // Téléchargée depuis YGOPRODeck (gratuit), compactée puis gardée dans %AppData%\Coffre.
@@ -265,13 +292,14 @@ function ygoImage(id, big) {
   id = parseInt(id, 10);
   if (!id) return Promise.resolve('');
   const file = path.join(YGO_IMG_DIR, `${id}${big ? '-grand' : ''}.jpg`);
-  if (fs.existsSync(file)) return Promise.resolve(pathToFileURL(file).href);
+  if (fs.existsSync(file)) { touchFile(file); return Promise.resolve(pathToFileURL(file).href); }
   if (ygoImgJobs.has(file)) return ygoImgJobs.get(file);
   const job = (async () => {
     const res = await fetch(Core.ygoImgUrl(id, big), { headers: { 'User-Agent': USER_AGENT } });
     if (!res.ok) return '';
     fs.mkdirSync(YGO_IMG_DIR, { recursive: true });
     fs.writeFileSync(file, Buffer.from(await res.arrayBuffer()));
+    trimSoon();
     return pathToFileURL(file).href;
   })().catch(() => '').finally(() => ygoImgJobs.delete(file));
   ygoImgJobs.set(file, job);
@@ -306,13 +334,14 @@ function opImage(id) {
   id = String(id || '');
   if (!/^[A-Za-z0-9_-]{3,40}$/.test(id)) return Promise.resolve('');
   const file = path.join(OP_IMG_DIR, `${id}.jpg`);
-  if (fs.existsSync(file)) return Promise.resolve(pathToFileURL(file).href);
+  if (fs.existsSync(file)) { touchFile(file); return Promise.resolve(pathToFileURL(file).href); }
   if (opImgJobs.has(file)) return opImgJobs.get(file);
   const job = (async () => {
     const res = await fetch(Core.opImgUrl(id), { headers: { 'User-Agent': USER_AGENT } });
     if (!res.ok) return '';
     fs.mkdirSync(OP_IMG_DIR, { recursive: true });
     fs.writeFileSync(file, Buffer.from(await res.arrayBuffer()));
+    trimSoon();
     return pathToFileURL(file).href;
   })().catch(() => '').finally(() => opImgJobs.delete(file));
   opImgJobs.set(file, job);
@@ -384,25 +413,19 @@ ipcMain.handle('data:save', (_e, data) => saveFromRenderer(data));
 ipcMain.handle('vinyl:search', (_e, args) => vinylApi.search(args));
 ipcMain.handle('vinyl:details', (_e, args) => vinylApi.details(args));
 
-ipcMain.handle('cover:download', async (_e, url) => {
-  try { return await downloadCover(url); } catch (e) { return ''; }
-});
+// Les pochettes ne sont plus enregistrées : elles s'affichent depuis Discogs (adresse gardée dans le vinyle).
+ipcMain.handle('cover:download', async () => '');
 
-ipcMain.handle('cover:pick', async () => {
-  const r = await dialog.showOpenDialog(win, {
-    title: 'Choisir une pochette',
-    properties: ['openFile'],
-    filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'webp'] }]
-  });
-  if (r.canceled || !r.filePaths[0]) return '';
-  const src = r.filePaths[0];
-  ensureDirs();
-  const ext = path.extname(src).toLowerCase();
-  const name = coverName(['.jpg', '.jpeg', '.png', '.webp'].includes(ext) ? ext : '.jpg');
-  fs.copyFileSync(src, path.join(COVERS_DIR, name));
-  return name;
-});
+ipcMain.handle('cover:pick', async () => '');
 
+// Efface les anciennes pochettes enregistrées, sauf celles encore utilisées (en attente de leur adresse Discogs)
+ipcMain.handle('cover:purge', (_e, keep) => {
+  const k = new Set(Array.isArray(keep) ? keep : []);
+  for (const n of listCovers()) if (!k.has(n)) { try { fs.unlinkSync(path.join(COVERS_DIR, n)); } catch (e) { /* ignoré */ } }
+  return true;
+});
+ipcMain.handle('imgcache:info', () => ({ bytes: dirSize(YGO_IMG_DIR) + dirSize(OP_IMG_DIR) + dirSize(COVERS_DIR), max: IMG_CACHE_MAX }));
+ipcMain.handle('imgcache:clear', () => { clearDir(YGO_IMG_DIR); clearDir(OP_IMG_DIR); return true; });
 ipcMain.handle('cover:delete', (_e, name) => {
   const p = safeCoverPath(name);
   try { if (p && fs.existsSync(p)) fs.unlinkSync(p); } catch (e) { /* ignoré */ }
@@ -418,11 +441,7 @@ ipcMain.handle('backup:export', async (_e, data) => {
     filters: [{ name: 'Sauvegarde Coffre', extensions: ['coffre'] }]
   });
   if (r.canceled || !r.filePath) return { ok: false };
-  const covers = {};
-  for (const v of Object.values(data.vinyls || {})) {
-    const p = safeCoverPath(v.cover);
-    if (p && fs.existsSync(p)) covers[path.basename(p)] = fs.readFileSync(p).toString('base64');
-  }
+  const covers = {};   // les pochettes ne sont plus dans la sauvegarde (affichées depuis Discogs)
   const clean = { ...data, settings: { ...data.settings, discogsSecret: '', discogsToken: '' } };
   fs.writeFileSync(r.filePath, JSON.stringify({ format: 'coffre-backup', version: 1, data: clean, covers }));
   return { ok: true, path: r.filePath };
@@ -439,10 +458,6 @@ ipcMain.handle('backup:import', async () => {
   const data = b.format === 'coffre-backup' ? b.data : b;
   if (!data || typeof data !== 'object' || (!data.fm && !data.vinyls && !data.ygo && !data.decks && !data.op)) throw new Error("Ce fichier n'est pas une sauvegarde Coffre.");
   ensureDirs();
-  for (const [name, b64] of Object.entries(b.covers || {})) {
-    const p = safeCoverPath(name);
-    if (p) fs.writeFileSync(p, Buffer.from(b64, 'base64'));
-  }
   // Une restauration remet les entrées de la sauvegarde au premier plan.
   const now = Date.now();
   const restamp = m => Object.fromEntries(Object.entries(m || {}).map(([k, v]) => [k, { ...v, mt: now }]));
@@ -482,6 +497,8 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
   app.whenReady().then(() => {
+    // Caches d'images ramenés sous la limite (anciens caches plus gros)
+    setTimeout(() => trimCache(), 5000);
     ensureDirs();
     createWindow();
     startSyncServer();

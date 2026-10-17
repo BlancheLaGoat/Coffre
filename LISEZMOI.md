@@ -2,7 +2,9 @@
 
 Appli Windows **et Android** pour gérer ta collection : les 722 cartes de **Yu-Gi-Oh! Forbidden Memories** (avec images), **toutes les cartes Yu-Gi-Oh** (collection par extension et decks) et tes **vinyles** (recherche Discogs avec pochettes et prix du marché). Sur le téléphone, l'appareil photo reconnaît les cartes et lit le code-barres des vinyles. Le PC et le téléphone se synchronisent sur le Wi-Fi.
 
-Tes données sont rangées dans `%AppData%\Coffre` (fichier `coffre.json` + dossier `pochettes`). Les mises à jour de l'appli n'y touchent jamais.
+Tes données sont rangées dans `%AppData%\Coffre` (fichier `coffre.json`). Les mises à jour de l'appli n'y touchent jamais.
+
+**Images** : les pochettes de vinyles ne sont jamais enregistrées, elles s'affichent depuis Discogs. Les images des cartes Yu-Gi-Oh et One Piece sont gardées dans un cache limité à **200 Mo sur le PC** et **50 Mo sur le téléphone** (les deux jeux ensemble) : au-delà, celles vues le moins récemment s'effacent toutes seules. YGOPRODeck interdit de recharger ses images sans arrêt, d'où ce petit cache. ⚙ Réglages → Images montre la place prise et permet de le vider.
 
 ---
 
@@ -103,6 +105,7 @@ La première fois, l'onglet **Yu-Gi-Oh** propose de **télécharger la base de c
 - **Wishlist** : les cartes que tu veux en dehors de tes decks. Ajoute-les depuis l'onglet Wishlist (recherche) ou depuis la fiche d'une carte (« ☆ Ajouter à la wishlist »), puis **Copier la liste** pour Cardmarket.
 - **Wishlist Cardmarket** : dans un deck, **Copier la liste** copie les cartes manquantes au format Cardmarket (`2 Dark Magician`, une carte par ligne). Sur Cardmarket : Wishlist → ajouter des cartes → colle la liste.
 
+- **Texte des cartes** : la fiche d'une carte affiche son texte (en français quand YGOPRODeck l'a, sinon en anglais).
 - **Prix** : la valeur de ta collection, le prix de chaque deck (et de ce qu'il te manque) et le coût des manquantes d'une extension utilisent le prix de référence Cardmarket de chaque carte, toutes éditions confondues (données YGOPRODeck, mises à jour chaque semaine). C'est une estimation : une rareté chère peut valoir bien plus.
 
 Tout se synchronise entre le PC et le téléphone, comme le reste.
@@ -117,6 +120,7 @@ L'onglet **One Piece** marche comme celui de Yu-Gi-Oh. La première fois, il pro
 - **Compléter une extension** : dans « Ajouter des cartes », tape son nom (« Romance Dawn ») ou son code (« OP-05 », « ST-01 »). Progression, filtre par rareté/version, **Manquantes** et **Copier les manquantes**.
 - **Decks** : un Leader + 50 cartes, même celles que tu n'as pas. **Manquantes** et **Copier la liste** au format Cardmarket One Piece (`2x Roronoa Zoro OP01-025`).
 - **Wishlist** : comme pour Yu-Gi-Oh.
+- **Texte des cartes** : affiché sous l'image dans la fiche (en anglais).
 - **Scan (téléphone)** : 📷 **Scanner des cartes** lit le code en bas à droite de la carte. La version normale est ajoutée toute seule ; pour une parallèle, touche **Annuler** puis la bonne version.
 - **Prix** : prix du marché **TCGplayer** (États-Unis), en **dollars**, par version (une parallèle coûte souvent bien plus). Cardmarket ne donne pas ses prix One Piece à des applis gratuites : c'est une estimation.
 
@@ -128,4 +132,4 @@ L'onglet **One Piece** marche comme celui de Yu-Gi-Oh. La première fois, il pro
 
 ## Sauvegarde
 
-⚙ **Réglages → Exporter une sauvegarde** crée un fichier `.coffre` qui contient tout (cartes, vinyles, pochettes). **Importer une sauvegarde** le recharge, sur ce PC ou un autre. Sur le téléphone, l'export arrive dans le dossier **Documents**.
+⚙ **Réglages → Exporter une sauvegarde** crée un fichier `.coffre` qui contient tout (cartes, decks, vinyles ; les images restent en ligne). **Importer une sauvegarde** le recharge, sur ce PC ou un autre. Sur le téléphone, l'export arrive dans le dossier **Documents**.

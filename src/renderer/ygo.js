@@ -22,7 +22,7 @@
     render();
     // Mise à jour discrète toutes les deux semaines (nouvelles extensions)
     // Mise à jour discrète (nouvelles cartes, prix Cardmarket) chaque semaine, ou si la base est d'un ancien format
-    if (st.db && (st.db.v !== 2 || now() - (st.db.at || 0) > 7 * 864e5)) refreshDb(true);
+    if (st.db && (st.db.v !== 3 || now() - (st.db.at || 0) > 7 * 864e5)) refreshDb(true);
   }
   async function refreshDb(silent) {
     if (st.loading) return;
@@ -103,13 +103,13 @@
   const priceOf = id => { const c = card(id); return (c && c.cm) || 0; };
   const money = v => eur.format(v || 0);
   const priceTag = (id, qty = 1) => { const p = priceOf(id); return p ? `<span class="price">${money(p * qty)}</span>` : ''; };
-  const pricesDate = () => st.db && st.db.v === 2 ? new Date(st.db.at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }) : '';
+  const pricesDate = () => st.db && st.db.v >= 2 ? new Date(st.db.at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }) : '';
 
   function stats() {
     let cards = 0, copies = 0, value = 0; const ids = new Set();
     for (const e of Object.values(col())) if (e && e.qty > 0) { copies += e.qty; ids.add(e.id); value += priceOf(e.id) * e.qty; }
     cards = ids.size;
-    $('ygoStats').innerHTML = `<b>${cards}</b> cartes · ${copies} exemplaires${st.db && st.db.v === 2 ? ` · valeur ≈ <b class="price">${money(value)}</b> <span class="hint" title="Prix de référence Cardmarket de chaque carte (toutes éditions), mis à jour chaque semaine">(Cardmarket, ${pricesDate()})</span>` : ''} · ${liveDecks().length} decks${wishCount() ? ` · ${wishCount()} en wishlist` : ''}`;
+    $('ygoStats').innerHTML = `<b>${cards}</b> cartes · ${copies} exemplaires${st.db && st.db.v >= 2 ? ` · valeur ≈ <b class="price">${money(value)}</b> <span class="hint" title="Prix de référence Cardmarket de chaque carte (toutes éditions), mis à jour chaque semaine">(Cardmarket, ${pricesDate()})</span>` : ''} · ${liveDecks().length} decks${wishCount() ? ` · ${wishCount()} en wishlist` : ''}`;
     $('tabYgoCount').textContent = cards;
   }
 
@@ -353,7 +353,7 @@
       <div class="sheet-head"><div><h3>${esc(label(c))}</h3>${sub(c) ? `<div class="meta">${esc(sub(c))}</div>` : ''}</div>
         <button data-y="${cardBack ? 'back' : 'close'}">${cardBack ? '← Retour' : 'Fermer'}</button></div>
       <div class="split">
-        <div>${imgTag(c.i, 'big')}</div>
+        <div class="ycol">${imgTag(c.i, 'big')}${c.x ? `<div class="ytext">${esc(c.x)}</div>` : (st.db.v < 3 ? `<p class="hint">Le texte de la carte arrive à la prochaine mise à jour de la base.</p>` : '')}</div>
         <div style="display:flex;flex-direction:column;gap:12px;min-width:0">
           <dl class="kv"><dt>Type</dt><dd>${esc(c.ty)}${c.r ? ' · ' + esc(c.r) : ''}${c.a ? ' · ' + esc(c.a) : ''}</dd>
             ${c.l !== '' ? `<dt>${/link/.test(c.t) ? 'Lien' : /xyz/.test(c.t) ? 'Rang' : 'Niveau'}</dt><dd>${c.l}</dd>` : ''}
@@ -660,22 +660,36 @@
     }
     return prev[b.length];
   }
-  // Nom de la carte lu en haut (français ou anglais), avec une petite tolérance aux erreurs de lecture
-  function findByName(lines, onlyIn) {
+  // Lignes lues dans le haut de la carte (là où est le nom). Sans position connue, les premières lignes.
+  function topLines(lines, h) {
+    const all = (lines || []).slice().sort((a, b) => (a.y || 0) - (b.y || 0));
+    const top = h ? all.filter(l => (l.y || 0) < h * 0.3) : all.slice(0, 5);
+    return top.map(l => normName(l.text)).filter(t => t.replace(/[^a-z]/g, '').length >= 5).slice(0, 5);
+  }
+  // Nom de la carte lu en haut (français ou anglais), avec une petite tolérance aux erreurs de lecture.
+  // Les noms très courts (moins de 5 lettres) ne suffisent pas : un mot lu ailleurs (« PAGE » d'un clavier) donnait « Péage ».
+  function findByName(cand, onlyIn) {
     const ni = nameIndex();
-    const cand = (lines || []).slice().sort((a, b) => (a.y || 0) - (b.y || 0))
-      .map(l => normName(l.text)).filter(t => t.replace(/[^a-z]/g, '').length >= 4).slice(0, 5);
     let best = null;
     for (const t of cand) {
-      if (ni.map.has(t)) return ni.map.get(t);
-      const max = Math.max(1, Math.floor(t.length * 0.15));
+      if (ni.map.has(t) && (!onlyIn || onlyIn.has(ni.map.get(t)))) return ni.map.get(t);
+      const max = Math.max(1, Math.floor(t.length * 0.12));
       for (const [k, ci] of ni.list) {
-        if (onlyIn && !onlyIn.has(ci)) continue;
+        if (k.length < 5 || (onlyIn && !onlyIn.has(ci))) continue;
         const d = editDistance(t, k, max);
         if (d <= max && (!best || d / k.length < best.score)) best = { ci, score: d / k.length };
       }
     }
     return best ? best.ci : null;
+  }
+  // Le nom lu ressemble-t-il à celui de cette carte ? (tolérance plus large : on vérifie, on ne cherche pas)
+  function nameMatches(cand, c) {
+    const names = [c.n, c.f].map(normName).filter(Boolean);
+    return cand.some(t => names.some(k => {
+      if (k.includes(t) || t.includes(k)) return true;
+      const max = Math.max(2, Math.floor(k.length * 0.3));
+      return editDistance(t, k, max) <= max;
+    }));
   }
   // Ce que le scan a lu → impressions possibles. D'abord le code exact, sinon le nom de la carte.
   // Langue d'après le code imprimé : DUAD-FR053 → FR, LDD-F092 → FR
@@ -684,35 +698,40 @@
     const m = String(code || '').match(/^[A-Z0-9]+-(EN|FR|DE|IT|SP|ES|PT|E|F|G|I|S|P)(?=[A-Z]?\d)/);
     return m ? LANG_OF[m[1]] : '';
   }
+  // Résultat : { card, prints, code, lang, lcode, byName?, fixed?, unsure?, sure? }
+  //  sure   : assez fiable pour l'ajout automatique
+  //  unsure : le code est lu mais le nom lu en haut ne correspond pas → à confirmer d'un toucher
   function lookupScan(res) {
     if (!st.idx) return null;
     const codes = Core.ygoCodesInText(res && res.text);
-    const lines = res && res.lines;
+    const cand = topLines(res && res.lines, res && res.h);
     const prefixes = codes.map(x => x.split('-')[0]).map(x => PREFIX_ALIAS[x] || x);
     const lang = codes.map(langOfCode).find(Boolean) || '';
     const hits = lookupCodes(codes);
     if (hits.length) {
       const hit = hits[0];
       hit.lang = langOfCode(hit.code) || lang; hit.lcode = hit.code;
-      // Vérification : le nom lu doit être celui de la carte du code (un chiffre mal lu donne une autre carte)
+      const c0 = hit.prints[0].card;
+      if (!cand.length || nameMatches(cand, c0)) { hit.sure = true; return hit; }
+      // Le nom lu n'est pas celui du code : un chiffre a sans doute été mal lu. On cherche la carte de l'extension qui porte ce nom.
       const px = hit.prints[0].p[1].split('-')[0];
-      const inSet = nameIndex().byPrefix.get(px);
-      const ci = findByName(lines, inSet);
+      const ci = findByName(cand, nameIndex().byPrefix.get(px));
       if (ci != null && ci !== hit.prints[0].ci) {
         const c = st.db.cards[ci];
         const prints = c.p.map((p, pi) => ({ ci, pi, card: c, p })).filter(x => x.p[1].split('-')[0] === px);
         if (prints.length) return { code: '', byName: true, fixed: true, card: c, prints, lang: hit.lang, lcode: '' };
       }
+      hit.unsure = true;
       return hit;
     }
-    const ci = findByName(lines);
+    const ci = findByName(cand);
     if (ci == null) return null;
     const c = st.db.cards[ci];
     let prints = c.p.map((p, pi) => ({ ci, pi, card: c, p }));
     // Le préfixe lu (ex. LDD → LOB) indique l'extension, même si le numéro diffère
     const inSet = prints.filter(x => prefixes.includes(x.p[1].split('-')[0]));
     if (inSet.length) prints = inSet;
-    return { code: '', byName: true, card: c, prints, lang, lcode: inSet.length && codes.length ? codes[0] : '' };
+    return { code: '', byName: true, sure: !!inSet.length, card: c, prints, lang, lcode: inSet.length && codes.length ? codes[0] : '' };
   }
 
   window.CoffreYgo = {

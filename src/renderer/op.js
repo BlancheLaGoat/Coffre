@@ -20,7 +20,7 @@
     try { setDb(await window.coffre.opDb()); } catch (e) { /* pas encore téléchargée */ }
     render();
     // Mise à jour discrète (nouvelles cartes, prix) chaque semaine
-    if (st.db && (st.db.v !== 1 || now() - (st.db.at || 0) > 7 * 864e5)) refreshDb(true);
+    if (st.db && (st.db.v !== 2 || now() - (st.db.at || 0) > 7 * 864e5)) refreshDb(true);
   }
   async function refreshDb(silent) {
     if (st.loading) return;
@@ -363,7 +363,7 @@
       <div class="sheet-head"><div><h3>${esc(label(c))}</h3><div class="meta">${esc(c.i)}</div></div>
         <button data-o="${cardBack ? 'back' : 'close'}">${cardBack ? '← Retour' : 'Fermer'}</button></div>
       <div class="split">
-        <div>${imgTag(c.im, 'big')}</div>
+        <div class="ycol">${imgTag(c.im, 'big')}${c.x ? `<div class="ytext">${esc(c.x)}</div>` : ''}</div>
         <div style="display:flex;flex-direction:column;gap:12px;min-width:0">
           <dl class="kv"><dt>Catégorie</dt><dd>${esc(catFr(c))}${c.co ? ' · ' + esc(colorFr(c)) : ''}</dd>
             ${c.c !== '' ? `<dt>Coût</dt><dd>${esc(c.c)}</dd>` : ''}

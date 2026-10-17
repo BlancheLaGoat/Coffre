@@ -228,10 +228,18 @@ $('fmType').addEventListener('change', e => { fmF.t = e.target.value; renderFm()
 // ============================================================
 //  VINYLES — collection
 // ============================================================
+// Pochette affichée depuis Discogs (adresse « img ») ; rien n'est enregistré sur l'appareil.
+// (« cover » = ancienne pochette enregistrée, gardée seulement le temps de retrouver son adresse en ligne)
 function coverHtml(v, cls = 'cover') {
-  const src = v.cover ? coverUrl(v.cover) : '';
+  const src = v.img || (v.cover ? coverUrl(v.cover) : '');
   return src ? `<img class="${cls}" src="${src}" alt="" loading="lazy">` : `<div class="${cls} ph"></div>`;
 }
+
+// Pochette introuvable (hors ligne, lien expiré) : cadre vide à la place
+document.addEventListener('error', e => {
+  const img = e.target;
+  if (img && img.tagName === 'IMG' && img.classList.contains('cover') && !img.dataset.ph) { const d = document.createElement('div'); d.className = img.className + ' ph'; img.replaceWith(d); }
+}, true);
 
 function renderVinyls() {
   const all = liveVinyls();
@@ -304,7 +312,7 @@ async function refreshPrices(onlyStale) {
       if (btn) btn.textContent = `Prix… ${priceRun.done + 1}/${priceRun.total}`;
       try {
         const d = await window.coffre.details({ source: 'discogs', id: v.sourceId, auth: discogsAuth() });
-        data.vinyls[id] = { ...data.vinyls[id], dp: d.dp, dpN: d.dpN, dpAt: d.dpAt || Date.now(), mt: now() };
+        data.vinyls[id] = { ...data.vinyls[id], dp: d.dp, dpN: d.dpN, dpAt: d.dpAt || Date.now(), ...(!v.img && d.cover ? { img: d.cover, cover: '' } : {}), mt: now() };
         scheduleSave(); renderVinyls();
       } catch (e) { if (/limite/i.test(String(e.message))) await new Promise(r => setTimeout(r, 10000)); }
       priceRun.done++;
@@ -316,6 +324,31 @@ async function refreshPrices(onlyStale) {
     if (btn) btn.textContent = 'Actualiser les prix';
   }
 }
+
+// Anciennes pochettes enregistrées sur l'appareil → adresse en ligne (Discogs / Cover Art Archive), puis effacées.
+let coverRun = false;
+async function migrateCovers() {
+  if (coverRun) return; coverRun = true;
+  try {
+    for (const [id, v] of liveVinyls()) {
+      if (!v.cover || v.img) continue;
+      let img = '';
+      if (v.source === 'discogs' && v.sourceId) {
+        if (!hasDiscogs()) continue;   // il faut la clé Discogs pour retrouver l'adresse : on réessaiera
+        try { img = (await window.coffre.details({ source: 'discogs', id: v.sourceId, auth: discogsAuth() })).cover || ''; } catch (e) { continue; }
+        await new Promise(r => setTimeout(r, 1100));
+      } else if (v.source === 'musicbrainz' && v.sourceId) {
+        img = `https://coverartarchive.org/release/${encodeURIComponent(v.sourceId)}/front-500`;
+      }
+      const cur = data.vinyls[id]; if (!cur || cur.deleted) continue;
+      data.vinyls[id] = { ...cur, img, cover: '', mt: now() };
+      scheduleSave(); renderVinyls();
+    }
+    // Plus aucune pochette enregistrée, sauf celles qui attendent encore leur adresse
+    const keep = liveVinyls().map(([, v]) => v.cover).filter(Boolean);
+    if (window.coffre.purgeCovers) await window.coffre.purgeCovers(keep);
+  } finally { coverRun = false; }
+}
 $('vinPriceBtn').addEventListener('click', () => refreshPrices(false));
 
 // Fiche d'un vinyle de la collection
@@ -326,7 +359,7 @@ function openVinyl(id) {
     <div class="sheet-head"><div><h3>${esc(v.title)}</h3><div class="meta">${esc(v.artist)}</div></div>
       <button class="close" data-act="close">Fermer</button></div>
     <div class="split" data-id="${esc(id)}">
-      <div style="display:flex;flex-direction:column;gap:8px">${coverHtml(v)}<button data-act="cover">Changer la pochette</button></div>
+      <div style="display:flex;flex-direction:column;gap:8px">${coverHtml(v)}</div>
       <div style="display:flex;flex-direction:column;gap:12px;min-width:0">
         ${vinylInfoHtml(v)}
         <div class="form">
@@ -352,12 +385,6 @@ $('sheet').addEventListener('click', async e => {
   switch (b.dataset.act) {
     case 'close': return closeModal();
     case 'src': return window.coffre.openExternal(v.url);
-    case 'cover': {
-      const name = await window.coffre.pickCover();
-      if (!name) return;
-      if (v.cover) window.coffre.deleteCover(v.cover);
-      v.cover = name; v.mt = now(); scheduleSave(); renderVinyls(); openVinyl(id); return;
-    }
     case 'ask':
       $('delZone').innerHTML = `<span class="hint">Retirer ce disque ?</span> <button class="danger" data-act="del">Oui, retirer</button> <button data-act="nodel">Non</button>`; return;
     case 'nodel':
@@ -492,9 +519,8 @@ async function openRelease(r) {
 async function addRelease() {
   const r = JSON.parse($('sheet').dataset.release);
   const btn = $('sheet').querySelector('[data-act=add]');
-  btn.disabled = true; $('aMsg').textContent = 'Téléchargement de la pochette…';
-  let cover = await window.coffre.downloadCover(r.cover || r.thumb);
-  if (!cover && r.thumb && r.thumb !== r.cover) cover = await window.coffre.downloadCover(r.thumb);
+  btn.disabled = true;
+  const img = r.cover || r.thumb || '';
   const id = uid();
   data.vinyls[id] = {
     source: r.source, sourceId: r.id, url: r.url || '',
@@ -502,11 +528,11 @@ async function addRelease() {
     label: r.label || '', catno: r.catno || '', format: r.format || '',
     genres: r.genres || [], tracklist: r.tracklist || [],
     status: $('aStatus').value, grade: $('aGrade').value, price: $('aPrice').value.trim(), note: $('aNote').value.trim(),
-    cover, added: now(), mt: now(),
+    img, added: now(), mt: now(),
     ...(r.dpAt ? { dp: r.dp, dpN: r.dpN, dpAt: r.dpAt } : {})
   };
   scheduleSave(); renderVinyls();
-  $('aMsg').textContent = cover ? 'Ajouté au coffre.' : 'Ajouté au coffre (sans pochette, tu peux en choisir une dans sa fiche).';
+  $('aMsg').textContent = 'Ajouté au coffre.';
   setTimeout(() => { if (modalKind === 'release') backToSearch(); }, 700);
 }
 
@@ -531,14 +557,12 @@ $('vinFindBtn').addEventListener('click', () => { search.rerank = null; search.h
 // ============================================================
 //  VINYLES — ajout à la main
 // ============================================================
-let manualCover = '';
 function openManual() {
-  modalKind = 'manual'; manualCover = '';
+  modalKind = 'manual';
   openModal(`
     <div class="sheet-head"><h3>Ajouter un vinyle à la main</h3><button class="close" data-act="close">Fermer</button></div>
-    <p class="hint">Pour un pressage introuvable en ligne. Tu peux mettre une photo de ta pochette.</p>
-    <div class="split">
-      <div style="display:flex;flex-direction:column;gap:8px"><div id="mCover"><div class="cover ph"></div></div><button data-act="pick">Choisir une pochette</button></div>
+    <p class="hint">Pour un pressage introuvable en ligne (il n'aura pas de pochette).</p>
+    <div>
       <form class="form" id="mForm">
         <label class="f">Artiste<input id="mArtist" required autofocus></label>
         <label class="f">Album<input id="mTitle" required></label>
@@ -562,21 +586,15 @@ function openManual() {
       artist: $('mArtist').value.trim(), title: $('mTitle').value.trim(), year: $('mYear').value.trim(),
       label: $('mLabel').value.trim(), catno: $('mCatno').value.trim(), format: $('mFormat').value.trim(), country: $('mCountry').value.trim(),
       genres: [], tracklist: [], status: $('mStatus').value, grade: $('mGrade').value, price: $('mPrice').value.trim(), note: $('mNote').value.trim(),
-      cover: manualCover, added: now(), mt: now()
+      added: now(), mt: now()
     };
-    manualCover = '';
     scheduleSave(); renderVinyls(); closeModal();
   });
 }
 $('sheet').addEventListener('click', async e => {
   if (modalKind !== 'manual') return;
   const b = e.target.closest('[data-act]'); if (!b) return;
-  if (b.dataset.act === 'close') { if (manualCover) window.coffre.deleteCover(manualCover); manualCover = ''; return closeModal(); }
-  if (b.dataset.act === 'pick') {
-    const name = await window.coffre.pickCover(); if (!name) return;
-    if (manualCover) window.coffre.deleteCover(manualCover);
-    manualCover = name; $('mCover').innerHTML = `<img class="cover" src="${coverUrl(name)}" alt="">`;
-  }
+  if (b.dataset.act === 'close') return closeModal();
 });
 $('vinManualBtn').addEventListener('click', openManual);
 
@@ -621,13 +639,22 @@ function openSettings() {
       <button data-act="import">Importer une sauvegarde</button>
       <button data-act="folder" class="desktop-only">Ouvrir le dossier des données</button>
     </div>
-    <p class="hint" id="stMsg">L'export contient tes cartes, tes vinyles et toutes les pochettes dans un seul fichier.</p>
+    <p class="hint" id="stMsg">L'export contient tes cartes, tes decks et tes vinyles dans un seul fichier (les pochettes et images restent en ligne).</p>
+    <h3>Images</h3>
+    <div class="actions" style="justify-content:flex-start"><span id="stImg" class="hint">…</span><button data-act="imgClear">Vider les images des cartes</button></div>
+    <p class="hint">Les pochettes de vinyles s'affichent depuis Discogs et ne sont pas enregistrées. Les images Yu-Gi-Oh et One Piece sont gardées dans un cache limité (200 Mo sur PC, 50 Mo sur téléphone ; YGOPRODeck interdit de les recharger sans arrêt) : au-delà, les plus anciennes s'effacent toutes seules.</p>
     <h3>Application</h3>
     <div class="actions" style="justify-content:flex-start"><span>Coffre version ${esc(info.version)}</span>
       <button data-act="check">Chercher une mise à jour</button>
       ${updateState.status === 'ready' ? `<button class="primary" data-act="install">${info.platform === 'mobile' ? 'Télécharger la mise à jour' : 'Redémarrer et mettre à jour'}</button>` : ''}</div>
     <p class="hint" id="stUpd">${esc(updateLabel())}</p>`, 'vinyl');
   loadPhoneSection();
+  loadImgInfo();
+}
+const mo = b => (b / 1048576).toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' Mo';
+async function loadImgInfo() {
+  if (!window.coffre.imgCacheInfo || !$('stImg')) return;
+  try { const r = await window.coffre.imgCacheInfo(); if ($('stImg')) $('stImg').textContent = `Images enregistrées : ${mo(r.bytes)} (max ${mo(r.max)})`; } catch (e) { /* rien */ }
 }
 
 // ---------- Téléphone (appli Android) ----------
@@ -691,6 +718,7 @@ $('sheet').addEventListener('click', async e => {
     case 'check': { const r = await window.coffre.checkUpdate(); updateState = r.status === 'checking' ? { status: 'checking' } : r; $('stUpd').textContent = updateLabel(); return; }
     case 'install': return window.coffre.installUpdate();
     case 'phoneReset': await window.coffre.syncReset(); return loadPhoneSection();
+    case 'imgClear': if (window.coffre.imgCacheClear) await window.coffre.imgCacheClear(); return loadImgInfo();
     default: if (ext.settingsClick) return ext.settingsClick(b.dataset.act, b);
   }
 });
@@ -807,7 +835,7 @@ window.CoffreApp = {
   renderAll();
   if (ext.ready) ext.ready();
   // Prix Discogs manquants ou vieux de plus d'une semaine, en arrière-plan
-  setTimeout(() => refreshPrices(true), 8000);
+  setTimeout(() => migrateCovers().then(() => refreshPrices(true)), 6000);
   window.coffreReady = true;
   document.dispatchEvent(new Event('coffre:ready'));
 })();

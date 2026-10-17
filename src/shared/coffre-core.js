@@ -105,6 +105,7 @@
   //           l: niveau/lien, k: ATK, d: DEF, im: [ids d'images], p: [[n° extension, code, rareté courte, rareté]] }
   function ygoCompact(en, fr, sets) {
     const frName = new Map(((fr && fr.data) || []).map(c => [c.id, c.name]));
+    const frDesc = new Map(((fr && fr.data) || []).map(c => [c.id, c.desc]));
     const info = new Map((Array.isArray(sets) ? sets : []).map(x => [x.set_name, x]));
     const setIdx = new Map(); const setList = [];
     const cards = [];
@@ -127,10 +128,12 @@
         k: c.atk != null ? c.atk : '', d: c.def != null ? c.def : '',
         im: (c.card_images || []).map(x => x.id), p,
         // Prix de référence Cardmarket de la carte (en €), toutes éditions confondues
-        cm: parseFloat(((c.card_prices || [])[0] || {}).cardmarket_price) || 0
+        cm: parseFloat(((c.card_prices || [])[0] || {}).cardmarket_price) || 0,
+        // Texte de la carte : en français si YGOPRODeck l'a, sinon en anglais
+        x: String(frDesc.get(c.id) || c.desc || '').trim()
       });
     }
-    return { v: 2, at: Date.now(), cards, sets: setList };
+    return { v: 3, at: Date.now(), cards, sets: setList };
   }
 
   // Clé d'une impression dans la collection : « SGX1-ENA18|C »
@@ -227,7 +230,8 @@
       if (!c) {
         const num = v => v === null || v === undefined || v === '' ? '' : (isNaN(Number(v)) ? String(v) : Number(v));
         c = { i: code, n: name, t: String(r.card_type || ''), co: String(r.card_color || ''), c: num(r.card_cost), pw: num(r.card_power),
-          l: num(r.life), ct: num(r.counter_amount), at: String(r.attribute || ''), ty: String(r.sub_types || ''), p: [] };
+          l: num(r.life), ct: num(r.counter_amount), at: String(r.attribute || ''), ty: String(r.sub_types || ''),
+          x: [r.card_text, r.trigger_text || r.card_trigger].filter(Boolean).map(t => String(t).trim()).join('\n'), p: [] };
         byCode.set(code, c); cards.push(c);
       }
       if (!variant && c.n.length > name.length) c.n = name;
@@ -236,7 +240,7 @@
     }
     for (const c of cards) c.p.sort((a, b) => (a[3] ? 1 : 0) - (b[3] ? 1 : 0) || a[0] - b[0]);
     cards.sort((a, b) => a.i.localeCompare(b.i, 'en', { numeric: true }));
-    return { v: 1, at: Date.now(), cur: 'USD', cards, sets: setList };
+    return { v: 2, at: Date.now(), cur: 'USD', cards, sets: setList };
   }
   // Codes One Piece lus par l'appareil photo : OP01-001, ST10-005, EB01-012, PRB01-001, P-034
   function opCodesInText(text) {
