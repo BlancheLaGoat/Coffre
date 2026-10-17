@@ -733,17 +733,35 @@
     const lang = codes.map(langOfCode).find(Boolean) || '';
     const hits = lookupCodes(codes);
     if (hits.length) {
+      for (const h of hits) { h.lang = langOfCode(h.code) || lang; h.lcode = locCode(h.prints[0].p[1], h.lang || curLang()); }   // code de la base, dans la langue lue
+      // 1. Un des codes lus est celui de la carte dont on lit le nom (ou pas de nom lisible) : sûr
+      if (!cand.length) { hits[0].sure = true; return hits[0]; }
+      for (const h of hits) if (nameMatches(cand, h.prints[0].card)) { h.sure = true; return h; }
+      // Le nom lu n'est pas celui du code : un chiffre a sans doute été mal lu (RA05 lu RA03…).
       const hit = hits[0];
-      hit.lang = langOfCode(hit.code) || lang; hit.lcode = locCode(hit.prints[0].p[1], hit.lang || curLang());   // code de la base, dans la langue lue
-      const c0 = hit.prints[0].card;
-      if (!cand.length || nameMatches(cand, c0)) { hit.sure = true; return hit; }
-      // Le nom lu n'est pas celui du code : un chiffre a sans doute été mal lu. On cherche la carte de l'extension qui porte ce nom.
       const px = hit.prints[0].p[1].split('-')[0];
+      // 2. La carte de la même extension qui porte ce nom
       const ci = findByName(cand, nameIndex().byPrefix.get(px));
       if (ci != null && ci !== hit.prints[0].ci) {
         const c = st.db.cards[ci];
         const prints = c.p.map((p, pi) => ({ ci, pi, card: c, p })).filter(x => x.p[1].split('-')[0] === px);
         if (prints.length) return { code: '', byName: true, fixed: true, card: c, prints, lang: hit.lang, lcode: '' };
+      }
+      // 3. La carte qui porte ce nom, dans toute la base : on garde ses impressions dont le code ressemble au code lu
+      const cg = findByName(cand);
+      if (cg != null) {
+        const c = st.db.cards[cg];
+        const all = c.p.map((p, pi) => ({ ci: cg, pi, card: c, p }));
+        const read = codes.map(Core.ygoNormCode);
+        const dist = x => Math.min(...read.map(r => editDistance(r, Core.ygoNormCode(x.p[1]), 2)));
+        const near = all.filter(x => dist(x) <= 2);
+        if (near.length) {
+          const best = Math.min(...near.map(dist));
+          const top = near.filter(x => dist(x) === best);
+          // un seul caractère d'écart et une seule impression possible : assez sûr pour l'ajout automatique
+          return { code: '', byName: true, fixed: true, sure: best <= 1 && top.length === 1, card: c, prints: top, lang: hit.lang, lcode: '' };
+        }
+        return { code: '', byName: true, fixed: true, card: c, prints: all, lang: hit.lang, lcode: '' };
       }
       hit.unsure = true;
       return hit;
