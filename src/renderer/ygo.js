@@ -136,7 +136,7 @@
     return `<button class="primary" data-y="add">Ajouter des cartes</button>
       <input type="search" id="ygoQ" placeholder="Filtrer ma collection (nom, code)…" value="${esc(st.q)}">
       ${layoutSeg('ygoLayout')}
-      <select id="ygoSort" aria-label="Trier"><option value="name">Par nom</option><option value="added">Derniers ajouts</option><option value="code">Par code</option></select>`;
+      <select id="ygoSort" aria-label="Trier"><option value="name">Par nom</option><option value="added">Derniers ajouts</option><option value="code">Par code</option><option value="set">Par extension</option></select>`;
   }
 
   function render() {
@@ -165,7 +165,7 @@
 
   function collectionHtml() {
     const q = st.q.trim().toLowerCase();
-    const rows = [];
+    let rows = [];
     for (const [key, e] of Object.entries(col())) {
       if (!e || !(e.qty > 0)) continue;
       const c = card(e.id); if (!c) continue;
@@ -176,16 +176,51 @@
     if (!rows.length) {
       return `<div class="empty">${Object.keys(col()).length && q ? 'Aucune carte ne correspond.' : "Ta collection est vide. Touche « Ajouter des cartes » pour chercher dans toutes les cartes du jeu" + (App.info.platform === 'mobile' ? ', ou scanne le code imprimé sous l\'illustration (ex. SGX1-FRA18).' : '.')}</div>`;
     }
-    const by = { name: (a, b) => label(a.c).localeCompare(label(b.c), 'fr'), added: (a, b) => (b.e.mt || 0) - (a.e.mt || 0), code: (a, b) => (a.e.code || '~').localeCompare(b.e.code || '~') };
+    let head = '';
+    if (st.sort === 'set') {
+      // Par extension : d'abord la liste des extensions (la plus récente en haut), puis les cartes de celle choisie
+      if (st.colSet == null) return colSetsHtml(rows);
+      rows = rows.filter(r => st.colSet === -1 ? !r.p : r.p && r.p[0] === st.colSet);
+      const x = st.colSet === -1 ? ['Sans extension précise', '', ''] : st.db.sets[st.colSet] || ['', '', ''];
+      const pr = st.colSet === -1 ? null : setProgress(st.colSet);
+      head = `<div class="ycolset-head"><button data-y="colSetBack">← Extensions</button>
+        <div><b>${esc(x[0])}</b> ${x[1] ? `<span class="code">${esc(x[1])}</span>` : ''}
+        <div class="hint">${x[2] ? esc(x[2].replace(/-/g, '/')) + ' · ' : ''}${pr ? `${pr.own} / ${pr.total} cartes de l'extension · ` : ''}${rows.reduce((a, r) => a + r.e.qty, 0)} exemplaires</div></div>
+        ${st.colSet !== -1 ? `<button data-y="colSetOpen" title="Voir toute l'extension pour la compléter">Compléter l'extension</button>` : ''}</div>`;
+      if (!rows.length) return head + `<div class="empty">Aucune carte de cette extension ne correspond.</div>`;
+    }
+    const num = s => { const m = String(s || '').match(/(\d+)$/); return m ? Number(m[1]) : 0; };
+    const by = { name: (a, b) => label(a.c).localeCompare(label(b.c), 'fr'), added: (a, b) => (b.e.mt || 0) - (a.e.mt || 0), code: (a, b) => (a.e.code || '~').localeCompare(b.e.code || '~'),
+      set: (a, b) => num(a.e.code) - num(b.e.code) || label(a.c).localeCompare(label(b.c), 'fr') };
     rows.sort(by[st.sort] || by.name);
-    if (gal()) return `<div class="gal">` + rows.map(({ key, e, c, p }) => `<div class="gcard own" data-key="${esc(key)}" data-id="${c.i}">
+    if (gal()) return head + `<div class="gal">` + rows.map(({ key, e, c, p }) => `<div class="gcard own" data-key="${esc(key)}" data-id="${c.i}">
         <button class="pic" data-y="card" aria-label="Détails de ${esc(label(c))}">${imgTag(c.i)}${banIcon(c)}<span class="badge">×${e.qty}</span></button>
         <div class="cap"><span class="num">${esc(e.code ? (e.lcode || e.code) : 'toute extension')}${p ? ' · ' + esc(p[2]) : ''}${e.lang ? ' · ' + esc(e.lang) : ''}</span>${priceTag(c.i)}${esc(label(c))}</div>${App.qtyHtml(e.qty)}</div>`).join('') + `</div>`;
-    return rows.map(({ key, e, c, p }) => `<div class="yrow" data-key="${esc(key)}" data-id="${c.i}">
+    return head + rows.map(({ key, e, c, p }) => `<div class="yrow" data-key="${esc(key)}" data-id="${c.i}">
         <button class="ypic" data-y="card">${imgTag(c.i)}</button>
         <div class="yinfo"><button class="nm" data-y="card">${esc(label(c))}</button>${sub(c) ? `<span class="en">${esc(sub(c))}</span>` : ''}
           <span class="meta">${e.code ? `<span class="code">${esc(e.lcode || e.code)}</span>${e.lang ? `<span class="tag">${esc(e.lang)}</span>` : ''}<span>${esc(p ? p[3] : e.r)}</span><span>${esc(p ? setName(p[0]) : '')}</span>` : `<span class="tag">peu importe l'extension</span>`}${banTag(c)}${priceTag(c.i)}</span></div>
         ${App.qtyHtml(e.qty)}</div>`).join('');
+  }
+
+  // Liste des extensions dont tu as des cartes, de la plus récente à la plus ancienne
+  function colSetsHtml(rows) {
+    const m = new Map();
+    for (const r of rows) {
+      const i = r.p ? r.p[0] : -1;
+      const g = m.get(i) || { ids: new Set(), copies: 0 };
+      g.ids.add(r.p ? r.p[1] : r.c.i); g.copies += r.e.qty; m.set(i, g);
+    }
+    const date = i => i === -1 ? '' : (st.db.sets[i] || [])[2] || '';
+    const list = [...m.keys()].sort((a, b) => (a === -1) - (b === -1) || date(b).localeCompare(date(a)) || String((st.db.sets[a] || [''])[0]).localeCompare(String((st.db.sets[b] || [''])[0])));
+    return `<div class="ycolsets">` + list.map(i => {
+      const g = m.get(i), x = i === -1 ? null : st.db.sets[i] || ['?', '', ''];
+      const pr = i === -1 ? null : setProgress(i);
+      return `<button class="ycolset" data-y="colSet" data-set="${i}">
+        <span class="d">${x && x[2] ? esc(x[2].replace(/-/g, '/')) : '—'}${x && x[1] ? ` <span class="code">${esc(x[1])}</span>` : ''}</span>
+        <span class="n">${x ? esc(x[0]) : 'Sans extension précise'}</span>
+        <span class="m">${pr ? `<b>${pr.own}</b> / ${pr.total} cartes · ` : `${g.ids.size} carte${g.ids.size > 1 ? 's' : ''} · `}${g.copies} exemplaire${g.copies > 1 ? 's' : ''}${pr ? `<i class="bar"><i style="width:${pr.total ? pr.own / pr.total * 100 : 0}%"></i></i>` : ''}</span></button>`;
+    }).join('') + `</div>`;
   }
 
   // ---------- Decks ----------
@@ -587,7 +622,7 @@
     if (e.target.id === 'ywQ') { st.wishQ = e.target.value; clearTimeout(wishTimer); wishTimer = setTimeout(() => renderWish(true), 200); }
   });
   $('ygoTools').addEventListener('input', e => { if (e.target.id === 'ygoQ') { st.q = e.target.value; render(); } });
-  $('ygoTools').addEventListener('change', e => { if (e.target.id === 'ygoSort') { st.sort = e.target.value; render(); } });
+  $('ygoTools').addEventListener('change', e => { if (e.target.id === 'ygoSort') { st.sort = e.target.value; st.colSet = null; App.data.settings.ygoSort = st.sort; App.scheduleSave(); render(); } });
   $('ygoList').addEventListener('click', async e => {
     const b = e.target.closest('[data-y],[data-act],[data-v]'); if (!b) return;
     if (b.dataset.y === 'dl') return refreshDb();
@@ -608,6 +643,9 @@
       if (y === 'card' && row) return openCard(Number(row.dataset.id));
       return;
     }
+    if (b.dataset.y === 'colSet') { st.colSet = Number(b.dataset.set); render(); $('ygoList').scrollTop = 0; const sh = $('ygoList').closest('.shelf'); if (sh) sh.scrollTop = 0; return; }
+    if (b.dataset.y === 'colSetBack') { st.colSet = null; return render(); }
+    if (b.dataset.y === 'colSetOpen') { st.addQ = ''; st.addSet = st.colSet; st.setView = 'all'; st.setRarity = null; return openAdd(); }
     if (b.dataset.y === 'deck') return openDeck(b.dataset.deck);
     const row = b.closest('[data-id]');
     if (b.dataset.y === 'card' && row) return openCard(Number(row.dataset.id));
@@ -873,6 +911,6 @@
     if (n) App.scheduleSave();
     return n;
   }
-  const start = () => { st.view = ['decks', 'wish'].includes(App.data.settings.ygoView) ? App.data.settings.ygoView : 'col'; repairCodes(); render(); loadDb(); };
+  const start = () => { if (['name', 'added', 'code', 'set'].includes(App.data.settings.ygoSort)) st.sort = App.data.settings.ygoSort; st.view = ['decks', 'wish'].includes(App.data.settings.ygoView) ? App.data.settings.ygoView : 'col'; repairCodes(); render(); loadDb(); };
   if (window.coffreReady) start(); else document.addEventListener('coffre:ready', start, { once: true });
 })();

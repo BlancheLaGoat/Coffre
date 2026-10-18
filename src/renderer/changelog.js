@@ -2,6 +2,15 @@
 // et reprises comme notes de version sur GitHub). La plus récente en premier.
 window.COFFRE_CHANGELOG = [
 {
+ "v": "1.12.0",
+ "date": "18/10/2026",
+ "items": [
+  "Collection Yu-Gi-Oh : nouveau tri « Par extension ». Il liste les extensions dont tu as des cartes, de la plus récente à la plus ancienne, avec leur date de sortie, leur code et ta progression (ex. 2 / 103 cartes).",
+  "Touche une extension pour voir les cartes que tu en as, rangées par numéro. « Compléter l'extension » ouvre toutes ses cartes pour ajouter celles qui manquent.",
+  "Le tri choisi est gardé d'une ouverture à l'autre."
+ ]
+},
+{
  "v": "1.11.0",
  "date": "18/10/2026",
  "items": [
