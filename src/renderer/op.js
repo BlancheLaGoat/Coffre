@@ -76,16 +76,27 @@
   // data.op[clé] = { id: code de la carte, k: clé de la version, lang, qty, mt }
   // clé = « version » (anglais), « version|FR », « version|JP », ou « code|* » (peu importe la version)
   const col = () => App.data.op || (App.data.op = {});
-  function ownedOf(id) {
-    let n = 0;
-    for (const e of Object.values(col())) if (e && e.id === id) n += e.qty || 0;
-    return n;
+  // Index des quantités (par carte et par version), recalculé seulement après un changement
+  let qix = null;
+  function qIndex() {
+    if (qix && qix.src === col()) return qix;
+    const byId = new Map(), byKey = new Map();
+    for (const e of Object.values(col())) {
+      if (!e || !e.qty) continue;
+      byId.set(e.id, (byId.get(e.id) || 0) + e.qty);
+      if (e.k) byKey.set(e.k, (byKey.get(e.k) || 0) + e.qty);
+    }
+    qix = { src: col(), byId, byKey, prog: new Map() };
+    return qix;
   }
+  const dirty = () => { qix = null; };
+  function ownedOf(id) { return qIndex().byId.get(id) || 0; }
   function changeEntry(key, base, delta) {
     const e = { ...(col()[key] || base) };
     e.qty = Math.max(0, (e.qty || 0) + delta);
     e.mt = now();
     col()[key] = e;
+    dirty();
     App.scheduleSave();
     return e.qty;
   }
@@ -102,11 +113,7 @@
     return changeEntry(keyFor(p[1], lang), base, delta);
   }
   // Exemplaires d'une version, toutes langues confondues
-  function qtyAny(pkey) {
-    let n = 0;
-    for (const e of Object.values(col())) if (e && e.k === pkey) n += e.qty || 0;
-    return n;
-  }
+  function qtyAny(pkey) { return qIndex().byKey.get(pkey) || 0; }
   const qtyLang = pkey => { const e = col()[keyFor(pkey, curLang())]; return (e && e.qty) || 0; };
   function addGeneric(id, delta = 1) { return changeEntry(`${id}|*`, { id, k: '' }, delta); }
   const entryPrint = e => { if (!e || !e.k || !st.idx.byKey.has(e.k)) return null; const [ci, pi] = st.idx.byKey.get(e.k); return st.db.cards[ci].p[pi]; };
@@ -138,8 +145,16 @@
       <select id="opSort" aria-label="Trier"><option value="name">Par nom</option><option value="added">Derniers ajouts</option><option value="code">Par code</option><option value="price">Par prix (plus chères d'abord)</option></select>`;
   }
 
+  // Après un changement dans une fenêtre : on redessine la fenêtre, la liste derrière à la fermeture
+  let listDirty = false;
+  function afterChange() {
+    if (!$('modal').hidden) { stats(); listDirty = true; refreshOpenModal(); }
+    else render();
+  }
+  document.addEventListener('coffre:modalclose', () => { if (listDirty) { listDirty = false; render(); } });
   function render() {
     if (!$('opList') || !App.data) return;
+    dirty();
     stats();
     $('opView').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === st.view)));
     const tools = $('opTools');
@@ -302,8 +317,10 @@
       ${missingList.length ? `<div class="ycm"><h4>Manquantes pour ta wishlist Cardmarket</h4>
         <textarea id="odCm" readonly rows="${Math.min(8, missingList.length)}">${esc(cm)}</textarea>
         <div class="actions"><span class="hint grow">Cardmarket → Wishlist → « Ajouter des cartes » : colle la liste (une carte par ligne).</span><button class="primary" data-o="copy">Copier la liste</button></div></div>` : ''}
-      <textarea id="odList" hidden readonly>${esc(toDecklist(d))}</textarea>
-      <div class="actions"><button data-o="copyList" title="Format 4xOP09-056, à coller dans un simulateur ou à partager">Copier la decklist</button><button data-o="saveList">Enregistrer (.txt)</button><span class="grow"></span><button class="danger" data-o="delDeck">Supprimer ce deck</button></div>`;
+      ${Object.keys(d.cards || {}).length ? `<div class="ycm"><h4>Decklist</h4>
+        <textarea id="odList" readonly rows="${Math.min(12, Object.keys(d.cards || {}).length)}" spellcheck="false">${esc(toDecklist(d))}</textarea>
+        <div class="actions"><span class="hint grow">Format 4xOP09-056 : à partager ou à coller dans un simulateur.</span><button data-o="saveList">Enregistrer (.txt)</button><button class="primary" data-o="copyList">Copier la decklist</button></div></div>` : ''}
+      <div class="actions"><button class="danger" data-o="delDeck">Supprimer ce deck</button></div>`;
     if (hadFocus || keepFocus) { const n = $('odQ'); n.focus(); try { n.setSelectionRange(caret, caret); } catch (e) { /* rien */ } }
     loadImages(box);
   }
@@ -466,16 +483,19 @@
   }
   // Progression : une carte compte comme possédée si tu as au moins une de ses versions de l'extension
   function setProgress(i) {
+    const ix = qIndex(); if (ix.prog.has(i)) return ix.prog.get(i);
     const codes = new Map();
     for (const x of setPrints(i)) codes.set(x.c.i, (codes.get(x.c.i) || 0) + qtyAny(x.p[1]));
     let own = 0; for (const q of codes.values()) if (q > 0) own++;
-    return { own, total: codes.size };
+    const r = { own, total: codes.size }; ix.prog.set(i, r);
+    return r;
   }
   // Manquantes : sans filtre, une carte manque si tu n'en as aucune version ; avec une version choisie, chacune compte.
   function setMissing(i) {
     const all = setPrints(i), r = st.setRarity;
     if (r) return all.filter(y => rarName(y.p) === r && !qtyAny(y.p[1]));
-    return all.filter(y => !all.some(z => z.c.i === y.c.i && qtyAny(z.p[1]) > 0));
+    const owned = new Set(); for (const z of all) if (qtyAny(z.p[1]) > 0) owned.add(z.c.i);
+    return all.filter(y => !owned.has(y.c.i));
   }
   function setMissingText(i) {
     const seen = new Set(), lines = [];
@@ -502,7 +522,7 @@
     const allV = rars.reduce((a, [, v]) => ({ own: a.own + v.own, total: a.total + v.total }), { own: 0, total: 0 });
     let rows = setPrints(i);
     if (st.setRarity) rows = rows.filter(y => rarName(y.p) === st.setRarity);
-    if (st.setView === 'miss') { const m = setMissing(i); rows = rows.filter(y => m.some(z => z.ci === y.ci && z.pi === y.pi)); }
+    if (st.setView === 'miss') { const k = new Set(setMissing(i).map(z => z.ci + ':' + z.pi)); rows = rows.filter(y => k.has(y.ci + ':' + y.pi)); }
     const miss = setMissingText(i);
     const cur = st.setRarity ? rars.find(([k]) => k === st.setRarity)[1] : null;
     const missVal = (() => { const seen = new Set(); let v = 0; for (const y of setMissing(i)) { if (seen.has(y.c.i)) continue; seen.add(y.c.i); v += y.c.cm || 0; } return v; })();
@@ -590,8 +610,9 @@
     if (y === 'card' && row) return openCard(row.dataset.id);
     if (b.dataset.act && row && row.dataset.key) {
       const key = row.dataset.key;
-      changeEntry(key, col()[key], b.dataset.act === 'inc' ? 1 : -1);
-      render();
+      const q = changeEntry(key, col()[key], b.dataset.act === 'inc' ? 1 : -1);
+      if (q > 0) { row.querySelectorAll('output').forEach(o => { o.textContent = q; }); const bd = row.querySelector('.badge'); if (bd) bd.textContent = '×' + q; stats(); }
+      else render();
     }
   });
 
@@ -630,11 +651,11 @@
       const id = $('ocardSheet').dataset.id, pr = b.closest('.yprint');
       const delta = b.dataset.act === 'inc' ? 1 : -1;
       if (pr.dataset.gen) addGeneric(id, delta); else addPrinting(st.idx.byId.get(id), Number(pr.dataset.pi), delta);
-      renderCard(); render(); return;
+      afterChange(); return;
     }
     if (k === 'op-card' && y === 'toWish') {
       const n = addToWish($('ocardSheet').dataset.id, 1);
-      App.toast(`Ajoutée à la wishlist (×${n})`); renderCard(); render(); return;
+      App.toast(`Ajoutée à la wishlist (×${n})`); afterChange(); return;
     }
     if (k === 'op-card' && y === 'toDeck') {
       const d = decks()[$('ocDeck').value], id = $('ocardSheet').dataset.id;
@@ -656,7 +677,7 @@
     if (k === 'op-add' && b.dataset.act) {
       const q = b.closest('.yquick');
       addPrinting(Number(q.dataset.ci), Number(q.dataset.pi), b.dataset.act === 'inc' ? 1 : -1);
-      renderAdd(); render(); return;
+      afterChange(); return;
     }
     // deck
     if (k === 'op-deck') {
@@ -664,11 +685,11 @@
       d.cards = d.cards || {};
       if (b.dataset.v && b.closest('#odLayout')) { setLayout(b.dataset.v); return renderDeck(); }
       if (b.dataset.v) { st.deckView = b.dataset.v; return renderDeck(); }
-      if (y === 'dadd' && row) { const id = row.dataset.id; d.cards[id] = (d.cards[id] || 0) + 1; touchDeck(d); renderDeck(); render(); return; }
+      if (y === 'dadd' && row) { const id = row.dataset.id; d.cards[id] = (d.cards[id] || 0) + 1; touchDeck(d); afterChange(); return; }
       if (y === 'dq' && row) {
         const id = row.dataset.id, n = (d.cards[id] || 0) + Number(b.dataset.d);
         if (n > 0) d.cards[id] = n; else delete d.cards[id];
-        touchDeck(d); renderDeck(); render(); return;
+        touchDeck(d); afterChange(); return;
       }
       if (y === 'copy') return App.toast(await copyText($('odCm')) ? 'Liste copiée : colle-la dans ta wishlist Cardmarket' : 'Sélectionne le texte et copie-le à la main');
       if (y === 'copyList') return App.toast(await copyText($('odList')) ? 'Decklist copiée' : 'Copie impossible sur cet appareil');

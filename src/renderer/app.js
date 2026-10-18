@@ -59,7 +59,7 @@ function openModal(html, cls = '') {
   const first = $('sheet').querySelector('[autofocus]');
   if (first) first.focus();
 }
-function closeModal() { $('modal').hidden = true; $('sheet').innerHTML = ''; modalKind = null; }
+function closeModal() { $('modal').hidden = true; $('sheet').innerHTML = ''; modalKind = null; document.dispatchEvent(new Event('coffre:modalclose')); }
 $('modal').addEventListener('mousedown', e => { if (e.target.id === 'modal' && ['card', 'vinyl', 'settings', 'ygo-card', 'ygo-add', 'op-card', 'op-add', 'news'].includes(modalKind)) closeModal(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('modal').hidden) closeModal(); });
 

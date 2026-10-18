@@ -4,6 +4,19 @@ h1{margin:0 0 4px}h2{margin:28px 0 8px;color:#e3b54a}.d{color:#9a95ad}details{bo
 summary{cursor:pointer;padding:8px 12px}pre{margin:0;padding:12px;overflow:auto;max-height:520px;font:12px Consolas,monospace;background:#100e16;border-top:1px solid #322e42}
 .mod{font-size:11px;background:#3a2f17;color:#e3b54a;padding:1px 6px;border-radius:4px}.new{font-size:11px;background:#1f3a26;color:#6cc58c;padding:1px 6px;border-radius:4px}ul{margin:4px 0 0}</style></head><body>
 <h1>Journal des modifications</h1><p class="d">Coffre — clique sur un fichier pour voir son code.</p>
+<h2>v1.14.5 <span class="d">— 19/10/2026</span></h2>
+<ul><li>Collection Yu-Gi-Oh et One Piece beaucoup plus fluide avec une grosse collection : l&#x27;affichage « Par extension », l&#x27;ouverture d&#x27;une extension, le filtre « Manquantes » et les boutons + / − ne ralentissent plus (plus d&#x27;une seconde avant, quelques millisecondes maintenant).</li></ul>
+<details><summary><code>src/renderer/ygo.js</code>, <code>op.js</code>, <code>app.js</code>, <code>styles.css</code>, <code>changelog.js</code>, <code>package.json</code> <span class="mod">modifié</span></summary><pre><span style="color:#ef7a62">- ownedOf / qtyAny : relisaient toute la collection pour chaque carte affichée</span>
+<span style="color:#6cc58c">+ qIndex() : index des quantités (par carte, par impression) recalculé seulement après un changement</span>
+<span style="color:#6cc58c">+ setProgress : résultat gardé en mémoire ; setMissing : Set au lieu d&#x27;une double boucle</span>
+<span style="color:#6cc58c">+ afterChange() : dans une fenêtre, seule la fenêtre est redessinée ; la liste l&#x27;est à la fermeture (événement coffre:modalclose)</span>
+<span style="color:#6cc58c">+ Collection +/− : le nombre est mis à jour sur place, sans tout redessiner</span>
+<span style="color:#6cc58c">+ .gcard { content-visibility: auto } : les cartes hors écran ne sont pas dessinées</span>
+<span style="color:#6cc58c">+ &quot;version&quot;: &quot;1.14.5&quot;,</span></pre></details>
+<h2>v1.14.4 <span class="d">— 18/10/2026</span></h2>
+<ul><li>Decks One Piece : la decklist (format 4xOP09-056) est maintenant affichée dans une zone de texte en bas du deck, avec « Copier la decklist » et « Enregistrer (.txt) » juste en dessous.</li></ul>
+<details><summary><code>src/renderer/op.js</code>, <code>changelog.js</code>, <code>package.json</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ &lt;div class=&quot;ycm&quot;&gt;&lt;h4&gt;Decklist&lt;/h4&gt;&lt;textarea id=&quot;odList&quot; readonly&gt;…&lt;/textarea&gt; + Copier / Enregistrer</span>
+<span style="color:#6cc58c">+ &quot;version&quot;: &quot;1.14.4&quot;,</span></pre></details>
 <h2>v1.14.3 <span class="d">— 18/10/2026</span></h2>
 <ul><li>Petites corrections.</li></ul>
 <details><summary><code>src/renderer/app.js</code>, <code>changelog.js</code>, <code>package.json</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ &quot;version&quot;: &quot;1.14.3&quot;,</span></pre></details>

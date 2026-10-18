@@ -71,16 +71,28 @@
   // ---------- Collection ----------
   // data.ygo[clé] = { id, code, r, qty, mt }   clé = « CODE|RARETÉ » ou « id|* » (peu importe l'extension)
   const col = () => App.data.ygo || (App.data.ygo = {});
-  function ownedOf(id) {
-    let n = 0;
-    for (const e of Object.values(col())) if (e && e.id === id) n += e.qty || 0;
-    return n;
+  // Index des quantités (par carte et par impression), recalculé seulement après un changement :
+  // avant, chaque carte affichée reparcourait toute la collection (lent avec de grosses collections).
+  let qix = null;
+  function qIndex() {
+    if (qix && qix.src === col()) return qix;
+    const byId = new Map(), byPrint = new Map();
+    for (const e of Object.values(col())) {
+      if (!e || !e.qty) continue;
+      byId.set(e.id, (byId.get(e.id) || 0) + e.qty);
+      if (e.code) { const k = e.code + '|' + e.r; byPrint.set(k, (byPrint.get(k) || 0) + e.qty); }
+    }
+    qix = { src: col(), byId, byPrint, prog: new Map() };
+    return qix;
   }
+  const dirty = () => { qix = null; };
+  function ownedOf(id) { return qIndex().byId.get(id) || 0; }
   function changeEntry(key, base, delta) {
     const e = { ...(col()[key] || base) };
     e.qty = Math.max(0, (e.qty || 0) + delta);
     e.mt = now();
     col()[key] = e;
+    dirty();
     App.scheduleSave();
     return e.qty;
   }
@@ -113,11 +125,7 @@
     return changeEntry(keyFor(p[1], p[2], lang), base, delta);
   }
   // Exemplaires d'une impression, toutes langues confondues
-  function qtyAny(code, r) {
-    let n = 0;
-    for (const e of Object.values(col())) if (e && e.code === code && e.r === r) n += e.qty || 0;
-    return n;
-  }
+  function qtyAny(code, r) { return qIndex().byPrint.get(code + '|' + r) || 0; }
   function addGeneric(id, delta = 1) { return changeEntry(`${id}|*`, { id, code: '', r: '' }, delta); }
 
   // ---------- Prix Cardmarket ----------
@@ -145,8 +153,17 @@
       <select id="ygoSort" aria-label="Trier"><option value="name">Par nom</option><option value="added">Derniers ajouts</option><option value="code">Par code</option><option value="price">Par prix (plus chères d'abord)</option><option value="set">Par extension</option></select>`;
   }
 
+  // Après un changement fait dans une fenêtre (fiche, extension, deck) : la fenêtre est redessinée tout de suite,
+  // la liste derrière seulement à la fermeture (avant, les deux l'étaient à chaque clic).
+  let listDirty = false;
+  function afterChange() {
+    if (!$('modal').hidden) { stats(); listDirty = true; refreshOpenModal(); }
+    else render();
+  }
+  document.addEventListener('coffre:modalclose', () => { if (listDirty) { listDirty = false; render(); } });
   function render() {
     if (!$('ygoList') || !App.data) return;
+    dirty();
     stats();
     $('ygoView').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === st.view)));
     const tools = $('ygoTools');
@@ -529,10 +546,12 @@
   const qtyLang = (code, r) => { const e = col()[keyFor(code, r, curLang())]; return (e && e.qty) || 0; };
   // Progression : un numéro de carte compte comme possédé si tu as au moins une de ses raretés
   function setProgress(i) {
+    const ix = qIndex(); if (ix.prog.has(i)) return ix.prog.get(i);
     const codes = new Map();
-    for (const x of setPrints(i)) codes.set(x.p[1], (codes.get(x.p[1]) || 0) + qtyOf(x.p[1], x.p[2]));
+    for (const [ci, pi] of st.idx.bySet.get(i) || []) { const p = st.db.cards[ci].p[pi]; codes.set(p[1], (codes.get(p[1]) || 0) + qtyOf(p[1], p[2])); }
     let own = 0; for (const q of codes.values()) if (q > 0) own++;
-    return { own, total: codes.size };
+    const r = { own, total: codes.size }; ix.prog.set(i, r);
+    return r;
   }
   const rarName = p => p[3] || p[2];
   // Manquantes : sans filtre, un numéro manque si tu n'en as aucune rareté ;
@@ -540,7 +559,8 @@
   function setMissing(i) {
     const all = setPrints(i), r = st.setRarity;
     if (r) return all.filter(y => rarName(y.p) === r && !qtyOf(y.p[1], y.p[2]));
-    return all.filter(y => !all.some(z => z.p[1] === y.p[1] && qtyOf(z.p[1], z.p[2]) > 0));
+    const owned = new Set(); for (const z of all) if (qtyOf(z.p[1], z.p[2]) > 0) owned.add(z.p[1]);
+    return all.filter(y => !owned.has(y.p[1]));
   }
   function setMissingText(i) {
     const seen = new Set(), lines = [];
@@ -568,7 +588,7 @@
     const allV = rars.reduce((a, [, v]) => ({ own: a.own + v.own, total: a.total + v.total }), { own: 0, total: 0 });
     let rows = setPrints(i);
     if (st.setRarity) rows = rows.filter(y => rarName(y.p) === st.setRarity);
-    if (st.setView === 'miss') { const m = new Set(setMissing(i)); rows = rows.filter(y => m.has(y) || [...m].some(z => z.ci === y.ci && z.pi === y.pi)); }
+    if (st.setView === 'miss') { const m = new Set(setMissing(i)); const k = new Set([...m].map(z => z.ci + ':' + z.pi)); rows = rows.filter(y => k.has(y.ci + ':' + y.pi)); }
     const miss = setMissingText(i);
     const cur = st.setRarity ? rars.find(([k]) => k === st.setRarity)[1] : null;
     el.innerHTML = `<div class="yset-head">
@@ -658,8 +678,10 @@
     if (b.dataset.y === 'card' && row) return openCard(Number(row.dataset.id));
     if (b.dataset.act && row && row.dataset.key) {
       const key = row.dataset.key;
-      changeEntry(key, col()[key], b.dataset.act === 'inc' ? 1 : -1);
-      render();
+      const q = changeEntry(key, col()[key], b.dataset.act === 'inc' ? 1 : -1);
+      // la carte reste affichée : on met juste à jour son nombre (pas toute la liste)
+      if (q > 0) { row.querySelectorAll('output').forEach(o => { o.textContent = q; }); const bd = row.querySelector('.badge'); if (bd) bd.textContent = '×' + q; stats(); }
+      else render();
     }
   });
 
@@ -688,11 +710,11 @@
       const id = Number($('ycardSheet').dataset.id), pr = b.closest('.yprint');
       const delta = b.dataset.act === 'inc' ? 1 : -1;
       if (pr.dataset.gen) addGeneric(id, delta); else addPrinting(st.idx.byId.get(id), Number(pr.dataset.pi), delta);
-      renderCard(); render(); return;
+      afterChange(); return;
     }
     if (k === 'ygo-card' && y === 'toWish') {
       const id = Number($('ycardSheet').dataset.id); const n = addToWish(id, 1);
-      App.toast(`Ajoutée à la wishlist (×${n})`); renderCard(); render(); return;
+      App.toast(`Ajoutée à la wishlist (×${n})`); afterChange(); return;
     }
     if (k === 'ygo-card' && y === 'toDeck') {
       const d = decks()[$('ycDeck').value]; const id = Number($('ycardSheet').dataset.id);
@@ -717,7 +739,7 @@
     if (k === 'ygo-add' && b.dataset.act) {
       const q = b.closest('.yquick');
       addPrinting(Number(q.dataset.ci), Number(q.dataset.pi), b.dataset.act === 'inc' ? 1 : -1);
-      renderAdd(); render(); return;
+      afterChange(); return;
     }
     // deck
     if (k === 'ygo-deck') {
@@ -725,13 +747,13 @@
       d.cards = d.cards || {};
       if (b.dataset.v && b.closest('#ydLayout')) { setLayout(b.dataset.v); return renderDeck(); }
       if (b.dataset.v) { st.deckView = b.dataset.v; return renderDeck(); }
-      if (y === 'dadd' && row) { const id = Number(row.dataset.id); d.cards[id] = (d.cards[id] || 0) + 1; touchDeck(d); renderDeck(); render(); return; }
-      if (y === 'sadd' && row) { const id = Number(row.dataset.id); d.side = d.side || {}; d.side[id] = (d.side[id] || 0) + 1; touchDeck(d); renderDeck(); render(); return; }
+      if (y === 'dadd' && row) { const id = Number(row.dataset.id); d.cards[id] = (d.cards[id] || 0) + 1; touchDeck(d); afterChange(); return; }
+      if (y === 'sadd' && row) { const id = Number(row.dataset.id); d.side = d.side || {}; d.side[id] = (d.side[id] || 0) + 1; touchDeck(d); afterChange(); return; }
       if (y === 'dq' && row) {
         const part = b.dataset.z === 's' ? (d.side = d.side || {}) : d.cards;
         const id = Number(row.dataset.id); const n = (part[id] || 0) + Number(b.dataset.d);
         if (n > 0) part[id] = n; else delete part[id];
-        touchDeck(d); renderDeck(); render(); return;
+        touchDeck(d); afterChange(); return;
       }
       if (y === 'copy') {
         const text = $('ydCm').value;

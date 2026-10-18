@@ -2,6 +2,20 @@
 // et reprises comme notes de version sur GitHub). La plus récente en premier.
 window.COFFRE_CHANGELOG = [
 {
+ "v": "1.14.5",
+ "date": "19/10/2026",
+ "items": [
+  "Collection Yu-Gi-Oh et One Piece beaucoup plus fluide avec une grosse collection : l'affichage « Par extension », l'ouverture d'une extension, le filtre « Manquantes » et les boutons + / − ne ralentissent plus (plus d'une seconde avant, quelques millisecondes maintenant)."
+ ]
+},
+{
+ "v": "1.14.4",
+ "date": "18/10/2026",
+ "items": [
+  "Decks One Piece : la decklist (format 4xOP09-056) est maintenant affichée dans une zone de texte en bas du deck, avec « Copier la decklist » et « Enregistrer (.txt) » juste en dessous."
+ ]
+},
+{
  "v": "1.14.3",
  "date": "18/10/2026",
  "items": [
