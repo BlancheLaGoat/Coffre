@@ -641,7 +641,7 @@ function openSettings() {
     </div>
     <p class="hint" id="stMsg">L'export contient tes cartes, tes decks et tes vinyles dans un seul fichier (les pochettes et images restent en ligne).</p>
     <h3>Images</h3>
-    <div class="actions" style="justify-content:flex-start"><span id="stImg" class="hint">…</span><button data-act="imgClear">Vider les images des cartes</button></div>
+    <div class="actions" style="justify-content:flex-start"><span id="stImg" class="hint">…</span><button data-act="imgClear">Vider les images des cartes</button><button data-act="dbRefresh" title="Nouvelles cartes et extensions, banlist, prix">Mettre à jour les cartes maintenant</button></div>
     <p class="hint">Les pochettes de vinyles s'affichent depuis Discogs et ne sont pas enregistrées. Les images Yu-Gi-Oh et One Piece sont gardées dans un cache limité (200 Mo sur PC, 50 Mo sur téléphone ; YGOPRODeck interdit de les recharger sans arrêt) : au-delà, les plus anciennes s'effacent toutes seules.</p>
     <h3>Application</h3>
     <div class="actions" style="justify-content:flex-start"><span>Coffre version ${esc(info.version)}</span>
@@ -720,6 +720,10 @@ $('sheet').addEventListener('click', async e => {
     case 'install': return window.coffre.installUpdate();
     case 'phoneReset': await window.coffre.syncReset(); return loadPhoneSection();
     case 'news': return openNews((window.COFFRE_CHANGELOG || []).slice(0, 15), true);
+    case 'dbRefresh':
+      b.disabled = true; b.textContent = 'Mise à jour…';
+      await Promise.all([window.CoffreYgo && window.CoffreYgo.ready && window.CoffreYgo.refreshDb(), window.CoffreOp && window.CoffreOp.ready && window.CoffreOp.refreshDb()].filter(Boolean));
+      b.disabled = false; b.textContent = 'Mettre à jour les cartes maintenant'; return;
     case 'imgClear': if (window.coffre.imgCacheClear) await window.coffre.imgCacheClear(); return loadImgInfo();
     default: if (ext.settingsClick) return ext.settingsClick(b.dataset.act, b);
   }

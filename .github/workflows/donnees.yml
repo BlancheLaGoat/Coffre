@@ -1,0 +1,39 @@
+# Une fois par jour : récupère les cartes One Piece à venir (TCGCSV) et les publie
+# dans la branche « donnees » (fichier onepiece-a-venir.json), que l'appli Coffre lit.
+# Se lance aussi à la main : onglet Actions → « Cartes à venir » → Run workflow.
+name: Cartes à venir
+
+on:
+  schedule:
+    - cron: '30 21 * * *'   # tous les jours vers 23h30 (heure de Paris en été), après la mise à jour de TCGCSV
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  one-piece:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      - name: Installer Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Récupérer les cartes à venir
+        run: node scripts/op-a-venir.js "$RUNNER_TEMP/onepiece-a-venir.json"
+
+      - name: Publier dans la branche « donnees »
+        run: |
+          cd "$RUNNER_TEMP"
+          rm -rf pub && mkdir pub && cd pub
+          git init -q -b donnees
+          cp ../onepiece-a-venir.json .
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add onepiece-a-venir.json
+          git commit -q -m "Cartes à venir du $(date -u +%Y-%m-%d)"
+          git push -q --force "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" donnees

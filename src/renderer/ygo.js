@@ -22,7 +22,8 @@
     render();
     // Mise à jour discrète toutes les deux semaines (nouvelles extensions)
     // Mise à jour discrète (nouvelles cartes, prix Cardmarket) chaque semaine, ou si la base est d'un ancien format
-    if (st.db && (st.db.v !== 4 || now() - (st.db.at || 0) > 7 * 864e5)) refreshDb(true);
+    const hasUp = st.db && st.db.sets.some((x, i) => isUpcoming(i));
+    if (st.db && (st.db.v !== 4 || now() - (st.db.at || 0) > (hasUp ? 3 : 7) * 864e5)) refreshDb(true);
   }
   async function refreshDb(silent) {
     if (st.loading) return;
@@ -34,6 +35,10 @@
     render();
   }
 
+  // Extension pas encore sortie : étiquette « à venir · 30/10 »
+  const setDate = i => (st.db.sets[i] || [])[2] || '';
+  const isUpcoming = i => { const d = Date.parse(setDate(i)); return !!d && d > now() - 864e5; };
+  const upTag = i => isUpcoming(i) ? `<span class="soon" title="Pas encore sortie : cartes révélées, infos provisoires">à venir · ${esc(new Date(Date.parse(setDate(i))).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }))}</span>` : '';
   const card = id => st.idx && st.idx.byId.has(id) ? st.db.cards[st.idx.byId.get(id)] : null;
   const setName = i => (st.db.sets[i] || [''])[0];
   const label = c => c.f || c.n;                       // nom français si connu
@@ -184,7 +189,7 @@
       const x = st.colSet === -1 ? ['Sans extension précise', '', ''] : st.db.sets[st.colSet] || ['', '', ''];
       const pr = st.colSet === -1 ? null : setProgress(st.colSet);
       head = `<div class="ycolset-head"><button data-y="colSetBack">← Extensions</button>
-        <div><b>${esc(x[0])}</b> ${x[1] ? `<span class="code">${esc(x[1])}</span>` : ''}
+        <div><b>${esc(x[0])}</b> ${x[1] ? `<span class="code">${esc(x[1])}</span>` : ''} ${st.colSet !== -1 ? upTag(st.colSet) : ''}
         <div class="hint">${x[2] ? esc(x[2].replace(/-/g, '/')) + ' · ' : ''}${pr ? `${pr.own} / ${pr.total} cartes de l'extension · ` : ''}${rows.reduce((a, r) => a + r.e.qty, 0)} exemplaires</div></div>
         ${st.colSet !== -1 ? `<button data-y="colSetOpen" title="Voir toute l'extension pour la compléter">Compléter l'extension</button>` : ''}</div>`;
       if (!rows.length) return head + `<div class="empty">Aucune carte de cette extension ne correspond.</div>`;
@@ -219,7 +224,7 @@
       const pr = i === -1 ? null : setProgress(i);
       return `<button class="ycolset" data-y="colSet" data-set="${i}">
         <span class="d">${x && x[2] ? esc(x[2].replace(/-/g, '/')) : '—'}${x && x[1] ? ` <span class="code">${esc(x[1])}</span>` : ''}</span>
-        <span class="n">${x ? esc(x[0]) : 'Sans extension précise'}</span>
+        <span class="n">${x ? esc(x[0]) : 'Sans extension précise'} ${i !== -1 ? upTag(i) : ''}</span>
         <span class="m">${pr ? `<b>${pr.own}</b> / ${pr.total} cartes · ` : `${g.ids.size} carte${g.ids.size > 1 ? 's' : ''} · `}${g.copies} exemplaire${g.copies > 1 ? 's' : ''}${pr ? `<i class="bar"><i style="width:${pr.total ? pr.own / pr.total * 100 : 0}%"></i></i>` : ''}</span></button>`;
     }).join('') + `</div>`;
   }
@@ -488,7 +493,7 @@
           <div class="yprints">
             <div class="yprint" data-gen="1"><div><b>Peu importe l'extension</b></div>${App.qtyHtml((gen && gen.qty) || 0)}</div>
             ${prints.map(({ p, pi, e, all }) => `<div class="yprint${all ? ' own' : ''}" data-pi="${pi}">
-              <div><span class="code">${esc(locCode(p[1], curLang()))}</span>${all > ((e && e.qty) || 0) ? ` <span class="own">+${all - ((e && e.qty) || 0)} autre langue</span>` : ''} <span class="tag">${esc(p[3] || p[2])}</span><div class="hint">${esc(setName(p[0]))}</div></div>
+              <div><span class="code">${esc(locCode(p[1], curLang()))}</span>${all > ((e && e.qty) || 0) ? ` <span class="own">+${all - ((e && e.qty) || 0)} autre langue</span>` : ''} <span class="tag">${esc(p[3] || p[2])}</span><div class="hint">${esc(setName(p[0]))} ${upTag(p[0])}</div></div>
               ${App.qtyHtml((e && e.qty) || 0)}</div>`).join('')}
           </div>
         </div></div>`;
@@ -567,7 +572,7 @@
     const cur = st.setRarity ? rars.find(([k]) => k === st.setRarity)[1] : null;
     el.innerHTML = `<div class="yset-head">
         <button data-y="unset">← Retour</button>
-        <div class="grow"><b>${esc(x[0])}</b> <span class="code">${esc(x[1] || '')}</span>${x[2] ? ` <span class="hint">${esc(x[2].slice(0, 4))}</span>` : ''}
+        <div class="grow"><b>${esc(x[0])}</b> <span class="code">${esc(x[1] || '')}</span>${x[2] ? ` <span class="hint">${esc(x[2].slice(0, 4))}</span>` : ''} ${upTag(i)}
           <div class="bar"><i style="width:${(cur ? (cur.total ? cur.own / cur.total : 0) : (total ? own / total : 0)) * 100}%"></i></div>
           <span class="hint">${cur ? `<b>${cur.own}</b> / ${cur.total} en ${esc(st.setRarity)}` : `<b>${own}</b> / ${total} cartes de l'extension · ${allV.own} / ${allV.total} versions (toutes raretés)`}${(() => { const seen = new Set(); let v = 0; for (const y of setMissing(i)) { if (seen.has(y.p[1])) continue; seen.add(y.p[1]); v += y.c.cm || 0; } return v ? ` · manquantes ≈ <b class="price">${money(v)}</b>` : ''; })()}</span></div>
         <div class="seg" id="ysView"><button data-sv="all" aria-pressed="${st.setView === 'all'}">Toutes</button><button data-sv="miss" aria-pressed="${st.setView === 'miss'}">Manquantes</button></div>
@@ -592,7 +597,7 @@
     const res = searchCards(q);
     const sets = searchSets(q);
     el.innerHTML = (sets.length ? `<h4>Extensions</h4><div class="ysets">${sets.map(i => { const { own, total } = setProgress(i); const x = st.db.sets[i];
-      return `<button class="yset" data-y="set" data-set="${i}"><b>${esc(x[0])}</b><span class="hint">${esc(x[1] || '')}${x[2] ? ' · ' + esc(x[2].slice(0, 4)) : ''} · ${own}/${total}</span></button>`; }).join('')}</div>${res.length || exact.length ? '<h4>Cartes</h4>' : ''}` : '') + (exact.length ? exact.map(([ci, pi]) => {
+      return `<button class="yset" data-y="set" data-set="${i}"><b>${esc(x[0])} ${upTag(i)}</b><span class="hint">${esc(x[1] || '')}${x[2] ? ' · ' + esc(x[2].slice(0, 4)) : ''} · ${own}/${total}</span></button>`; }).join('')}</div>${res.length || exact.length ? '<h4>Cartes</h4>' : ''}` : '') + (exact.length ? exact.map(([ci, pi]) => {
       const c = st.db.cards[ci], p = c.p[pi], e = col()[keyFor(p[1], p[2], curLang())];
       return resultHtml(c, `<div class="yquick" data-ci="${ci}" data-pi="${pi}"><span class="code">${esc(locCode(p[1], curLang()))}</span> <span class="tag">${esc(p[3] || p[2])}</span>${App.qtyHtml((e && e.qty) || 0)}</div>`);
     }).join('') : '') + (res.length ? res.map(c => resultHtml(c, `<button data-y="card">Choisir l'extension</button>`)).join('') : (exact.length || sets.length ? '' : '<p class="hint">Aucune carte ni extension trouvée.</p>'));

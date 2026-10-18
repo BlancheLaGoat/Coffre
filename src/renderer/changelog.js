@@ -2,6 +2,25 @@
 // et reprises comme notes de version sur GitHub). La plus récente en premier.
 window.COFFRE_CHANGELOG = [
 {
+ "v": "1.14.1",
+ "date": "18/10/2026",
+ "items": [
+  "One Piece, extensions à venir : elles sont maintenant récupérées une fois par jour par une tâche GitHub (onglet Actions → « Cartes à venir »), qui publie le fichier que Coffre lit. Le site source (TCGCSV) interdit d'être interrogé directement par les applis : c'est ce qui empêchait EB05 et OP18 d'arriver.",
+  "⚙ Réglages → Images : bouton « Mettre à jour les cartes maintenant » pour retélécharger tout de suite les bases Yu-Gi-Oh et One Piece (nouvelles cartes, banlist, prix).",
+  "La base One Piece se retélécharge une fois toute seule."
+ ]
+},
+{
+ "v": "1.14.0",
+ "date": "18/10/2026",
+ "items": [
+  "One Piece : les extensions à venir sont maintenant dans Coffre avant leur sortie (ex. EB05 Heroines Edition Vol. 2, OP18 The Dominance of God), avec les cartes déjà révélées. Elles viennent du catalogue de précommandes TCGplayer (via TCGCSV) tant qu'optcgapi ne les a pas ; dès qu'optcgapi les ajoute, sa version prend le relais.",
+  "Étiquette verte « à venir · date de sortie » sur ces extensions et sur leurs cartes, en One Piece comme en Yu-Gi-Oh (YGOPRODeck ajoute déjà les extensions avant leur sortie).",
+  "Quand une extension à venir est en cours de révélation, la base de cartes se met à jour plus souvent (tous les 2 jours en One Piece, 3 jours en Yu-Gi-Oh) pour avoir les nouvelles cartes.",
+  "Cartes à venir : noms, raretés et prix sont provisoires (précommandes), et le texte peut manquer jusqu'à la sortie."
+ ]
+},
+{
  "v": "1.13.0",
  "date": "18/10/2026",
  "items": [

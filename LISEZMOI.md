@@ -128,6 +128,7 @@ L'onglet **One Piece** marche comme celui de Yu-Gi-Oh. La première fois, il pro
 - **Wishlist** : comme pour Yu-Gi-Oh.
 - **Texte des cartes** : affiché sous l'image dans la fiche (en anglais).
 - **Scan (téléphone)** : 📷 **Scanner des cartes** lit le code en bas à droite de la carte. La version normale est ajoutée toute seule ; pour une parallèle, touche **Annuler** puis la bonne version.
+- **Extensions à venir** : les extensions pas encore sorties (cartes déjà révélées) viennent du catalogue de précommandes TCGplayer (via tcgcsv.com) en attendant qu'optcgapi les ajoute. Une tâche GitHub (onglet **Actions → Cartes à venir**) les récupère tous les jours et les publie dans la branche `donnees` ; Coffre lit ce fichier. Pour la lancer tout de suite : Actions → Cartes à venir → **Run workflow**. Elles sont marquées « à venir » ; noms et prix sont provisoires.
 - **Prix** : prix du marché **TCGplayer** (États-Unis), en **dollars**, par version (une parallèle coûte souvent bien plus). Cardmarket ne donne pas ses prix One Piece à des applis gratuites : c'est une estimation.
 
 ---

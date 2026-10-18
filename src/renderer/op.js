@@ -20,7 +20,9 @@
     try { setDb(await window.coffre.opDb()); } catch (e) { /* pas encore téléchargée */ }
     render();
     // Mise à jour discrète (nouvelles cartes, prix) chaque semaine
-    if (st.db && (st.db.v !== 2 || now() - (st.db.at || 0) > 7 * 864e5)) refreshDb(true);
+    // (tous les 2 jours quand une extension à venir est en cours de révélation)
+    const hasUp = st.db && st.db.sets.some((x, i) => isUpcoming(i));
+    if (st.db && (st.db.v !== 4 || now() - (st.db.at || 0) > (hasUp ? 2 : 7) * 864e5)) refreshDb(true);
   }
   async function refreshDb(silent) {
     if (st.loading) return;
@@ -32,6 +34,10 @@
     render();
   }
 
+  // Extension pas encore sortie : étiquette « à venir · 30/10 »
+  const setDate = i => (st.db.sets[i] || [])[4] || '';
+  const isUpcoming = i => { const d = Date.parse(setDate(i)); return !!d && d > now() - 864e5; };
+  const upTag = i => isUpcoming(i) ? `<span class="soon" title="Pas encore sortie : cartes révélées, infos provisoires">à venir · ${esc(new Date(Date.parse(setDate(i))).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }))}</span>` : '';
   const card = id => st.idx && st.idx.byId.has(id) ? st.db.cards[st.idx.byId.get(id)] : null;
   const setName = i => (st.db.sets[i] || [''])[0];
   const setCode = i => (st.db.sets[i] || ['', ''])[1];
@@ -175,7 +181,7 @@
     return rows.map(({ key, e, c, p }) => `<div class="yrow" data-key="${esc(key)}" data-id="${esc(c.i)}">
         <button class="ypic" data-o="card">${imgTag(printImg(c, p))}</button>
         <div class="yinfo"><button class="nm" data-o="card">${esc(label(c))}</button>
-          <span class="meta"><span class="code">${esc(c.i)}</span>${e.lang ? `<span class="tag">${esc(e.lang)}</span>` : ''}${p ? `<span>${esc(rarName(p))}</span><span>${esc(setName(p[0]))}</span>` : `<span class="tag">peu importe la version</span>`}${tag(entryPrice(e))}</span></div>
+          <span class="meta"><span class="code">${esc(c.i)}</span>${e.lang ? `<span class="tag">${esc(e.lang)}</span>` : ''}${p ? `<span>${esc(rarName(p))}</span><span>${esc(setName(p[0]))}</span>${upTag(p[0])}` : `<span class="tag">peu importe la version</span>`}${tag(entryPrice(e))}</span></div>
         ${App.qtyHtml(e.qty)}</div>`).join('');
   }
 
@@ -424,7 +430,7 @@
           <div class="yprints">
             <div class="yprint" data-gen="1"><div><b>Peu importe la version</b></div>${App.qtyHtml((gen && gen.qty) || 0)}</div>
             ${prints.map(({ p, pi, q, all }) => `<div class="yprint${all ? ' own' : ''}" data-pi="${pi}">
-              <div><span class="code">${esc(c.i)}</span>${all > q ? ` <span class="own">+${all - q} autre langue</span>` : ''} <span class="tag">${esc(rarName(p))}</span>${p[4] ? ' ' + tag(p[4]) : ''}<div class="hint">${esc(setName(p[0]))}</div></div>
+              <div><span class="code">${esc(c.i)}</span>${all > q ? ` <span class="own">+${all - q} autre langue</span>` : ''} <span class="tag">${esc(rarName(p))}</span>${p[4] ? ' ' + tag(p[4]) : ''}<div class="hint">${esc(setName(p[0]))} ${upTag(p[0])}</div></div>
               ${App.qtyHtml(q)}</div>`).join('')}
           </div>
         </div></div>`;
@@ -500,7 +506,7 @@
     const missVal = (() => { const seen = new Set(); let v = 0; for (const y of setMissing(i)) { if (seen.has(y.c.i)) continue; seen.add(y.c.i); v += y.c.cm || 0; } return v; })();
     el.innerHTML = `<div class="yset-head">
         <button data-o="unset">← Retour</button>
-        <div class="grow"><b>${esc(x[0])}</b> <span class="code">${esc(x[1] || '')}</span>
+        <div class="grow"><b>${esc(x[0])}</b> <span class="code">${esc(x[1] || '')}</span> ${upTag(i)}
           <div class="bar"><i style="width:${(cur ? (cur.total ? cur.own / cur.total : 0) : (total ? own / total : 0)) * 100}%"></i></div>
           <span class="hint">${cur ? `<b>${cur.own}</b> / ${cur.total} en ${esc(st.setRarity)}` : `<b>${own}</b> / ${total} cartes de l'extension · ${allV.own} / ${allV.total} versions (parallèles comprises)`}${missVal ? ` · manquantes ≈ <b class="price">${money(missVal)}</b>` : ''}</span></div>
         <div class="seg" id="osView"><button data-sv="all" aria-pressed="${st.setView === 'all'}">Toutes</button><button data-sv="miss" aria-pressed="${st.setView === 'miss'}">Manquantes</button></div>
@@ -525,7 +531,7 @@
     const sets = searchSets(q);
     const quick = c => c.p.map((p, pi) => `<div class="yquick" data-ci="${st.idx.byId.get(c.i)}" data-pi="${pi}"><span class="tag">${esc(rarName(p))}</span> <span class="hint">${esc(setCode(p[0]) || setName(p[0]))}</span>${App.qtyHtml(qtyLang(p[1]))}</div>`).join('');
     el.innerHTML = (sets.length ? `<h4>Extensions</h4><div class="ysets">${sets.map(i => { const { own, total } = setProgress(i); const x = st.db.sets[i];
-      return `<button class="yset" data-o="set" data-set="${i}"><b>${esc(x[0])}</b><span class="hint">${esc(x[1] || '')} · ${own}/${total}</span></button>`; }).join('')}</div>${res.length || exact ? '<h4>Cartes</h4>' : ''}` : '')
+      return `<button class="yset" data-o="set" data-set="${i}"><b>${esc(x[0])} ${upTag(i)}</b><span class="hint">${esc(x[1] || '')} · ${own}/${total}</span></button>`; }).join('')}</div>${res.length || exact ? '<h4>Cartes</h4>' : ''}` : '')
       + (exact ? resultHtml(exact, `<div class="yquicks">${quick(exact)}</div>`) : '')
       + (res.length ? res.map(c => resultHtml(c, c.p.length === 1 ? quick(c) : `<button data-o="card">Choisir la version</button>`)).join('') : (exact || sets.length ? '' : '<p class="hint">Aucune carte ni extension trouvée.</p>'));
     loadImages(el);

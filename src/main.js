@@ -320,7 +320,10 @@ function opDownload() {
       getJson(U.sets).catch(() => []), getJson(U.decks).catch(() => []),
       getJson(U.setCards), getJson(U.stCards).catch(() => []), getJson(U.promoCards).catch(() => [])
     ]);
-    const db = Core.opCompact(sets, decks, setCards, stCards, promos);
+    // Extensions à venir (précommandes TCGplayer via TCGCSV) qu'optcgapi n'a pas encore
+    let up = { sets: [], recs: [] };
+    try { up = Core.opUpcomingFrom(await getJson(Core.OP_UPCOMING_URL), Core.opKnownSets(sets, decks)); } catch (e) { /* facultatif */ }
+    const db = Core.opCompact([...(Array.isArray(sets) ? sets : []), ...up.sets], decks, setCards, stCards, promos, up.recs);
     if (!db.cards.length) throw new Error('La base de cartes reçue est vide.');
     ensureDirs();
     fs.writeFileSync(OP_FILE + '.tmp', JSON.stringify(db));

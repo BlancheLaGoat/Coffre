@@ -193,7 +193,66 @@
     sets: OP_API + 'allSets/', decks: OP_API + 'allDecks/',
     setCards: OP_API + 'allSetCards/', stCards: OP_API + 'allSTCards/', promoCards: OP_API + 'allPromoCards/'
   };
-  const opImgUrl = id => `https://optcgapi.com/media/static/Card_Images/${encodeURIComponent(id)}.jpg`;
+  // Images : optcgapi.com, ou TCGplayer pour les cartes à venir (clé « tcg<numéro de produit> »)
+  const opImgUrl = id => /^tcg\d+$/.test(String(id)) ? `https://tcgplayer-cdn.tcgplayer.com/product/${String(id).slice(3)}_400w.jpg`
+    : `https://optcgapi.com/media/static/Card_Images/${encodeURIComponent(id)}.jpg`;
+  const normSetId = t => String(t || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  // Extensions déjà connues d'optcgapi (pour ne compléter qu'avec celles qui manquent)
+  function opKnownSets(sets, decks) {
+    const k = new Set();
+    for (const x of Array.isArray(sets) ? sets : []) k.add(normSetId(x.set_id));
+    for (const x of Array.isArray(decks) ? decks : []) k.add(normSetId(x.structure_deck_id));
+    return k;
+  }
+  // ---------- Cartes One Piece à venir : catalogue TCGplayer republié chaque jour par TCGCSV (gratuit, sans clé) ----------
+  // TCGCSV demande à être lu par un script côté serveur, pas par les applis : c'est une tâche GitHub (scripts/op-a-venir.js)
+  // qui le lit une fois par jour et publie le résultat ; Coffre ne lit que ce fichier (OP_UPCOMING_URL).
+  // Seulement les extensions récentes ou pas encore sorties qu'optcgapi n'a pas encore. Infos provisoires (précommandes).
+  const TCGCSV = 'https://tcgcsv.com/tcgplayer/68/';
+  const OP_UPCOMING_URL = 'https://raw.githubusercontent.com/BlancheLaGoat/Coffre/donnees/onepiece-a-venir.json';
+  // Fichier publié → extensions et cartes à ajouter (sans celles qu'optcgapi a déjà entre-temps)
+  function opUpcomingFrom(file, known) {
+    const sets = ((file && file.sets) || []).filter(x => !known.has(normSetId(x.set_id)));
+    const keep = new Set(sets.map(x => x.set_id));
+    return { sets, recs: ((file && file.recs) || []).filter(r => keep.has(r.set_id)) };
+  }
+  async function opUpcoming(getJson, known, now = Date.now(), pause = 0) {
+    const wait = () => pause ? new Promise(r => setTimeout(r, pause)) : null;
+    const g = await getJson(TCGCSV + 'groups');
+    const groups = ((g && g.results) || []).filter(x => {
+      const ab = normSetId(x.abbreviation), pub = Date.parse(x.publishedOn) || 0;
+      return ab && !known.has(ab) && pub > now - 120 * 864e5;
+    }).slice(0, 10);
+    const sets = [], recs = [];
+    const strip = t => String(t || '').replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim();
+    for (const x of groups) {
+      let prods, prices;
+      try {
+        await wait(); prods = await getJson(TCGCSV + x.groupId + '/products');
+        await wait(); prices = await getJson(TCGCSV + x.groupId + '/prices').catch(() => ({ results: [] }));
+      } catch (e) { continue; }
+      const price = new Map(((prices && prices.results) || []).map(r => [r.productId, r.marketPrice || r.midPrice || r.lowPrice || 0]));
+      const ab = String(x.abbreviation || '').trim().toUpperCase();
+      const id = /^[A-Z]+\d+$/.test(ab) ? ab.replace(/^([A-Z]+)(\d+)$/, '$1-$2') : ab;   // EB05 → EB-05 (comme optcgapi)
+      let n = 0;
+      for (const it of (prods && prods.results) || []) {
+        const ext = Object.fromEntries((it.extendedData || []).map(e => [e.name, e.value]));
+        const num = String(ext.Number || '').trim().toUpperCase();
+        if (!/^[A-Z]{1,4}\d{0,2}-\d{3}$/.test(num) || /don/i.test(ext.CardType || '')) continue;
+        const rar = String(ext.Rarity || '').trim();
+        let nm = String(it.name || '');
+        if (rar) nm = nm.replace(new RegExp('\\s*\\(' + rar.replace(/[^\w]/g, '\\$&') + '\\)\\s*$'), '');   // « (SR) » = rareté, pas une version
+        recs.push({ card_set_id: num, card_name: nm, set_id: id, set_name: x.name, rarity: rar, card_type: ext.CardType || '',
+          card_color: String(ext.Color || '').replace(/;/g, ' '), card_cost: ext.Cost != null ? ext.Cost : null, card_power: ext.Power != null ? ext.Power : null,
+          life: ext.Life != null ? ext.Life : null, counter_amount: ext.Counterplus != null ? ext.Counterplus : null, attribute: ext.Attribute || '',
+          sub_types: String(ext.Subtypes || '').replace(/;/g, ' '), card_text: strip(ext.Description), market_price: price.get(it.productId) || 0,
+          card_image_id: 'tcg' + it.productId, card_image: 'tcg', upcoming: 1 });
+        n++;
+      }
+      if (n) sets.push({ set_id: id, set_name: x.name, date: String(x.publishedOn || '').slice(0, 10) });
+    }
+    return { sets, recs };
+  }
   const OP_VARIANTS = { 'parallel': 'Parallèle', 'alternate art': 'Parallèle', 'alt art': 'Parallèle' };
   // « Roronoa Zoro (001) (Parallel) » → { name: 'Roronoa Zoro', variant: 'Parallèle' }
   function opSplitName(raw, code) {
@@ -211,14 +270,14 @@
   //           p: [[n° extension, clé de l'impression, rareté, version (Parallèle…), prix $ TCGplayer, image]] }
   function opCompact(sets, decks, ...lists) {
     const setList = [], setIdx = new Map();
-    const addSet = (id, name, kind) => {
+    const addSet = (id, name, kind, date) => {
       id = String(id || '').trim(); if (!id && !name) return -1;
       const k = id || name;
       if (setIdx.has(k)) return setIdx.get(k);
-      const i = setList.length; setIdx.set(k, i); setList.push([String(name || id), id, kind || '', i]);
+      const i = setList.length; setIdx.set(k, i); setList.push([String(name || id), id, kind || '', i, date || '']);
       return i;
     };
-    for (const x of Array.isArray(sets) ? sets : []) addSet(x.set_id, x.set_name, 'booster');
+    for (const x of Array.isArray(sets) ? sets : []) addSet(x.set_id, x.set_name, 'booster', x.date);
     for (const x of Array.isArray(decks) ? decks : []) addSet(x.structure_deck_id, x.structure_deck_name, 'deck');
     const byCode = new Map(), cards = [], seen = new Set();
     for (const list of lists) for (const r of Array.isArray(list) ? list : []) {
@@ -243,7 +302,7 @@
     }
     for (const c of cards) c.p.sort((a, b) => (a[3] ? 1 : 0) - (b[3] ? 1 : 0) || a[0] - b[0]);
     cards.sort((a, b) => a.i.localeCompare(b.i, 'en', { numeric: true }));
-    return { v: 2, at: Date.now(), cur: 'USD', cards, sets: setList };
+    return { v: 4, at: Date.now(), cur: 'USD', cards, sets: setList };
   }
   // Codes One Piece lus par l'appareil photo : OP01-001, ST10-005, EB01-012, PRB01-001, P-034
   function opCodesInText(text) {
@@ -282,5 +341,5 @@
 
   return { PARTS, pickCollections, mergeMaps, mergeCollections, sameCollections, createVinylApi,
     YGO_URLS, ygoImgUrl, ygoCompact, ygoKey, ygoNormCode, ygoCodesInText, ygoIndex, cmLine,
-    OP_URLS, opImgUrl, opCompact, opSplitName, opCodesInText, opIndex };
+    OP_URLS, opImgUrl, opCompact, opSplitName, opCodesInText, opIndex, opKnownSets, opUpcoming, opUpcomingFrom, OP_UPCOMING_URL };
 });

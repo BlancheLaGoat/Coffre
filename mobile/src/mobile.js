@@ -245,7 +245,7 @@
       let db = null;
       if (Sync.pair) {
         try { db = await Sync.reach(h => Sync.call(h, '/api/opdb', { method: 'GET', readTimeout: 120000 })); } catch (e) { db = null; }
-        if (db && (!(db.cards && db.cards.length) || db.v !== 2)) db = null;
+        if (db && (!(db.cards && db.cards.length) || db.v !== 4)) db = null;
       }
       if (!db) {
         const get = async url => {
@@ -257,7 +257,9 @@
         const sets = await get(U.sets).catch(() => []), decks = await get(U.decks).catch(() => []);
         const setCards = await get(U.setCards);
         const stCards = await get(U.stCards).catch(() => []), promos = await get(U.promoCards).catch(() => []);
-        db = Core.opCompact(sets, decks, setCards, stCards, promos);
+        let up = { sets: [], recs: [] };
+        try { up = Core.opUpcomingFrom(await get(Core.OP_UPCOMING_URL), Core.opKnownSets(sets, decks)); } catch (e) { /* facultatif */ }
+        db = Core.opCompact([...(Array.isArray(sets) ? sets : []), ...up.sets], decks, setCards, stCards, promos, up.recs);
         if (!db.cards.length) throw new Error('La base de cartes reçue est vide.');
       }
       await writeText('onepiece-cartes.json', JSON.stringify(db));
