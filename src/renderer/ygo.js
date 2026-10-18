@@ -136,7 +136,7 @@
     return `<button class="primary" data-y="add">Ajouter des cartes</button>
       <input type="search" id="ygoQ" placeholder="Filtrer ma collection (nom, code)…" value="${esc(st.q)}">
       ${layoutSeg('ygoLayout')}
-      <select id="ygoSort" aria-label="Trier"><option value="name">Par nom</option><option value="added">Derniers ajouts</option><option value="code">Par code</option><option value="set">Par extension</option></select>`;
+      <select id="ygoSort" aria-label="Trier"><option value="name">Par nom</option><option value="added">Derniers ajouts</option><option value="code">Par code</option><option value="price">Par prix (plus chères d'abord)</option><option value="set">Par extension</option></select>`;
   }
 
   function render() {
@@ -191,7 +191,8 @@
     }
     const num = s => { const m = String(s || '').match(/(\d+)$/); return m ? Number(m[1]) : 0; };
     const by = { name: (a, b) => label(a.c).localeCompare(label(b.c), 'fr'), added: (a, b) => (b.e.mt || 0) - (a.e.mt || 0), code: (a, b) => (a.e.code || '~').localeCompare(b.e.code || '~'),
-      set: (a, b) => num(a.e.code) - num(b.e.code) || label(a.c).localeCompare(label(b.c), 'fr') };
+      set: (a, b) => num(a.e.code) - num(b.e.code) || label(a.c).localeCompare(label(b.c), 'fr'),
+      price: (a, b) => priceOf(b.c.i) - priceOf(a.c.i) || label(a.c).localeCompare(label(b.c), 'fr') };
     rows.sort(by[st.sort] || by.name);
     if (gal()) return head + `<div class="gal">` + rows.map(({ key, e, c, p }) => `<div class="gcard own" data-key="${esc(key)}" data-id="${c.i}">
         <button class="pic" data-y="card" aria-label="Détails de ${esc(label(c))}">${imgTag(c.i)}${banIcon(c)}<span class="badge">×${e.qty}</span></button>
@@ -911,6 +912,6 @@
     if (n) App.scheduleSave();
     return n;
   }
-  const start = () => { if (['name', 'added', 'code', 'set'].includes(App.data.settings.ygoSort)) st.sort = App.data.settings.ygoSort; st.view = ['decks', 'wish'].includes(App.data.settings.ygoView) ? App.data.settings.ygoView : 'col'; repairCodes(); render(); loadDb(); };
+  const start = () => { if (['name', 'added', 'code', 'set', 'price'].includes(App.data.settings.ygoSort)) st.sort = App.data.settings.ygoSort; st.view = ['decks', 'wish'].includes(App.data.settings.ygoView) ? App.data.settings.ygoView : 'col'; repairCodes(); render(); loadDb(); };
   if (window.coffreReady) start(); else document.addEventListener('coffre:ready', start, { once: true });
 })();

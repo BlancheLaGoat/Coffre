@@ -127,7 +127,7 @@
     return `<button class="primary" data-o="add">Ajouter des cartes</button>
       <input type="search" id="opQ" placeholder="Filtrer ma collection (nom, code)…" value="${esc(st.q)}">
       ${layoutSeg('opLayout')}
-      <select id="opSort" aria-label="Trier"><option value="name">Par nom</option><option value="added">Derniers ajouts</option><option value="code">Par code</option></select>`;
+      <select id="opSort" aria-label="Trier"><option value="name">Par nom</option><option value="added">Derniers ajouts</option><option value="code">Par code</option><option value="price">Par prix (plus chères d'abord)</option></select>`;
   }
 
   function render() {
@@ -166,7 +166,8 @@
     if (!rows.length) {
       return `<div class="empty">${Object.keys(col()).length && q ? 'Aucune carte ne correspond.' : "Ta collection est vide. Touche « Ajouter des cartes » pour chercher dans toutes les cartes du jeu ou compléter une extension" + (App.info.platform === 'mobile' ? ', ou scanne le code imprimé en bas à droite de la carte (ex. OP01-001).' : '.')}</div>`;
     }
-    const by = { name: (a, b) => label(a.c).localeCompare(label(b.c), 'fr') || a.c.i.localeCompare(b.c.i), added: (a, b) => (b.e.mt || 0) - (a.e.mt || 0), code: (a, b) => a.c.i.localeCompare(b.c.i, 'en', { numeric: true }) };
+    const by = { name: (a, b) => label(a.c).localeCompare(label(b.c), 'fr') || a.c.i.localeCompare(b.c.i), added: (a, b) => (b.e.mt || 0) - (a.e.mt || 0), code: (a, b) => a.c.i.localeCompare(b.c.i, 'en', { numeric: true }),
+      price: (a, b) => entryPrice(b.e) - entryPrice(a.e) || label(a.c).localeCompare(label(b.c), 'fr') };
     rows.sort(by[st.sort] || by.name);
     if (gal()) return `<div class="gal">` + rows.map(({ key, e, c, p }) => `<div class="gcard own" data-key="${esc(key)}" data-id="${esc(c.i)}">
         <button class="pic" data-o="card" aria-label="Détails de ${esc(label(c))}">${imgTag(printImg(c, p))}<span class="badge">×${e.qty}</span></button>
@@ -518,7 +519,7 @@
     if (e.target.id === 'owQ') { st.wishQ = e.target.value; clearTimeout(wishTimer); wishTimer = setTimeout(() => renderWish(true), 200); }
   });
   $('opTools').addEventListener('input', e => { if (e.target.id === 'opQ') { st.q = e.target.value; render(); } });
-  $('opTools').addEventListener('change', e => { if (e.target.id === 'opSort') { st.sort = e.target.value; render(); } });
+  $('opTools').addEventListener('change', e => { if (e.target.id === 'opSort') { st.sort = e.target.value; App.data.settings.opSort = st.sort; App.scheduleSave(); render(); } });
   $('opList').addEventListener('click', async e => {
     const b = e.target.closest('[data-o],[data-act],[data-v]'); if (!b) return;
     if (b.dataset.o === 'dl') return refreshDb();
@@ -644,6 +645,6 @@
     printName: p => rarName(p),
     loadImages, ownedOf, money
   };
-  const start = () => { st.view = ['decks', 'wish'].includes(App.data.settings.opView) ? App.data.settings.opView : 'col'; render(); loadDb(); };
+  const start = () => { if (['name', 'added', 'code', 'price'].includes(App.data.settings.opSort)) st.sort = App.data.settings.opSort; st.view = ['decks', 'wish'].includes(App.data.settings.opView) ? App.data.settings.opView : 'col'; render(); loadDb(); };
   if (window.coffreReady) start(); else document.addEventListener('coffre:ready', start, { once: true });
 })();

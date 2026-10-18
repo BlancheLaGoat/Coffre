@@ -2,6 +2,14 @@
 // et reprises comme notes de version sur GitHub). La plus récente en premier.
 window.COFFRE_CHANGELOG = [
 {
+ "v": "1.12.1",
+ "date": "18/10/2026",
+ "items": [
+  "Collection Yu-Gi-Oh et One Piece : nouveau tri « Par prix », les cartes les plus chères en premier (prix Cardmarket pour Yu-Gi-Oh, prix de la version pour One Piece).",
+  "One Piece : le tri choisi est gardé d'une ouverture à l'autre."
+ ]
+},
+{
  "v": "1.12.0",
  "date": "18/10/2026",
  "items": [
