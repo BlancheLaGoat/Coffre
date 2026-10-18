@@ -32,6 +32,15 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Écrire les nouveautés sur la page de la version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node scripts/release-notes.js "$GITHUB_REF_NAME" > notes.md
+          gh release edit "$GITHUB_REF_NAME" --notes-file notes.md
+
   build-android:
     needs: build-windows
     runs-on: ubuntu-latest

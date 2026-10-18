@@ -60,7 +60,7 @@ function openModal(html, cls = '') {
   if (first) first.focus();
 }
 function closeModal() { $('modal').hidden = true; $('sheet').innerHTML = ''; modalKind = null; }
-$('modal').addEventListener('mousedown', e => { if (e.target.id === 'modal' && ['card', 'vinyl', 'settings', 'ygo-card', 'ygo-add', 'op-card', 'op-add'].includes(modalKind)) closeModal(); });
+$('modal').addEventListener('mousedown', e => { if (e.target.id === 'modal' && ['card', 'vinyl', 'settings', 'ygo-card', 'ygo-add', 'op-card', 'op-add', 'news'].includes(modalKind)) closeModal(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('modal').hidden) closeModal(); });
 
 // ============================================================
@@ -645,6 +645,7 @@ function openSettings() {
     <p class="hint">Les pochettes de vinyles s'affichent depuis Discogs et ne sont pas enregistrées. Les images Yu-Gi-Oh et One Piece sont gardées dans un cache limité (200 Mo sur PC, 50 Mo sur téléphone ; YGOPRODeck interdit de les recharger sans arrêt) : au-delà, les plus anciennes s'effacent toutes seules.</p>
     <h3>Application</h3>
     <div class="actions" style="justify-content:flex-start"><span>Coffre version ${esc(info.version)}</span>
+      <button data-act="news">Nouveautés</button>
       <button data-act="check">Chercher une mise à jour</button>
       ${updateState.status === 'ready' ? `<button class="primary" data-act="install">${info.platform === 'mobile' ? 'Télécharger la mise à jour' : 'Redémarrer et mettre à jour'}</button>` : ''}</div>
     <p class="hint" id="stUpd">${esc(updateLabel())}</p>`, 'vinyl');
@@ -718,11 +719,39 @@ $('sheet').addEventListener('click', async e => {
     case 'check': { const r = await window.coffre.checkUpdate(); updateState = r.status === 'checking' ? { status: 'checking' } : r; $('stUpd').textContent = updateLabel(); return; }
     case 'install': return window.coffre.installUpdate();
     case 'phoneReset': await window.coffre.syncReset(); return loadPhoneSection();
+    case 'news': return openNews((window.COFFRE_CHANGELOG || []).slice(0, 15), true);
     case 'imgClear': if (window.coffre.imgCacheClear) await window.coffre.imgCacheClear(); return loadImgInfo();
     default: if (ext.settingsClick) return ext.settingsClick(b.dataset.act, b);
   }
 });
 $('settingsBtn').addEventListener('click', openSettings);
+
+// ---------- Nouveautés (changelog) ----------
+const cmpVer = (a, b) => { const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number); for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) - (y[i] || 0); return 0; };
+function openNews(list, fromSettings) {
+  if (!list || !list.length) return;
+  modalKind = 'news';
+  openModal(`
+    <div class="sheet-head"><h3>${fromSettings ? 'Nouveautés' : 'Coffre a été mis à jour'}</h3><button class="close" data-act="newsClose">${fromSettings ? '← Réglages' : 'OK'}</button></div>
+    <div class="news">${list.map(e => `<section><h4>Version ${esc(e.v)} <span class="hint">${esc(e.date)}</span></h4><ul>${e.items.map(t => `<li>${esc(t)}</li>`).join('')}</ul></section>`).join('')}</div>`, 'vinyl wide');
+  $('sheet').dataset.newsBack = fromSettings ? '1' : '';
+}
+$('sheet').addEventListener('click', e => {
+  if (modalKind !== 'news') return;
+  const b = e.target.closest('[data-act=newsClose]'); if (!b) return;
+  if ($('sheet').dataset.newsBack) openSettings(); else closeModal();
+});
+// Après une mise à jour : les nouveautés des versions installées depuis la dernière ouverture
+function showNewsIfUpdated() {
+  const log = window.COFFRE_CHANGELOG || [], cur = info.version, seen = data.settings.seenVersion;
+  if (!cur || seen === cur) return;
+  data.settings.seenVersion = cur; scheduleSave();
+  const used = Object.keys(data.fm || {}).length || Object.keys(data.vinyls || {}).length || Object.keys(data.ygo || {}).length || Object.keys(data.op || {}).length;
+  let list = [];
+  if (seen) list = log.filter(e => cmpVer(e.v, seen) > 0 && cmpVer(e.v, cur) <= 0);
+  else if (used) list = log.filter(e => e.v === cur);   // première fois avec le changelog : juste cette version
+  if (list.length) setTimeout(() => { if (!$('modal') || $('modal').hidden) openNews(list.slice(0, 6)); }, 900);
+}
 
 // Bandeau de mise à jour
 window.coffre.onUpdate(s => {
@@ -836,6 +865,7 @@ window.CoffreApp = {
   if (ext.ready) ext.ready();
   // Prix Discogs manquants ou vieux de plus d'une semaine, en arrière-plan
   setTimeout(() => migrateCovers().then(() => refreshPrices(true)), 6000);
+  showNewsIfUpdated();
   window.coffreReady = true;
   document.dispatchEvent(new Event('coffre:ready'));
 })();

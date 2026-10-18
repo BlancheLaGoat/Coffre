@@ -1,8 +1,8 @@
 {
   "name": "coffre",
   "productName": "Coffre",
-  "version": "1.10.1",
-  "description": "Coffre de Blanche : collection de cartes Forbidden Memories et de vinyles",
+  "version": "1.11.0",
+  "description": "Coffre : collection de cartes (Forbidden Memories, Yu-Gi-Oh, One Piece) et de vinyles",
   "author": "BlancheLaGoat",
   "license": "MIT",
   "main": "src/main.js",

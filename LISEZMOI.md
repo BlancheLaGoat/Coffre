@@ -34,6 +34,8 @@ Tes données sont rangées dans `%AppData%\Coffre` (fichier `coffre.json`). Les 
 3. GitHub Desktop : **Commit** puis **Push origin**.
 4. **History** → clic droit sur ce commit → **Create Tag…** → `v1.0.1` (même numéro que dans package.json, avec un `v` devant) → **Push origin**.
 
+Les nouveautés de chaque version sont dans `src/renderer/changelog.js` (je les écris à chaque mise à jour). L'appli les affiche une fois après la mise à jour, et GitHub les met sur la page de la version.
+
 C'est tout. GitHub compile la nouvelle version pour Windows **et** Android. Au prochain lancement, Coffre sur PC la télécharge en arrière-plan puis affiche **« Redémarrer »** en haut à droite. Sur le téléphone, Coffre affiche **« Télécharger »** : ouvre le fichier téléchargé pour installer la mise à jour (tes données restent).
 
 ---
