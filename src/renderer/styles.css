@@ -234,6 +234,7 @@ body.mobile .desktop-only { display: none !important; }
 .ycolset-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 10px; border-bottom: 1px solid var(--line); }
 .ycolset-head > div { flex: 1 1 200px; min-width: 0; }
 @media (max-width: 640px) { .ycolset { grid-template-columns: 1fr; grid-template-areas: "d" "n" "m"; } .ycolset .m { justify-self: start; } }
+#oiText { width: 100%; font: 13px var(--f-mono); resize: vertical; }
 .ycol { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .ytext { white-space: pre-line; font-size: 13px; line-height: 1.45; background: var(--chip); border-radius: 10px; padding: 10px 12px; }
 .yquicks { display: flex; flex-direction: column; gap: 4px; align-items: flex-end; }

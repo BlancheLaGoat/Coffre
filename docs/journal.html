@@ -4,6 +4,12 @@ h1{margin:0 0 4px}h2{margin:28px 0 8px;color:#e3b54a}.d{color:#9a95ad}details{bo
 summary{cursor:pointer;padding:8px 12px}pre{margin:0;padding:12px;overflow:auto;max-height:520px;font:12px Consolas,monospace;background:#100e16;border-top:1px solid #322e42}
 .mod{font-size:11px;background:#3a2f17;color:#e3b54a;padding:1px 6px;border-radius:4px}.new{font-size:11px;background:#1f3a26;color:#6cc58c;padding:1px 6px;border-radius:4px}ul{margin:4px 0 0}</style></head><body>
 <h1>Journal des modifications</h1><p class="d">Coffre — clique sur un fichier pour voir son code.</p>
+<h2>v1.13.0 <span class="d">— 18/10/2026</span></h2>
+<ul><li>Decks One Piece : « Importer une decklist » (onglet Decks). Colle une decklist partagée au format 4xOP09-056 (une carte par ligne, le Leader en 1x…) ou ouvre un fichier .txt : Coffre crée le deck, avec les cartes manquantes et le prix.</li><li>Dans un deck One Piece : « Copier la decklist » et « Enregistrer (.txt) » donnent le même format, Leader en premier, prêt à partager ou à coller dans un simulateur.</li><li>Les codes inconnus de la base sont signalés et laissés de côté.</li></ul>
+<details><summary><code>src/renderer/op.js</code>, <code>styles.css</code>, <code>changelog.js</code>, <code>package.json</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ function toDecklist(deck) {{ … }}   // 4xOP09-056, Leader en premier</span>
+<span style="color:#6cc58c">+ function parseDecklist(texte) {{ … }}   function openImport() {{ … }}   // fenêtre « Importer une decklist »</span>
+<span style="color:#6cc58c">+ boutons « Copier la decklist » et « Enregistrer (.txt) »</span>
+<span style="color:#6cc58c">+ &quot;version&quot;: &quot;1.13.0&quot;,</span></pre></details>
 <h2>v1.12.1 <span class="d">— 18/10/2026</span></h2>
 <ul><li>Collection Yu-Gi-Oh et One Piece : nouveau tri « Par prix », les cartes les plus chères en premier (prix Cardmarket pour Yu-Gi-Oh, prix de la version pour One Piece).</li><li>One Piece : le tri choisi est gardé d&#x27;une ouverture à l&#x27;autre.</li></ul>
 <details><summary><code>src/renderer/ygo.js</code>, <code>op.js</code>, <code>changelog.js</code>, <code>package.json</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ &lt;option value=&quot;price&quot;&gt;Par prix (plus chères d&#x27;abord)&lt;/option&gt;</span>

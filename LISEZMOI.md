@@ -124,6 +124,7 @@ L'onglet **One Piece** marche comme celui de Yu-Gi-Oh. La première fois, il pro
 - **Ma collection** : par **version** (normale, Parallèle, SP…) ou « Peu importe la version », avec la langue de la carte (FR, EN ou JP). Le code est le même dans toutes les langues (ex. OP01-001).
 - **Compléter une extension** : dans « Ajouter des cartes », tape son nom (« Romance Dawn ») ou son code (« OP-05 », « ST-01 »). Progression, filtre par rareté/version, **Manquantes** et **Copier les manquantes**.
 - **Decks** : un Leader + 50 cartes, même celles que tu n'as pas. **Manquantes** et **Copier la liste** au format Cardmarket One Piece (`2x Roronoa Zoro OP01-025`).
+- **Decklists** : onglet Decks → « Importer une decklist » (format `4xOP09-056`, une carte par ligne). Dans un deck : « Copier la decklist » ou « Enregistrer (.txt) » dans le même format.
 - **Wishlist** : comme pour Yu-Gi-Oh.
 - **Texte des cartes** : affiché sous l'image dans la fiche (en anglais).
 - **Scan (téléphone)** : 📷 **Scanner des cartes** lit le code en bas à droite de la carte. La version normale est ajoutée toute seule ; pour une parallèle, touche **Annuler** puis la bonne version.

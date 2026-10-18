@@ -2,6 +2,15 @@
 // et reprises comme notes de version sur GitHub). La plus récente en premier.
 window.COFFRE_CHANGELOG = [
 {
+ "v": "1.13.0",
+ "date": "18/10/2026",
+ "items": [
+  "Decks One Piece : « Importer une decklist » (onglet Decks). Colle une decklist partagée au format 4xOP09-056 (une carte par ligne, le Leader en 1x…) ou ouvre un fichier .txt : Coffre crée le deck, avec les cartes manquantes et le prix.",
+  "Dans un deck One Piece : « Copier la decklist » et « Enregistrer (.txt) » donnent le même format, Leader en premier, prêt à partager ou à coller dans un simulateur.",
+  "Les codes inconnus de la base sont signalés et laissés de côté."
+ ]
+},
+{
  "v": "1.12.1",
  "date": "18/10/2026",
  "items": [

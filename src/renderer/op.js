@@ -123,7 +123,7 @@
   // ---------- Rendu de l'onglet ----------
   function toolsHtml() {
     if (st.view === 'wish') return '';
-    if (st.view === 'decks') return `<button class="primary" data-o="newDeck">Nouveau deck</button>`;
+    if (st.view === 'decks') return `<button class="primary" data-o="newDeck">Nouveau deck</button><button data-o="importList" title="Decklist au format 4xOP09-056, une carte par ligne">Importer une decklist</button>`;
     return `<button class="primary" data-o="add">Ajouter des cartes</button>
       <input type="search" id="opQ" placeholder="Filtrer ma collection (nom, code)…" value="${esc(st.q)}">
       ${layoutSeg('opLayout')}
@@ -294,12 +294,53 @@
       ${missingList.length ? `<div class="ycm"><h4>Manquantes pour ta wishlist Cardmarket</h4>
         <textarea id="odCm" readonly rows="${Math.min(8, missingList.length)}">${esc(cm)}</textarea>
         <div class="actions"><span class="hint grow">Cardmarket → Wishlist → « Ajouter des cartes » : colle la liste (une carte par ligne).</span><button class="primary" data-o="copy">Copier la liste</button></div></div>` : ''}
-      <div class="actions"><button class="danger" data-o="delDeck">Supprimer ce deck</button></div>`;
+      <textarea id="odList" hidden readonly>${esc(toDecklist(d))}</textarea>
+      <div class="actions"><button data-o="copyList" title="Format 4xOP09-056, à coller dans un simulateur ou à partager">Copier la decklist</button><button data-o="saveList">Enregistrer (.txt)</button><span class="grow"></span><button class="danger" data-o="delDeck">Supprimer ce deck</button></div>`;
     if (hadFocus || keepFocus) { const n = $('odQ'); n.focus(); try { n.setSelectionRange(caret, caret); } catch (e) { /* rien */ } }
     loadImages(box);
   }
   // Ligne pour la wishlist Cardmarket One Piece : « 2x Roronoa Zoro OP01-025 »
   const cmLine = (qty, c) => `${qty}x ${c.n} ${c.i}`;
+
+  // ---------- Decklists partagées : « 4xOP09-056 », une carte par ligne, le Leader en premier ----------
+  function toDecklist(d) {
+    const rows = Object.entries(d.cards || {}).map(([id, q]) => ({ c: card(id), id, q })).filter(x => x.c);
+    rows.sort((a, b) => (isLeader(b.c) - isLeader(a.c)) || a.id.localeCompare(b.id, 'en', { numeric: true }));
+    return rows.map(x => `${x.q}x${x.id}`).join('\n');
+  }
+  function parseDecklist(text) {
+    const cards = {}, unknown = []; let lines = 0;
+    for (const raw of String(text || '').replace(/^\uFEFF/, '').split(/\r?\n/)) {
+      const t = raw.trim(); if (!t) continue;
+      // « 4xOP09-056 », « 4 x OP09-056 », « 4 OP09-056 », « OP09-056 x4 »…
+      const m = t.match(/^(\d+)\s*[x×*]?\s*([A-Z]{1,4}\d{0,2}-\d{3}[A-Z]?)/i) || t.match(/^([A-Z]{1,4}\d{0,2}-\d{3}[A-Z]?)\s*[x×*]?\s*(\d+)?/i);
+      if (!m) continue;
+      lines++;
+      const [q, code] = /^\d/.test(m[1]) ? [Number(m[1]), m[2]] : [Number(m[2] || 1), m[1]];
+      const id = code.toUpperCase();
+      if (!card(id)) { unknown.push(id); continue; }
+      cards[id] = (cards[id] || 0) + Math.max(1, q);
+    }
+    return { cards, unknown, lines };
+  }
+  function openImport() {
+    App.openModal(`
+      <div class="sheet-head"><h3>Importer une decklist</h3><button class="close" data-o="close">Fermer</button></div>
+      <p class="hint">Colle la decklist (une carte par ligne, ex. <code>4xOP09-056</code>, le Leader en <code>1x…</code>), ou ouvre un fichier .txt.</p>
+      <label class="f">Nom du deck<input id="oiName" value="Deck importé"></label>
+      <textarea id="oiText" rows="14" placeholder="1xOP09-042&#10;4xOP09-056&#10;4xST25-001&#10;…" spellcheck="false"></textarea>
+      <p class="hint" id="oiMsg"></p>
+      <div class="actions"><button data-o="impFile">Ouvrir un fichier .txt</button><span class="grow"></span><button class="primary" data-o="impGo">Créer le deck</button></div>`, 'tcg op wide', 'op-import');
+    setTimeout(() => { const t = $('oiText'); if (t) t.focus(); }, 50);
+  }
+  function importDecklist() {
+    const { cards, unknown } = parseDecklist($('oiText').value);
+    if (!Object.keys(cards).length) { $('oiMsg').textContent = unknown.length ? `Aucune carte reconnue (inconnues : ${unknown.slice(0, 8).join(', ')}).` : 'Aucune carte trouvée : une ligne par carte, au format 4xOP09-056.'; return; }
+    const id = 'd' + now().toString(36) + Math.random().toString(36).slice(2, 6);
+    decks()[id] = { name: ($('oiName').value || '').trim().slice(0, 60) || 'Deck importé', cards, created: now(), mt: now() };
+    App.scheduleSave(); render(); openDeck(id);
+    App.toast(unknown.length ? `Deck importé (${unknown.length} carte${unknown.length > 1 ? 's' : ''} inconnue${unknown.length > 1 ? 's' : ''} : ${unknown.slice(0, 4).join(', ')})` : 'Deck importé');
+  }
 
   // ---------- Wishlist (dans l'onglet) ----------
   function renderWish(keepFocus) {
@@ -512,6 +553,7 @@
     const b = e.target.closest('[data-o]');
     if (b && b.dataset.o === 'add') return st.db ? openAdd() : refreshDb();
     if (b && b.dataset.o === 'newDeck') return st.db ? newDeck() : refreshDb();
+    if (b && b.dataset.o === 'importList') return st.db ? openImport() : refreshDb();
     const l = e.target.closest('#opLayout button'); if (l) setLayout(l.dataset.v);
   });
   let wishTimer = null;
@@ -560,6 +602,16 @@
     const y = b.dataset.o;
     if (y === 'close') return App.closeModal();
     if (y === 'back') { const back = cardBack; cardBack = null; return back && back(); }
+    if (k === 'op-import') {
+      if (y === 'impGo') return importDecklist();
+      if (y === 'impFile') {
+        try {
+          const r = await window.coffre.openText('txt'); if (!r || !r.ok) return;
+          $('oiText').value = r.text; if (r.name) $('oiName').value = String(r.name).replace(/\.[^.]+$/, '').slice(0, 60);
+        } catch (err) { $('oiMsg').textContent = 'Fichier illisible : ' + (err.message || err); }
+      }
+      return;
+    }
     const row = b.closest('[data-id]');
     if (y === 'card' && row) {
       const back = k === 'op-add' ? openAdd : k === 'op-deck' ? (() => openDeck(st.deckId, true)) : null;
@@ -611,6 +663,12 @@
         touchDeck(d); renderDeck(); render(); return;
       }
       if (y === 'copy') return App.toast(await copyText($('odCm')) ? 'Liste copiée : colle-la dans ta wishlist Cardmarket' : 'Sélectionne le texte et copie-le à la main');
+      if (y === 'copyList') return App.toast(await copyText($('odList')) ? 'Decklist copiée' : 'Copie impossible sur cet appareil');
+      if (y === 'saveList') {
+        try { const r = await window.coffre.saveText((d.name || 'deck') + '.txt', toDecklist(d), 'txt'); if (r && r.ok) App.toast('Decklist enregistrée : ' + r.path); }
+        catch (err) { App.toast('Enregistrement impossible : ' + (err.message || err)); }
+        return;
+      }
       if (y === 'delDeck') {
         if (b.dataset.sure) { decks()[st.deckId] = { deleted: true, mt: now() }; App.scheduleSave(); App.closeModal(); render(); App.toast('Deck supprimé'); }
         else { b.dataset.sure = '1'; b.textContent = 'Confirmer la suppression'; }
@@ -642,7 +700,7 @@
     addPrinting: (ci, pi, delta, lang) => addPrinting(ci, pi, delta, lang),
     addGeneric: id => addGeneric(id, 1), removeGeneric: id => addGeneric(id, -1),
     imgTag: (id, cls) => { const c = card(id); return imgTag(c ? c.im : id, cls); },
-    printName: p => rarName(p),
+    printName: p => rarName(p), toDecklist, parseDecklist,
     loadImages, ownedOf, money
   };
   const start = () => { if (['name', 'added', 'code', 'price'].includes(App.data.settings.opSort)) st.sort = App.data.settings.opSort; st.view = ['decks', 'wish'].includes(App.data.settings.opView) ? App.data.settings.opView : 'col'; render(); loadDb(); };
