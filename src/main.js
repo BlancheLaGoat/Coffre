@@ -447,6 +447,21 @@ ipcMain.handle('backup:export', async (_e, data) => {
   return { ok: true, path: r.filePath };
 });
 
+// Fichiers texte simples (decks .ydk) : enregistrer / ouvrir
+ipcMain.handle('file:saveText', async (_e, name, text, ext) => {
+  const r = await dialog.showSaveDialog(win, { title: 'Exporter', defaultPath: String(name || 'deck').replace(/[\\/:*?"<>|]+/g, '_'), filters: [{ name: ext ? ext.toUpperCase() : 'Texte', extensions: [ext || 'txt'] }] });
+  if (r.canceled || !r.filePath) return { ok: false };
+  fs.writeFileSync(r.filePath, String(text), 'utf8');
+  return { ok: true, path: r.filePath };
+});
+ipcMain.handle('file:openText', async (_e, ext) => {
+  const r = await dialog.showOpenDialog(win, { title: 'Importer', properties: ['openFile'], filters: [{ name: ext ? ext.toUpperCase() : 'Texte', extensions: [ext || 'txt'] }, { name: 'Tous les fichiers', extensions: ['*'] }] });
+  if (r.canceled || !r.filePaths[0]) return { ok: false };
+  const st = fs.statSync(r.filePaths[0]);
+  if (st.size > 1024 * 1024) throw new Error('Fichier trop gros.');
+  return { ok: true, name: path.basename(r.filePaths[0]), text: fs.readFileSync(r.filePaths[0], 'utf8') };
+});
+
 ipcMain.handle('backup:import', async () => {
   const r = await dialog.showOpenDialog(win, {
     title: 'Importer une sauvegarde',

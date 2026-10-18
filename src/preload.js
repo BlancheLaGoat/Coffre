@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld('coffre', {
   imgCacheClear: () => ipcRenderer.invoke('imgcache:clear'),
   exportBackup: data => ipcRenderer.invoke('backup:export', data),
   importBackup: () => ipcRenderer.invoke('backup:import'),
+  saveText: (name, text, ext) => ipcRenderer.invoke('file:saveText', name, text, ext),
+  openText: ext => ipcRenderer.invoke('file:openText', ext),
   openExternal: url => ipcRenderer.invoke('open:external', url),
   openDataDir: () => ipcRenderer.invoke('open:dataDir'),
   checkUpdate: () => ipcRenderer.invoke('update:check'),

@@ -196,6 +196,17 @@
       await window.coffre.save(out);
       return { ok: true, data: out };
     },
+    // Fichiers texte simples (decks .ydk) : enregistrés dans Documents, ouverts avec le sélecteur de fichiers
+    async saveText(name, text) {
+      const n = String(name || 'deck').replace(/[\\/:*?"<>|]+/g, '_');
+      await FS.writeFile({ path: n, directory: 'DOCUMENTS', encoding: 'utf8', data: String(text), recursive: true });
+      return { ok: true, path: 'Documents/' + n };
+    },
+    async openText(ext) {
+      const f = await pickFile('.' + (ext || 'txt') + ',text/plain,application/octet-stream,*/*'); if (!f) return { ok: false };
+      if (f.size > 1024 * 1024) throw new Error('Fichier trop gros.');
+      return { ok: true, name: f.name, text: await f.text() };
+    },
     openExternal(url) {
       if (!/^https?:\/\//.test(url)) return;
       if (P.Browser) return P.Browser.open({ url });
