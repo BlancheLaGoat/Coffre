@@ -57,13 +57,15 @@
 
   // ---------- Images (téléchargées une fois, puis gardées sur l'appareil) ----------
   const imgTag = (img, cls = '') => `<img class="yimg ${cls}" data-op="${esc(img || '')}" alt="" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">`;
+  // Carte sans image (cartes à venir : TCGplayer ne les a pas encore mises en ligne)
+  const noImg = img => { const d = document.createElement('div'); d.className = img.className.replace('yimg', 'yimg noimgbox'); d.innerHTML = '<span>Image pas encore disponible</span>'; img.replaceWith(d); };
   let io = null;
   function loadImages(root) {
     const imgs = (root || document).querySelectorAll('img[data-op]:not([data-done])');
     const go = img => {
       img.dataset.done = '1';
-      if (!img.dataset.op) { img.classList.add('missing'); return; }
-      window.coffre.opImg(img.dataset.op).then(u => { if (u) img.src = u; else img.classList.add('missing'); });
+      if (!img.dataset.op) { noImg(img); return; }
+      window.coffre.opImg(img.dataset.op).then(u => { if (u) img.src = u; else noImg(img); });
     };
     if (!('IntersectionObserver' in window)) { imgs.forEach(go); return; }
     if (!io) io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { io.unobserve(e.target); go(e.target); } }), { rootMargin: '300px' });

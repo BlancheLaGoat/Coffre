@@ -644,7 +644,7 @@ function openSettings() {
     <div class="actions" style="justify-content:flex-start"><span id="stImg" class="hint">…</span><button data-act="imgClear">Vider les images des cartes</button><button data-act="dbRefresh" title="Nouvelles cartes et extensions, banlist, prix">Mettre à jour les cartes maintenant</button></div>
     <p class="hint">Les pochettes de vinyles s'affichent depuis Discogs et ne sont pas enregistrées. Les images Yu-Gi-Oh et One Piece sont gardées dans un cache limité (200 Mo sur PC, 50 Mo sur téléphone ; YGOPRODeck interdit de les recharger sans arrêt) : au-delà, les plus anciennes s'effacent toutes seules.</p>
     <h3>Application</h3>
-    <div class="actions" style="justify-content:flex-start"><span>Coffre version ${esc(info.version)}</span>
+    <div class="actions" style="justify-content:flex-start"><span class="ver">Coffre version ${esc(info.version)}</span>
       <button data-act="news">Nouveautés</button>
       <button data-act="check">Chercher une mise à jour</button>
       ${updateState.status === 'ready' ? `<button class="primary" data-act="install">${info.platform === 'mobile' ? 'Télécharger la mise à jour' : 'Redémarrer et mettre à jour'}</button>` : ''}</div>
@@ -729,6 +729,39 @@ $('sheet').addEventListener('click', async e => {
   }
 });
 $('settingsBtn').addEventListener('click', openSettings);
+
+// ---------- 🐤 ----------
+(function () {
+  let taps = [], ctx = null, btn = null;
+  function pouic() {
+    try {
+      ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
+      const t = ctx.currentTime, o = ctx.createOscillator(), g = ctx.createGain(), lfo = ctx.createOscillator(), lg = ctx.createGain();
+      o.type = 'triangle'; lfo.frequency.value = 38; lg.gain.value = 60; lfo.connect(lg); lg.connect(o.frequency);
+      o.frequency.setValueAtTime(700, t); o.frequency.exponentialRampToValueAtTime(1500, t + 0.07);
+      o.frequency.setValueAtTime(1900, t + 0.09); o.frequency.exponentialRampToValueAtTime(950, t + 0.24);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.35, t + 0.01); g.gain.setValueAtTime(0.35, t + 0.07);
+      g.gain.exponentialRampToValueAtTime(0.05, t + 0.085); g.gain.exponentialRampToValueAtTime(0.3, t + 0.1); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.26);
+      o.connect(g); g.connect(ctx.destination); o.start(t); lfo.start(t); o.stop(t + 0.27); lfo.stop(t + 0.27);
+    } catch (e) { /* pas de son */ }
+    if (navigator.vibrate) navigator.vibrate(15);
+    btn.classList.remove('squish'); void btn.offsetWidth; btn.classList.add('squish'); setTimeout(() => btn && btn.classList.remove('squish'), 120);
+  }
+  function show(on) {
+    if (on && !btn) { btn = document.createElement('button'); btn.className = 'pouic'; btn.textContent = '🐤'; btn.setAttribute('aria-label', 'Pouic'); btn.addEventListener('click', pouic); document.body.appendChild(btn); }
+    if (!on && btn) { btn.remove(); btn = null; }
+  }
+  // 7 touches rapides sur « Coffre version … » dans les réglages
+  document.addEventListener('click', e => {
+    if (!e.target.closest || !e.target.closest('.ver')) return;
+    const n = Date.now(); taps = taps.filter(x => n - x < 2500); taps.push(n);
+    if (taps.length < 7) return;
+    taps = []; const on = !btn; show(on);
+    if (data && data.settings) { data.settings.pouic = on; scheduleSave(); }
+    if (on) pouic();
+  });
+  document.addEventListener('coffre:ready', () => { if (data && data.settings && data.settings.pouic) show(true); }, { once: true });
+})();
 
 // ---------- Nouveautés (changelog) ----------
 const cmpVer = (a, b) => { const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number); for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) - (y[i] || 0); return 0; };

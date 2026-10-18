@@ -170,6 +170,8 @@ body.mobile .desktop-only { display: none !important; }
 .sheet.tcg a { color: var(--tcg, var(--ygo)); }
 .yimg { display: block; width: 100%; aspect-ratio: 421/614; object-fit: cover; border-radius: 4px; background: var(--chip); }
 .yimg.big { max-width: 300px; border-radius: 10px; }
+.noimgbox { display: grid; place-items: center; text-align: center; padding: 6px; color: var(--muted); font-size: 12px; line-height: 1.3; border: 1px dashed var(--line); }
+.ypic .noimgbox span, .ycover .noimgbox span { display: none; }
 .yrow, .yres { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 6px 16px; border-bottom: 1px solid var(--line); }
 .sheet .yrow, .sheet .yres { padding: 6px 2px; }
 .ypic { border: 0; padding: 0; background: none; border-radius: 4px; }
@@ -254,3 +256,6 @@ b.price { font-size: inherit; }
 .price.miss { color: var(--wax); }
 .ywish { padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
 .ywish .gal { padding: 0; }
+
+.pouic { position: fixed; left: 16px; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); z-index: 40; width: 52px; height: 52px; border-radius: 99px; border: 0; padding: 0; font-size: 28px; line-height: 1; background: #ffd84d; box-shadow: 0 4px 14px rgba(0,0,0,.25); cursor: pointer; transition: transform .08s; }
+.pouic:active, .pouic.squish { transform: scale(.82, .7); }

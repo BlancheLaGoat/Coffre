@@ -2,6 +2,20 @@
 // et reprises comme notes de version sur GitHub). La plus récente en premier.
 window.COFFRE_CHANGELOG = [
 {
+ "v": "1.14.3",
+ "date": "18/10/2026",
+ "items": [
+  "Petites corrections."
+ ]
+},
+{
+ "v": "1.14.2",
+ "date": "18/10/2026",
+ "items": [
+  "Cartes sans image (cartes à venir dont TCGplayer n'a pas encore mis l'image en ligne) : un cadre « Image pas encore disponible » remplace le carré gris. L'image apparaît toute seule dès qu'elle est publiée."
+ ]
+},
+{
  "v": "1.14.1",
  "date": "18/10/2026",
  "items": [

@@ -55,12 +55,13 @@
 
   // ---------- Images (téléchargées une fois, puis gardées sur l'appareil) ----------
   const imgTag = (id, cls = '') => `<img class="yimg ${cls}" data-ygo="${id}" alt="" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">`;
+  const noImg = img => { const d = document.createElement('div'); d.className = img.className.replace('yimg', 'yimg noimgbox'); d.innerHTML = '<span>Image pas encore disponible</span>'; img.replaceWith(d); };
   let io = null;
   function loadImages(root) {
     const imgs = (root || document).querySelectorAll('img[data-ygo]:not([data-done])');
     const go = img => {
       img.dataset.done = '1';
-      window.coffre.ygoImg(img.dataset.ygo, img.classList.contains('big')).then(u => { if (u) img.src = u; else img.classList.add('missing'); });
+      window.coffre.ygoImg(img.dataset.ygo, img.classList.contains('big')).then(u => { if (u) img.src = u; else noImg(img); });
     };
     if (!('IntersectionObserver' in window)) { imgs.forEach(go); return; }
     if (!io) io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { io.unobserve(e.target); go(e.target); } }), { rootMargin: '300px' });

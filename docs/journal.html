@@ -4,6 +4,13 @@ h1{margin:0 0 4px}h2{margin:28px 0 8px;color:#e3b54a}.d{color:#9a95ad}details{bo
 summary{cursor:pointer;padding:8px 12px}pre{margin:0;padding:12px;overflow:auto;max-height:520px;font:12px Consolas,monospace;background:#100e16;border-top:1px solid #322e42}
 .mod{font-size:11px;background:#3a2f17;color:#e3b54a;padding:1px 6px;border-radius:4px}.new{font-size:11px;background:#1f3a26;color:#6cc58c;padding:1px 6px;border-radius:4px}ul{margin:4px 0 0}</style></head><body>
 <h1>Journal des modifications</h1><p class="d">Coffre — clique sur un fichier pour voir son code.</p>
+<h2>v1.14.3 <span class="d">— 18/10/2026</span></h2>
+<ul><li>Petites corrections.</li></ul>
+<details><summary><code>src/renderer/app.js</code>, <code>changelog.js</code>, <code>package.json</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ &quot;version&quot;: &quot;1.14.3&quot;,</span></pre></details>
+<h2>v1.14.2 <span class="d">— 18/10/2026</span></h2>
+<ul><li>Cartes sans image (cartes à venir dont TCGplayer n&#x27;a pas encore mis l&#x27;image en ligne) : un cadre « Image pas encore disponible » remplace le carré gris. L&#x27;image apparaît toute seule dès qu&#x27;elle est publiée.</li></ul>
+<details><summary><code>src/renderer/op.js</code>, <code>ygo.js</code>, <code>app.js</code>, <code>styles.css</code>, <code>changelog.js</code>, <code>package.json</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ function noImg(img) {{ … }}   // cadre « Image pas encore disponible »</span>
+<span style="color:#6cc58c">+ &quot;version&quot;: &quot;1.14.2&quot;,</span></pre></details>
 <h2>v1.14.1 <span class="d">— 18/10/2026</span></h2>
 <ul><li>One Piece, extensions à venir : elles sont maintenant récupérées une fois par jour par une tâche GitHub (onglet Actions → « Cartes à venir »), qui publie le fichier que Coffre lit. Le site source (TCGCSV) interdit d&#x27;être interrogé directement par les applis : c&#x27;est ce qui empêchait EB05 et OP18 d&#x27;arriver.</li><li>⚙ Réglages → Images : bouton « Mettre à jour les cartes maintenant » pour retélécharger tout de suite les bases Yu-Gi-Oh et One Piece (nouvelles cartes, banlist, prix).</li><li>La base One Piece se retélécharge une fois toute seule.</li></ul>
 <details><summary><code>.github/workflows/donnees.yml</code> <span class="new">nouveau</span>, <code>scripts/op-a-venir.js</code> <span class="new">nouveau</span></summary><pre><span style="color:#6cc58c">+ tous les jours : node scripts/op-a-venir.js → branche « donnees », fichier onepiece-a-venir.json</span>
