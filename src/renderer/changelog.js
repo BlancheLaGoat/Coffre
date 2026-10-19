@@ -2,6 +2,13 @@
 // et reprises comme notes de version sur GitHub). La plus récente en premier.
 window.COFFRE_CHANGELOG = [
 {
+ "v": "1.14.8",
+ "date": "20/10/2026",
+ "items": [
+  "Coffre passe sur la dernière version du moteur Electron (44) et de l'outil qui fabrique l'installateur : correctifs de sécurité et appli plus à jour. Rien ne change pour tes cartes, tes decks et tes vinyles."
+ ]
+},
+{
  "v": "1.14.7",
  "date": "19/10/2026",
  "items": [

@@ -42,7 +42,7 @@ C'est tout. GitHub compile la nouvelle version pour Windows **et** Android. Au p
 
 ## 3. Tester sur ton PC sans compiler (optionnel)
 
-Il faut [Node.js LTS](https://nodejs.org) installé. Ensuite, double-clic sur `lancer.bat` (la première fois, il installe ce qu'il faut).
+Il faut [Node.js LTS](https://nodejs.org) installé (version 22 ou plus récente). Ensuite, double-clic sur `lancer.bat` (la première fois, il installe ce qu'il faut).
 En mode test, les mises à jour automatiques sont désactivées : c'est normal.
 
 ---

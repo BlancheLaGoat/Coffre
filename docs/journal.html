@@ -4,6 +4,15 @@ h1{margin:0 0 4px}h2{margin:28px 0 8px;color:#e3b54a}.d{color:#9a95ad}details{bo
 summary{cursor:pointer;padding:8px 12px}pre{margin:0;padding:12px;overflow:auto;max-height:520px;font:12px Consolas,monospace;background:#100e16;border-top:1px solid #322e42}
 .mod{font-size:11px;background:#3a2f17;color:#e3b54a;padding:1px 6px;border-radius:4px}.new{font-size:11px;background:#1f3a26;color:#6cc58c;padding:1px 6px;border-radius:4px}ul{margin:4px 0 0}</style></head><body>
 <h1>Journal des modifications</h1><p class="d">Coffre — clique sur un fichier pour voir son code.</p>
+<h2>v1.14.8 <span class="d">— 20/10/2026</span></h2>
+<ul><li>Coffre passe sur la dernière version du moteur Electron (44) et de l&#x27;outil qui fabrique l&#x27;installateur : correctifs de sécurité et appli plus à jour. Rien ne change pour tes cartes, tes decks et tes vinyles.</li></ul>
+<details><summary><code>package.json</code>, <code>mobile/package.json</code>, <code>changelog.js</code> <span class="mod">modifié</span></summary><pre><span style="color:#ef7a62">- &quot;electron&quot;: &quot;^33.2.1&quot;,   &quot;electron-builder&quot;: &quot;^25.1.8&quot;</span>
+<span style="color:#6cc58c">+ &quot;electron&quot;: &quot;^44.9.0&quot;,   &quot;electron-builder&quot;: &quot;^26.15.3&quot;,   &quot;electron-updater&quot;: &quot;^6.8.9&quot;</span>
+<span style="color:#6cc58c">+ &quot;version&quot;: &quot;1.14.8&quot;,</span></pre></details>
+<details><summary><code>.github/workflows/release.yml</code> <span class="mod">modifié</span></summary><pre><span style="color:#ef7a62">- node-version: 20</span>
+<span style="color:#6cc58c">+ node-version: 22   (Electron 44 demande Node.js 22.12 ou plus)</span></pre></details>
+<details><summary><code>lancer.bat</code>, <code>LISEZMOI.md</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ vérifie que Node.js est en version 22 ou plus</span>
+<span style="color:#6cc58c">+ réinstalle les dépendances quand package.json change (avant : seulement la première fois)</span></pre></details>
 <h2>v1.14.7 <span class="d">— 19/10/2026</span></h2>
 <ul><li>Decks Yu-Gi-Oh et One Piece : un bouton « +1 collection » sur chaque carte du deck ajoute directement un exemplaire à ta collection, sans passer par la fiche. Si la carte n&#x27;a qu&#x27;une version, c&#x27;est celle-là ; sinon elle est ajoutée en « peu importe la version » (tu peux préciser ensuite dans la fiche).</li></ul>
 <details><summary><code>src/renderer/op.js</code>, <code>ygo.js</code>, <code>styles.css</code>, <code>changelog.js</code>, <code>package.json</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ renderDeck : bouton « +1 collection » (data-o / data-y = cadd) sur chaque carte, en liste et en galerie</span>
