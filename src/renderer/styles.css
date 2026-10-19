@@ -270,3 +270,5 @@ b.price { font-size: inherit; }
 .totop:hover { opacity: 1; }
 .totop[hidden] { display: none; }
 .totop.inmodal { z-index: 25; }
+.dcover { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; font-size: 13px; color: var(--muted); }
+.dcover select { flex: 1 1 220px; max-width: 420px; min-width: 0; }

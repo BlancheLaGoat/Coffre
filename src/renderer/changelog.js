@@ -2,6 +2,13 @@
 // et reprises comme notes de version sur GitHub). La plus récente en premier.
 window.COFFRE_CHANGELOG = [
 {
+ "v": "1.14.11",
+ "date": "20/10/2026",
+ "items": [
+  "Decks Yu-Gi-Oh et One Piece : tu peux choisir la carte de couverture du deck (menu « Carte de couverture » en haut du deck). Par défaut, c'est toujours automatique : le Leader pour One Piece, la première carte pour Yu-Gi-Oh."
+ ]
+},
+{
  "v": "1.14.10",
  "date": "20/10/2026",
  "items": [

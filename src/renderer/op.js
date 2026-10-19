@@ -235,8 +235,7 @@
     if (!ds.length) return `<div class="empty">Aucun deck. Touche « Nouveau deck », choisis ton Leader et ajoute des cartes, même celles que tu n'as pas encore : Coffre te dira lesquelles manquent.</div>`;
     return `<div class="ydecks">` + ds.map(([id, d]) => {
       const { total, missing } = deckCounts(d);
-      const ids = Object.keys(d.cards || {});
-      const lead = ids.map(card).find(c => c && isLeader(c)) || card(ids[0]);
+      const lead = deckCover(d);
       return `<button class="ydeck" data-o="deck" data-deck="${id}">
         <span class="ycover">${lead ? imgTag(lead.im) : ''}</span>
         <span class="t">${esc(d.name || 'Deck sans nom')}</span>
@@ -252,6 +251,17 @@
     openDeck(id);
   }
   function touchDeck(d) { d.mt = now(); App.scheduleSave(); }
+  // Carte de couverture : celle choisie (si elle est encore dans le deck), sinon le Leader
+  function deckCover(d) {
+    if (d.cover && d.cards && d.cards[d.cover] && card(d.cover)) return card(d.cover);
+    const ids = Object.keys(d.cards || {});
+    return ids.map(card).find(c => c && isLeader(c)) || card(ids[0]);
+  }
+  function coverSelect(id, d, list) {
+    const cur = d.cover && list.some(c => c.i === d.cover) ? d.cover : '';
+    const opts = list.slice().sort((a, b) => (isLeader(b) - isLeader(a)) || label(a).localeCompare(label(b), 'fr'));
+    return `<label class="dcover">Carte de couverture <select id="${id}"><option value="">Automatique (le Leader)</option>${opts.map(c => `<option value="${esc(c.i)}"${c.i === cur ? ' selected' : ''}>${esc(label(c))} · ${esc(c.i)}</option>`).join('')}</select></label>`;
+  }
 
   // Recherche dans toutes les cartes du jeu (nom, code, type)
   function searchCards(q, max = 60) {
@@ -314,6 +324,7 @@
     box.innerHTML = `
       <div class="sheet-head"><input id="odName" class="dname" value="${esc(d.name || '')}" aria-label="Nom du deck">
         <button class="close" data-o="close">Fermer</button></div>
+      ${entries.length ? coverSelect('odCover', d, entries.map(x => x.c)) : ''}
       <p class="hint">Leader : ${leadCount}/1 · Deck : ${mainCount}/50 cartes · ${missingList.length ? `<b class="miss">${missingList.reduce((a, x) => a + x.q - x.owned, 0)} carte(s) manquante(s)</b>` : 'tu as toutes les cartes'}
         ${deckValue ? `<br>Prix du deck ≈ <b class="price">${money(deckValue)}</b>${missValue ? ` · ce qu'il te manque ≈ <b class="price miss">${money(missValue)}</b>` : ''} ${priceSrc()}` : ''}</p>
       <div class="ydeckbar">
@@ -633,6 +644,7 @@
   $('sheet').addEventListener('change', e => {
     if (e.target.id === 'oaLang' || e.target.id === 'ocLang') { App.data.settings.opLang = e.target.value; App.scheduleSave(); refreshOpenModal(); return; }
     if (e.target.id === 'odName') { const d = decks()[st.deckId]; if (d) { d.name = e.target.value.trim() || 'Deck sans nom'; touchDeck(d); render(); } }
+    if (e.target.id === 'odCover') { const d = decks()[st.deckId]; if (d) { if (e.target.value) d.cover = e.target.value; else delete d.cover; touchDeck(d); render(); } }
   });
   $('sheet').addEventListener('click', async e => {
     const k = App.modalKind; if (!k || !k.startsWith('op-')) return;
