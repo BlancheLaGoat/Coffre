@@ -27,6 +27,16 @@ jobs:
       - name: Installer les dépendances
         run: npm install
 
+      # Crée la page de la version AVANT la compilation : electron-builder 26 envoie ses fichiers
+      # en parallèle et, si la page n'existe pas encore, il en crée parfois deux pour la même version.
+      - name: Préparer la page de la version
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v$(node -p "require('./package.json').version")"
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "${TAG#v}" --notes "Version ${TAG#v}" --verify-tag 2>/dev/null || gh release create "$TAG" --title "${TAG#v}" --notes "Version ${TAG#v}" --target "$GITHUB_SHA"
+
       - name: Compiler et publier
         run: npm run release
         env:

@@ -2,6 +2,13 @@
 // et reprises comme notes de version sur GitHub). La plus récente en premier.
 window.COFFRE_CHANGELOG = [
 {
+ "v": "1.14.9",
+ "date": "20/10/2026",
+ "items": [
+  "Correction de la publication : la version 1.14.8 avait été mise en ligne en double sur GitHub (et sans l'appli téléphone). Cette version remet tout en ordre, PC et téléphone."
+ ]
+},
+{
  "v": "1.14.8",
  "date": "20/10/2026",
  "items": [
