@@ -921,3 +921,33 @@ window.CoffreApp = {
   window.coffreReady = true;
   document.dispatchEvent(new Event('coffre:ready'));
 })();
+
+// ---------- Flèche « remonter tout en haut » (longues collections, extensions, listes) ----------
+(() => {
+  const btn = document.createElement('button');
+  btn.className = 'totop'; btn.type = 'button'; btn.hidden = true;
+  btn.title = 'Remonter tout en haut'; btn.setAttribute('aria-label', 'Remonter tout en haut');
+  btn.innerHTML = '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M12 5l-7 7m7-7l7 7M12 5v14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  document.body.appendChild(btn);
+  let target = null;
+  const update = () => {
+    const ok = target && target.isConnected && target.offsetParent !== null && target.scrollTop > 700;
+    btn.hidden = !ok;
+    btn.classList.toggle('inmodal', !!(ok && target.closest('#modal')));
+  };
+  // l'événement « scroll » ne remonte pas : on l'écoute en phase de capture pour tous les éléments
+  document.addEventListener('scroll', e => {
+    const el = e.target;
+    if (!el || el === document || !el.closest || el.clientHeight < 300) return;
+    if (!el.closest('#shelves, #modal')) return;
+    target = el; update();
+  }, { capture: true, passive: true });
+  btn.addEventListener('click', () => {
+    if (!target) return;
+    target.scrollTo({ top: 0, behavior: 'smooth' });
+    btn.hidden = true;
+  });
+  // changement d'onglet ou fermeture d'une fenêtre : on recalcule
+  document.addEventListener('click', e => { if (e.target.closest && e.target.closest('#tabs')) setTimeout(update, 50); }, true);
+  document.addEventListener('coffre:modalclose', () => { target = null; update(); });
+})();

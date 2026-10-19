@@ -88,3 +88,6 @@ body.mobile .tabs .long { display: none; }
 
 .scan-tool { min-width: 44px; height: 40px; border-radius: 99px; border: 0; background: rgba(255, 255, 255, .18); color: #fff; font-weight: 700; padding: 0 10px; min-height: 0 !important; }
 .scan-title { min-width: 0; font-size: 15px !important; }
+/* flèche « remonter » au-dessus du bouton de scan */
+body.mobile .totop { right: 22px; bottom: calc(90px + env(safe-area-inset-bottom, 0px)); }
+body.mobile .totop.inmodal { bottom: calc(22px + env(safe-area-inset-bottom, 0px)); }

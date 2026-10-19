@@ -266,3 +266,7 @@ b.price { font-size: inherit; }
 .coladd { font-size: 12px; padding: 4px 9px; white-space: nowrap; flex: none; }
 .yrow .coladd { margin-right: 6px; }
 .gcard .coladd { width: 100%; }
+.totop { position: fixed; right: 22px; bottom: calc(22px + env(safe-area-inset-bottom, 0px)); z-index: 18; width: 46px; height: 46px; border-radius: 99px; border: 1px solid var(--line); padding: 0; display: flex; align-items: center; justify-content: center; background: var(--panel); color: var(--fg); box-shadow: var(--shadow); cursor: pointer; opacity: .92; }
+.totop:hover { opacity: 1; }
+.totop[hidden] { display: none; }
+.totop.inmodal { z-index: 25; }

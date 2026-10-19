@@ -4,6 +4,12 @@ h1{margin:0 0 4px}h2{margin:28px 0 8px;color:#e3b54a}.d{color:#9a95ad}details{bo
 summary{cursor:pointer;padding:8px 12px}pre{margin:0;padding:12px;overflow:auto;max-height:520px;font:12px Consolas,monospace;background:#100e16;border-top:1px solid #322e42}
 .mod{font-size:11px;background:#3a2f17;color:#e3b54a;padding:1px 6px;border-radius:4px}.new{font-size:11px;background:#1f3a26;color:#6cc58c;padding:1px 6px;border-radius:4px}ul{margin:4px 0 0}</style></head><body>
 <h1>Journal des modifications</h1><p class="d">Coffre — clique sur un fichier pour voir son code.</p>
+<h2>v1.14.10 <span class="d">— 20/10/2026</span></h2>
+<ul><li>Une flèche « remonter tout en haut » apparaît en bas à droite quand tu descends loin dans une liste (collection, extensions, wishlist, decks, ou dans une extension ouverte). Un clic et tu es revenue en haut.</li></ul>
+<details><summary><code>src/renderer/app.js</code>, <code>styles.css</code>, <code>mobile/src/mobile.css</code>, <code>changelog.js</code>, <code>package.json</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ app.js : bouton .totop (flèche) — s&#x27;affiche quand la liste ou la fenêtre est descendue de plus de 700 px, scrollTo({ top: 0, behavior: &#x27;smooth&#x27; })</span>
+<span style="color:#6cc58c">+ écoute du défilement en phase de capture (onglets et fenêtres) ; recalcul au changement d&#x27;onglet et à la fermeture d&#x27;une fenêtre</span>
+<span style="color:#6cc58c">+ styles.css : .totop en bas à droite ; mobile.css : au-dessus du bouton de scan</span>
+<span style="color:#6cc58c">+ &quot;version&quot;: &quot;1.14.10&quot;,</span></pre></details>
 <h2>v1.14.9 <span class="d">— 20/10/2026</span></h2>
 <ul><li>Correction de la publication : la version 1.14.8 avait été mise en ligne en double sur GitHub (et sans l&#x27;appli téléphone). Cette version remet tout en ordre, PC et téléphone.</li></ul>
 <details><summary><code>.github/workflows/release.yml</code>, <code>changelog.js</code>, <code>package.json</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ étape « Préparer la page de la version » avant « Compiler et publier » :</span>

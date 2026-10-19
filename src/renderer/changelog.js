@@ -2,6 +2,13 @@
 // et reprises comme notes de version sur GitHub). La plus récente en premier.
 window.COFFRE_CHANGELOG = [
 {
+ "v": "1.14.10",
+ "date": "20/10/2026",
+ "items": [
+  "Une flèche « remonter tout en haut » apparaît en bas à droite quand tu descends loin dans une liste (collection, extensions, wishlist, decks, ou dans une extension ouverte). Un clic et tu es revenue en haut."
+ ]
+},
+{
  "v": "1.14.9",
  "date": "20/10/2026",
  "items": [
