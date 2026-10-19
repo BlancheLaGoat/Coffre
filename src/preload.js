@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('coffre', {
   purgeCovers: keep => ipcRenderer.invoke('cover:purge', keep),
   imgCacheInfo: () => ipcRenderer.invoke('imgcache:info'),
   imgCacheClear: () => ipcRenderer.invoke('imgcache:clear'),
+  imgCacheSetMax: mb => ipcRenderer.invoke('imgcache:setMax', mb),
   exportBackup: data => ipcRenderer.invoke('backup:export', data),
   importBackup: () => ipcRenderer.invoke('backup:import'),
   saveText: (name, text, ext) => ipcRenderer.invoke('file:saveText', name, text, ext),

@@ -237,10 +237,15 @@ async function syncInfo() {
 // Les images Yu-Gi-Oh et One Piece sont gardées dans un petit cache : 200 Mo au total sur le PC.
 // Au-delà, les images vues le moins récemment (tous jeux confondus) sont effacées.
 // (YGOPRODeck interdit de recharger ses images sans arrêt, d'où ce cache.)
-const IMG_CACHE_MAX = 200 * 1024 * 1024;
+// Taille choisie dans les réglages (20 à 500 Mo, 200 par défaut), gardée dans imgcache.json
+const IMG_CACHE_FILE = path.join(DATA_DIR, 'imgcache.json');
+const clampMb = mb => Math.min(500, Math.max(20, Math.round(Number(mb) || 200)));
+let IMG_CACHE_MAX = 200 * 1024 * 1024;
+try { IMG_CACHE_MAX = clampMb(JSON.parse(fs.readFileSync(IMG_CACHE_FILE, 'utf8')).mb) * 1048576; } catch (e) { /* défaut */ }
 let trimTimer = null;
 function touchFile(file) { try { const t = new Date(); fs.utimesSync(file, t, t); } catch (e) { /* ignoré */ } }
-function trimCache(max = IMG_CACHE_MAX) {
+function trimCache(max) {
+  max = max || IMG_CACHE_MAX;
   try {
     const files = [];
     for (const dir of [YGO_IMG_DIR, OP_IMG_DIR]) {
@@ -428,6 +433,15 @@ ipcMain.handle('cover:purge', (_e, keep) => {
   return true;
 });
 ipcMain.handle('imgcache:info', () => ({ bytes: dirSize(YGO_IMG_DIR) + dirSize(OP_IMG_DIR) + dirSize(COVERS_DIR), max: IMG_CACHE_MAX }));
+ipcMain.handle('imgcache:setMax', (_e, mb) => {
+  const v = clampMb(mb);
+  if (v * 1048576 !== IMG_CACHE_MAX) {
+    IMG_CACHE_MAX = v * 1048576;
+    try { fs.writeFileSync(IMG_CACHE_FILE, JSON.stringify({ mb: v })); } catch (e) { /* ignoré */ }
+    trimCache(IMG_CACHE_MAX);
+  }
+  return IMG_CACHE_MAX;
+});
 ipcMain.handle('imgcache:clear', () => { clearDir(YGO_IMG_DIR); clearDir(OP_IMG_DIR); return true; });
 ipcMain.handle('cover:delete', (_e, name) => {
   const p = safeCoverPath(name);

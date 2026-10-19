@@ -2,6 +2,13 @@
 // et reprises comme notes de version sur GitHub). La plus récente en premier.
 window.COFFRE_CHANGELOG = [
 {
+ "v": "1.14.6",
+ "date": "19/10/2026",
+ "items": [
+  "Réglages → Images : une barre glissante pour choisir la place maximale des images de cartes (de 20 à 500 Mo). Par défaut 200 Mo sur PC et 50 Mo sur téléphone ; chaque appareil garde son propre choix. Si tu baisses la limite, les images les plus anciennes sont effacées tout de suite."
+ ]
+},
+{
  "v": "1.14.5",
  "date": "19/10/2026",
  "items": [

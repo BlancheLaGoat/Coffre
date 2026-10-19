@@ -163,6 +163,15 @@
       }
       return { bytes, max: IMG_CACHE_MAX };
     },
+    async imgCacheSetMax(mb) {
+      const v = Math.min(500, Math.max(20, Math.round(Number(mb) || 50)));
+      if (v * 1048576 !== IMG_CACHE_MAX) {
+        IMG_CACHE_MAX = v * 1048576;
+        try { localStorage.setItem('coffreImgMaxMb', String(v)); } catch (e) { /* ignoré */ }
+        trimAll();
+      }
+      return IMG_CACHE_MAX;
+    },
     async imgCacheClear() {
       for (const dir of ['yugioh-images', 'onepiece-images']) {
         try { await FS.rmdir({ path: dir, directory: DATA, recursive: true }); } catch (e) { /* vide */ }
@@ -282,7 +291,9 @@
   // Images des cartes (Yu-Gi-Oh, One Piece) : petit cache plafonné à 50 Mo au total sur le téléphone.
   // Au-delà, les images vues le moins récemment (tous jeux confondus) sont effacées.
   // (YGOPRODeck interdit de recharger ses images sans arrêt, d'où ce cache.)
-  const IMG_CACHE_MAX = 50 * 1024 * 1024;
+  // Taille choisie dans les réglages (20 à 500 Mo, 50 par défaut)
+  let IMG_CACHE_MAX = 50 * 1024 * 1024;
+  try { const v = Number(localStorage.getItem('coffreImgMaxMb')); if (v >= 20 && v <= 500) IMG_CACHE_MAX = v * 1048576; } catch (e) { /* défaut */ }
   const IMG_DIRS = ['yugioh-images', 'onepiece-images'];
   const imgDirs = new Map(); const imgJobs = new Map();
   async function imgDir(dir) {

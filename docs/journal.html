@@ -4,6 +4,13 @@ h1{margin:0 0 4px}h2{margin:28px 0 8px;color:#e3b54a}.d{color:#9a95ad}details{bo
 summary{cursor:pointer;padding:8px 12px}pre{margin:0;padding:12px;overflow:auto;max-height:520px;font:12px Consolas,monospace;background:#100e16;border-top:1px solid #322e42}
 .mod{font-size:11px;background:#3a2f17;color:#e3b54a;padding:1px 6px;border-radius:4px}.new{font-size:11px;background:#1f3a26;color:#6cc58c;padding:1px 6px;border-radius:4px}ul{margin:4px 0 0}</style></head><body>
 <h1>Journal des modifications</h1><p class="d">Coffre — clique sur un fichier pour voir son code.</p>
+<h2>v1.14.6 <span class="d">— 19/10/2026</span></h2>
+<ul><li>Réglages → Images : une barre glissante pour choisir la place maximale des images de cartes (de 20 à 500 Mo). Par défaut 200 Mo sur PC et 50 Mo sur téléphone ; chaque appareil garde son propre choix. Si tu baisses la limite, les images les plus anciennes sont effacées tout de suite.</li></ul>
+<details><summary><code>src/main.js</code>, <code>preload.js</code>, <code>renderer/app.js</code>, <code>styles.css</code>, <code>mobile/src/mobile.js</code>, <code>changelog.js</code>, <code>package.json</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ Réglages → Images : &lt;input type=range min=20 max=500 step=10&gt; « Taille max des images »</span>
+<span style="color:#6cc58c">+ main.js : IMG_CACHE_MAX réglable, gardé dans imgcache.json ; IPC imgcache:setMax (20–500 Mo), vidage immédiat si on baisse</span>
+<span style="color:#6cc58c">+ mobile.js : imgCacheSetMax, gardé sur le téléphone (50 Mo par défaut)</span>
+<span style="color:#6cc58c">+ preload.js : imgCacheSetMax</span>
+<span style="color:#6cc58c">+ &quot;version&quot;: &quot;1.14.6&quot;,</span></pre></details>
 <h2>v1.14.5 <span class="d">— 19/10/2026</span></h2>
 <ul><li>Collection Yu-Gi-Oh et One Piece beaucoup plus fluide avec une grosse collection : l&#x27;affichage « Par extension », l&#x27;ouverture d&#x27;une extension, le filtre « Manquantes » et les boutons + / − ne ralentissent plus (plus d&#x27;une seconde avant, quelques millisecondes maintenant).</li></ul>
 <details><summary><code>src/renderer/ygo.js</code>, <code>op.js</code>, <code>app.js</code>, <code>styles.css</code>, <code>changelog.js</code>, <code>package.json</code> <span class="mod">modifié</span></summary><pre><span style="color:#ef7a62">- ownedOf / qtyAny : relisaient toute la collection pour chaque carte affichée</span>

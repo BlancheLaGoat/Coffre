@@ -642,7 +642,8 @@ function openSettings() {
     <p class="hint" id="stMsg">L'export contient tes cartes, tes decks et tes vinyles dans un seul fichier (les pochettes et images restent en ligne).</p>
     <h3>Images</h3>
     <div class="actions" style="justify-content:flex-start"><span id="stImg" class="hint">…</span><button data-act="imgClear">Vider les images des cartes</button><button data-act="dbRefresh" title="Nouvelles cartes et extensions, banlist, prix">Mettre à jour les cartes maintenant</button></div>
-    <p class="hint">Les pochettes de vinyles s'affichent depuis Discogs et ne sont pas enregistrées. Les images Yu-Gi-Oh et One Piece sont gardées dans un cache limité (200 Mo sur PC, 50 Mo sur téléphone ; YGOPRODeck interdit de les recharger sans arrêt) : au-delà, les plus anciennes s'effacent toutes seules.</p>
+    <label class="cachemax" id="stImgMaxBox" hidden>Taille max des images : <b id="stImgMaxV">…</b><input type="range" id="stImgMax" min="20" max="500" step="10" aria-label="Taille maximale des images enregistrées, en Mo"></label>
+    <p class="hint">Les pochettes de vinyles s'affichent depuis Discogs et ne sont pas enregistrées. Les images Yu-Gi-Oh et One Piece sont gardées dans un cache limité (200 Mo par défaut sur PC, 50 Mo sur téléphone ; YGOPRODeck interdit de les recharger sans arrêt) : au-delà, les plus anciennes s'effacent toutes seules. Plus petit = moins de place prise, mais les images se rechargent plus souvent.</p>
     <h3>Application</h3>
     <div class="actions" style="justify-content:flex-start"><span class="ver">Coffre version ${esc(info.version)}</span>
       <button data-act="news">Nouveautés</button>
@@ -655,7 +656,20 @@ function openSettings() {
 const mo = b => (b / 1048576).toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' Mo';
 async function loadImgInfo() {
   if (!window.coffre.imgCacheInfo || !$('stImg')) return;
-  try { const r = await window.coffre.imgCacheInfo(); if ($('stImg')) $('stImg').textContent = `Images enregistrées : ${mo(r.bytes)} (max ${mo(r.max)})`; } catch (e) { /* rien */ }
+  try {
+    const r = await window.coffre.imgCacheInfo(); if (!$('stImg')) return;
+    $('stImg').textContent = `Images enregistrées : ${mo(r.bytes)} (max ${mo(r.max)})`;
+    const sl = $('stImgMax');
+    if (sl && window.coffre.imgCacheSetMax && !sl.dataset.on) {
+      sl.dataset.on = '1'; sl.value = Math.round(r.max / 1048576); $('stImgMaxV').textContent = sl.value + ' Mo'; $('stImgMaxBox').hidden = false;
+      sl.addEventListener('input', () => { $('stImgMaxV').textContent = sl.value + ' Mo'; });
+      sl.addEventListener('change', async () => {
+        $('stImgMaxV').textContent = sl.value + ' Mo';
+        data.settings.imgCacheMb = Number(sl.value); scheduleSave();
+        await window.coffre.imgCacheSetMax(Number(sl.value)); loadImgInfo();
+      });
+    }
+  } catch (e) { /* rien */ }
 }
 
 // ---------- Téléphone (appli Android) ----------
@@ -900,6 +914,7 @@ window.CoffreApp = {
   $('shelves').dataset.tab = want; applyTabs(); showTab($('shelves').dataset.tab);
   renderAll();
   if (ext.ready) ext.ready();
+  if (data.settings.imgCacheMb && window.coffre.imgCacheSetMax) window.coffre.imgCacheSetMax(data.settings.imgCacheMb).catch(() => {});
   // Prix Discogs manquants ou vieux de plus d'une semaine, en arrière-plan
   setTimeout(() => migrateCovers().then(() => refreshPrices(true)), 6000);
   showNewsIfUpdated();
