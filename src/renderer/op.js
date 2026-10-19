@@ -116,6 +116,14 @@
   function qtyAny(pkey) { return qIndex().byKey.get(pkey) || 0; }
   const qtyLang = pkey => { const e = col()[keyFor(pkey, curLang())]; return (e && e.qty) || 0; };
   function addGeneric(id, delta = 1) { return changeEntry(`${id}|*`, { id, k: '' }, delta); }
+  // Depuis un deck : une seule version → on ajoute celle-là ; sinon « peu importe la version » (modifiable dans la fiche)
+  function addOneToCollection(id) {
+    const c = card(id); if (!c) return;
+    const ci = st.db.cards.indexOf(c);
+    if (c.p && c.p.length === 1 && ci >= 0) addPrinting(ci, 0, 1); else addGeneric(c.i, 1);
+    const n = ownedOf(c.i);
+    App.toast(`${label(c)} ajoutée à ta collection (${n} possédée${n > 1 ? 's' : ''})`);
+  }
   const entryPrint = e => { if (!e || !e.k || !st.idx.byKey.has(e.k)) return null; const [ci, pi] = st.idx.byKey.get(e.k); return st.db.cards[ci].p[pi]; };
 
   // ---------- Prix (TCGplayer, en dollars) ----------
@@ -281,19 +289,20 @@
     const entries = Object.entries(d.cards || {}).map(([id, q]) => ({ c: card(id), q, owned: ownedOf(id) })).filter(x => x.c);
     const missingList = entries.filter(x => x.q > x.owned);
     const shown = st.deckView === 'miss' ? missingList : entries;
+    const cadd = c => `<button class="coladd" data-o="cadd" title="Ajouter 1 exemplaire de ${esc(label(c))} à ta collection">+1 collection</button>`;
     const dq = q => `<div class="qty"><button data-o="dq" data-d="-1" aria-label="Retirer du deck">−</button><output>${q}</output><button data-o="dq" data-d="1" aria-label="Ajouter au deck">+</button></div>`;
     const ownTxt = (q, owned) => owned >= q ? `<span class="own">${owned} possédée${owned > 1 ? 's' : ''}</span>` : `<span class="miss">il en manque ${q - owned}</span>`;
     const sortFn = (a, b) => (Number(a.c.c) || 0) - (Number(b.c.c) || 0) || label(a.c).localeCompare(label(b.c), 'fr');
     const group = (title, arr) => arr.length ? `<h4>${title} <span class="num">${arr.reduce((a, x) => a + x.q, 0)}</span></h4>` + (gal()
       ? `<div class="gal">${arr.sort(sortFn).map(({ c, q, owned }) => `<div class="gcard${owned >= q ? ' own' : ' short'}" data-id="${esc(c.i)}">
           <button class="pic" data-o="card" aria-label="Détails de ${esc(label(c))}">${imgTag(c.im)}<span class="badge">×${q}</span></button>
-          <div class="cap"><span class="num">${ownTxt(q, owned)}</span>${esc(label(c))}${priceTag(c.i)}</div>${dq(q)}</div>`).join('')}</div>`
+          <div class="cap"><span class="num">${ownTxt(q, owned)}</span>${esc(label(c))}${priceTag(c.i)}</div>${cadd(c)}${dq(q)}</div>`).join('')}</div>`
       : arr.sort(sortFn).map(({ c, q, owned }) => `
       <div class="yrow${owned >= q ? ' ok' : ' short'}" data-id="${esc(c.i)}">
         <button class="ypic" data-o="card">${imgTag(c.im)}</button>
         <div class="yinfo"><button class="nm" data-o="card">${esc(label(c))}</button><span class="en">${esc(c.i)} · ${esc(statLine(c))}</span>
           <span class="meta">${ownTxt(q, owned)}${owned < q ? `<span>(${owned} possédée${owned > 1 ? 's' : ''})</span>` : ''}${priceTag(c.i)}</span></div>
-        ${dq(q)}</div>`).join('')) : '';
+        ${cadd(c)}${dq(q)}</div>`).join('')) : '';
     const leaders = shown.filter(x => isLeader(x.c)), main = shown.filter(x => !isLeader(x.c));
     const leadCount = entries.filter(x => isLeader(x.c)).reduce((a, x) => a + x.q, 0);
     const mainCount = entries.filter(x => !isLeader(x.c)).reduce((a, x) => a + x.q, 0);
@@ -686,6 +695,7 @@
       if (b.dataset.v && b.closest('#odLayout')) { setLayout(b.dataset.v); return renderDeck(); }
       if (b.dataset.v) { st.deckView = b.dataset.v; return renderDeck(); }
       if (y === 'dadd' && row) { const id = row.dataset.id; d.cards[id] = (d.cards[id] || 0) + 1; touchDeck(d); afterChange(); return; }
+      if (y === 'cadd' && row) { addOneToCollection(row.dataset.id); afterChange(); return; }
       if (y === 'dq' && row) {
         const id = row.dataset.id, n = (d.cards[id] || 0) + Number(b.dataset.d);
         if (n > 0) d.cards[id] = n; else delete d.cards[id];

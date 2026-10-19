@@ -263,3 +263,6 @@ b.price { font-size: inherit; }
 .cachemax b { min-width: 58px; font-family: var(--f-mono); color: var(--gold); }
 .cachemax input[type=range] { flex: 1 1 220px; max-width: 360px; accent-color: var(--gold); }
 .cachemax[hidden] { display: none; }
+.coladd { font-size: 12px; padding: 4px 9px; white-space: nowrap; flex: none; }
+.yrow .coladd { margin-right: 6px; }
+.gcard .coladd { width: 100%; }

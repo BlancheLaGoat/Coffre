@@ -4,6 +4,12 @@ h1{margin:0 0 4px}h2{margin:28px 0 8px;color:#e3b54a}.d{color:#9a95ad}details{bo
 summary{cursor:pointer;padding:8px 12px}pre{margin:0;padding:12px;overflow:auto;max-height:520px;font:12px Consolas,monospace;background:#100e16;border-top:1px solid #322e42}
 .mod{font-size:11px;background:#3a2f17;color:#e3b54a;padding:1px 6px;border-radius:4px}.new{font-size:11px;background:#1f3a26;color:#6cc58c;padding:1px 6px;border-radius:4px}ul{margin:4px 0 0}</style></head><body>
 <h1>Journal des modifications</h1><p class="d">Coffre — clique sur un fichier pour voir son code.</p>
+<h2>v1.14.7 <span class="d">— 19/10/2026</span></h2>
+<ul><li>Decks Yu-Gi-Oh et One Piece : un bouton « +1 collection » sur chaque carte du deck ajoute directement un exemplaire à ta collection, sans passer par la fiche. Si la carte n&#x27;a qu&#x27;une version, c&#x27;est celle-là ; sinon elle est ajoutée en « peu importe la version » (tu peux préciser ensuite dans la fiche).</li></ul>
+<details><summary><code>src/renderer/op.js</code>, <code>ygo.js</code>, <code>styles.css</code>, <code>changelog.js</code>, <code>package.json</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ renderDeck : bouton « +1 collection » (data-o / data-y = cadd) sur chaque carte, en liste et en galerie</span>
+<span style="color:#6cc58c">+ addOneToCollection(id) : une seule version → addPrinting, sinon addGeneric (« peu importe ») + message</span>
+<span style="color:#6cc58c">+ styles.css : .coladd</span>
+<span style="color:#6cc58c">+ &quot;version&quot;: &quot;1.14.7&quot;,</span></pre></details>
 <h2>v1.14.6 <span class="d">— 19/10/2026</span></h2>
 <ul><li>Réglages → Images : une barre glissante pour choisir la place maximale des images de cartes (de 20 à 500 Mo). Par défaut 200 Mo sur PC et 50 Mo sur téléphone ; chaque appareil garde son propre choix. Si tu baisses la limite, les images les plus anciennes sont effacées tout de suite.</li></ul>
 <details><summary><code>src/main.js</code>, <code>preload.js</code>, <code>renderer/app.js</code>, <code>styles.css</code>, <code>mobile/src/mobile.js</code>, <code>changelog.js</code>, <code>package.json</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ Réglages → Images : &lt;input type=range min=20 max=500 step=10&gt; « Taille max des images »</span>

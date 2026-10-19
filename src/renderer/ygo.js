@@ -127,6 +127,14 @@
   // Exemplaires d'une impression, toutes langues confondues
   function qtyAny(code, r) { return qIndex().byPrint.get(code + '|' + r) || 0; }
   function addGeneric(id, delta = 1) { return changeEntry(`${id}|*`, { id, code: '', r: '' }, delta); }
+  // Depuis un deck : une seule impression → on ajoute celle-là ; sinon « peu importe l'extension » (modifiable dans la fiche)
+  function addOneToCollection(id) {
+    const c = card(id); if (!c) return;
+    const ci = st.db.cards.indexOf(c);
+    if (c.p && c.p.length === 1 && ci >= 0) addPrinting(ci, 0, 1); else addGeneric(c.i, 1);
+    const n = ownedOf(c.i);
+    App.toast(`${label(c)} ajoutée à ta collection (${n} possédée${n > 1 ? 's' : ''})`);
+  }
 
   // ---------- Prix Cardmarket ----------
   const eur = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' });
@@ -389,17 +397,18 @@
     const miss = new Set(missingList.map(x => x.c.i));
     const pick = arr => st.deckView === 'miss' ? arr.filter(x => miss.has(x.c.i)) : arr;
     const shown = pick(entries), shownSide = pick(sideE);
+    const cadd = c => `<button class="coladd" data-y="cadd" title="Ajouter 1 exemplaire de ${esc(label(c))} à ta collection">+1 collection</button>`;
     const dq = (q, z) => `<div class="qty"><button data-y="dq" data-z="${z}" data-d="-1" aria-label="Retirer">−</button><output>${q}</output><button data-y="dq" data-z="${z}" data-d="1" aria-label="Ajouter">+</button></div>`;
     const ownTxt = x => x.owned >= x.need ? `<span class="own">${x.owned} possédée${x.owned > 1 ? 's' : ''}</span>` : `<span class="miss">il en manque ${x.need - x.owned}</span>`;
     const tile = x => `<div class="gcard${x.owned >= x.need ? ' own' : ' short'}" data-id="${x.c.i}">
         <button class="pic" data-y="card" aria-label="Détails de ${esc(label(x.c))}">${imgTag(x.c.i)}${banIcon(x.c)}<span class="badge">×${x.q}</span></button>
-        <div class="cap"><span class="num">${ownTxt(x)}</span>${esc(label(x.c))}${priceTag(x.c.i)}</div>${dq(x.q, x.z)}</div>`;
+        <div class="cap"><span class="num">${ownTxt(x)}</span>${esc(label(x.c))}${priceTag(x.c.i)}</div>${cadd(x.c)}${dq(x.q, x.z)}</div>`;
     const row = x => `
       <div class="yrow${x.owned >= x.need ? ' ok' : ' short'}" data-id="${x.c.i}">
         <button class="ypic" data-y="card">${imgTag(x.c.i)}</button>
         <div class="yinfo"><button class="nm" data-y="card">${esc(label(x.c))}</button>${sub(x.c) ? `<span class="en">${esc(sub(x.c))}</span>` : ''}
           <span class="meta">${banTag(x.c)}${x.need > banMax(x.c) ? `<span class="miss">max ${banMax(x.c)} (deck + side)</span>` : ''}${ownTxt(x)}${x.owned < x.need ? `<span>(${x.owned} possédée${x.owned > 1 ? 's' : ''})</span>` : ''}${priceTag(x.c.i)}</span></div>
-        ${dq(x.q, x.z)}</div>`;
+        ${cadd(x.c)}${dq(x.q, x.z)}</div>`;
     const group = (title, arr) => { if (!arr.length) return ''; arr.sort((a, b) => label(a.c).localeCompare(label(b.c), 'fr')); return `<h4>${title} <span class="num">${arr.reduce((a, x) => a + x.q, 0)}</span></h4>` + (gal() ? `<div class="gal">${arr.map(tile).join('')}</div>` : arr.map(row).join('')); };
     const main = shown.filter(x => !isExtra(x.c)), extra = shown.filter(x => isExtra(x.c));
     const mainCount = entries.filter(x => !isExtra(x.c)).reduce((a, x) => a + x.q, 0);
@@ -748,6 +757,7 @@
       if (b.dataset.v && b.closest('#ydLayout')) { setLayout(b.dataset.v); return renderDeck(); }
       if (b.dataset.v) { st.deckView = b.dataset.v; return renderDeck(); }
       if (y === 'dadd' && row) { const id = Number(row.dataset.id); d.cards[id] = (d.cards[id] || 0) + 1; touchDeck(d); afterChange(); return; }
+      if (y === 'cadd' && row) { addOneToCollection(Number(row.dataset.id)); afterChange(); return; }
       if (y === 'sadd' && row) { const id = Number(row.dataset.id); d.side = d.side || {}; d.side[id] = (d.side[id] || 0) + 1; touchDeck(d); afterChange(); return; }
       if (y === 'dq' && row) {
         const part = b.dataset.z === 's' ? (d.side = d.side || {}) : d.cards;

@@ -2,6 +2,13 @@
 // et reprises comme notes de version sur GitHub). La plus récente en premier.
 window.COFFRE_CHANGELOG = [
 {
+ "v": "1.14.7",
+ "date": "19/10/2026",
+ "items": [
+  "Decks Yu-Gi-Oh et One Piece : un bouton « +1 collection » sur chaque carte du deck ajoute directement un exemplaire à ta collection, sans passer par la fiche. Si la carte n'a qu'une version, c'est celle-là ; sinon elle est ajoutée en « peu importe la version » (tu peux préciser ensuite dans la fiche)."
+ ]
+},
+{
  "v": "1.14.6",
  "date": "19/10/2026",
  "items": [
