@@ -336,10 +336,13 @@
     return { byId, bySet, byKey };
   }
 
+  // Serveur de synchro en ligne (Cloudflare Worker, voir cloud/worker.js). Vide = synchro en ligne pas encore configurée.
+  const CLOUD_URL = 'https://coffre-sync.ixaglax.workers.dev';
+
   // Ligne pour la wishlist Cardmarket : « 2 Dark Magician »
   const cmLine = (qty, name) => `${qty} ${name}`;
 
   return { PARTS, pickCollections, mergeMaps, mergeCollections, sameCollections, createVinylApi,
     YGO_URLS, ygoImgUrl, ygoCompact, ygoKey, ygoNormCode, ygoCodesInText, ygoIndex, cmLine,
-    OP_URLS, opImgUrl, opCompact, opSplitName, opCodesInText, opIndex, opKnownSets, opUpcoming, opUpcomingFrom, OP_UPCOMING_URL };
+    OP_URLS, opImgUrl, opCompact, opSplitName, opCodesInText, opIndex, opKnownSets, opUpcoming, opUpcomingFrom, OP_UPCOMING_URL, CLOUD_URL };
 });

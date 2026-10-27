@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('coffre', {
   imgCacheInfo: () => ipcRenderer.invoke('imgcache:info'),
   imgCacheClear: () => ipcRenderer.invoke('imgcache:clear'),
   imgCacheSetMax: mb => ipcRenderer.invoke('imgcache:setMax', mb),
+  makeQr: text => ipcRenderer.invoke('qr:make', text),
   exportBackup: data => ipcRenderer.invoke('backup:export', data),
   importBackup: () => ipcRenderer.invoke('backup:import'),
   saveText: (name, text, ext) => ipcRenderer.invoke('file:saveText', name, text, ext),

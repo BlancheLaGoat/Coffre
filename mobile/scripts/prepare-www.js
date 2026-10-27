@@ -15,6 +15,7 @@ const copy = (from, to) => fs.copyFileSync(from, path.join(WWW, to));
 copy(path.join(R, 'app.js'), 'app.js');
 copy(path.join(R, 'ygo.js'), 'ygo.js');
 copy(path.join(R, 'op.js'), 'op.js');
+copy(path.join(R, 'cloud.js'), 'cloud.js');
 copy(path.join(R, 'changelog.js'), 'changelog.js');
 copy(path.join(R, 'styles.css'), 'styles.css');
 copy(path.join(R, 'fm-data.js'), 'fm-data.js');

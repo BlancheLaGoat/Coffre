@@ -187,7 +187,7 @@
     },
     async exportBackup(d) {
       const covers = {};   // les pochettes ne sont plus dans la sauvegarde (affichées depuis Discogs)
-      const clean = { ...d, settings: { ...d.settings, discogsSecret: '', discogsToken: '' } };
+      const clean = { ...d, settings: { ...d.settings, discogsSecret: '', discogsToken: '', cloud: undefined } };
       const name = `Coffre-${new Date().toISOString().slice(0, 10)}.coffre`;
       await FS.writeFile({ path: name, directory: 'DOCUMENTS', encoding: 'utf8', data: JSON.stringify({ format: 'coffre-backup', version: 1, data: clean, covers }), recursive: true });
       return { ok: true, path: 'Documents/' + name };

@@ -433,6 +433,11 @@ ipcMain.handle('cover:purge', (_e, keep) => {
   return true;
 });
 ipcMain.handle('imgcache:info', () => ({ bytes: dirSize(YGO_IMG_DIR) + dirSize(OP_IMG_DIR) + dirSize(COVERS_DIR), max: IMG_CACHE_MAX }));
+// QR code d'un texte court (code de synchro en ligne)
+ipcMain.handle('qr:make', async (_e, text) => {
+  if (!QRCode || typeof text !== 'string' || text.length > 300) return '';
+  try { return await QRCode.toDataURL(text, { margin: 1, width: 260, errorCorrectionLevel: 'M' }); } catch (e) { return ''; }
+});
 ipcMain.handle('imgcache:setMax', (_e, mb) => {
   const v = clampMb(mb);
   if (v * 1048576 !== IMG_CACHE_MAX) {
@@ -459,7 +464,7 @@ ipcMain.handle('backup:export', async (_e, data) => {
   });
   if (r.canceled || !r.filePath) return { ok: false };
   const covers = {};   // les pochettes ne sont plus dans la sauvegarde (affichées depuis Discogs)
-  const clean = { ...data, settings: { ...data.settings, discogsSecret: '', discogsToken: '' } };
+  const clean = { ...data, settings: { ...data.settings, discogsSecret: '', discogsToken: '', cloud: undefined } };
   fs.writeFileSync(r.filePath, JSON.stringify({ format: 'coffre-backup', version: 1, data: clean, covers }));
   return { ok: true, path: r.filePath };
 });

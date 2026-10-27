@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file: data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file: data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https://*.workers.dev">
   <title>Coffre</title>
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -135,6 +135,7 @@
   <script src="changelog.js"></script>
   <script src="fm-data.js"></script>
   <script src="app.js"></script>
+  <script src="cloud.js"></script>
   <script src="ygo.js"></script>
   <script src="op.js"></script>
 </body>

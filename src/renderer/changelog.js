@@ -2,6 +2,14 @@
 // et reprises comme notes de version sur GitHub). La plus récente en premier.
 window.COFFRE_CHANGELOG = [
 {
+ "v": "1.15.0",
+ "date": "27/10/2026",
+ "items": [
+  "Synchro en ligne : ta collection (cartes, decks, wishlist, vinyles) se synchronise entre tes appareils par internet, même quand le PC est éteint. Réglages → Synchro en ligne → « Activer sur cet appareil », puis entre le code (ou scanne-le avec le téléphone) sur tes autres appareils.",
+  "Pas de compte à créer : un code secret relie tes appareils, et la collection est chiffrée sur l'appareil avant l'envoi (le serveur ne peut pas la lire). La synchro Wi-Fi avec le QR code marche toujours."
+ ]
+},
+{
  "v": "1.14.11",
  "date": "20/10/2026",
  "items": [

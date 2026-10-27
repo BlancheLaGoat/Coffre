@@ -39,7 +39,7 @@ function scheduleSave() {
   $('savedState').textContent = 'Enregistrement…';
   clearTimeout(saveTimer);
   saveTimer = setTimeout(async () => {
-    try { await window.coffre.save(data); $('savedState').textContent = 'Enregistré'; }
+    try { await window.coffre.save(data); $('savedState').textContent = 'Enregistré'; document.dispatchEvent(new Event('coffre:saved')); }
     catch (e) { $('savedState').textContent = "Échec de l'enregistrement"; }
   }, 400);
 }
@@ -632,6 +632,7 @@ function openSettings() {
     <h3>Onglets</h3>
     <div class="tabtoggles">${TABS.map(([k, n]) => `<label class="tgl"><input type="checkbox" data-tabtoggle="${k}" ${tabOn(k) ? 'checked' : ''}> ${n}</label>`).join('')}</div>
     <p class="hint">Un onglet désactivé est seulement caché : tes cartes et vinyles restent enregistrés et continuent de se synchroniser.</p>
+    ${window.CoffreCloud ? window.CoffreCloud.sectionHtml() : ''}
     ${phoneSectionHtml()}
     <h3>Sauvegarde</h3>
     <div class="actions" style="justify-content:flex-start">
@@ -726,7 +727,7 @@ $('sheet').addEventListener('click', async e => {
     case 'import': {
       try {
         const r = await window.coffre.importBackup();
-        if (r.ok) { data = r.data; renderAll(); msg('Sauvegarde importée.'); }
+        if (r.ok) { const cloud = data.settings.cloud; data = r.data; data.settings = data.settings || {}; if (cloud) data.settings.cloud = cloud; else delete data.settings.cloud; renderAll(); scheduleSave(); msg('Sauvegarde importée.'); }
       } catch (err) { msg("Ce fichier n'a pas pu être importé. Choisis un fichier .coffre exporté depuis l'appli."); }
       return;
     }
@@ -854,6 +855,7 @@ document.addEventListener('keydown', e => {
 function applyRemote(c) {
   data.fm = c.fm || data.fm; data.vinyls = c.vinyls || data.vinyls; data.ygo = c.ygo || data.ygo || {}; data.decks = c.decks || data.decks || {}; data.op = c.op || data.op || {}; data.opdecks = c.opdecks || data.opdecks || {};
   renderAll();
+  document.dispatchEvent(new Event('coffre:changed'));
   if (modalKind === 'vinyl') {
     const id = $('sheet').querySelector('[data-id]')?.dataset.id;
     if (id && (!data.vinyls[id] || data.vinyls[id].deleted)) closeModal();

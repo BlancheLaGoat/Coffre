@@ -137,6 +137,22 @@ L'onglet **One Piece** marche comme celui de Yu-Gi-Oh. La première fois, il pro
 
 ⚙ Réglages → **Onglets** : décoche Cartes FM, Yu-Gi-Oh, One Piece ou Vinyles pour cacher l'onglet. Rien n'est supprimé : recoche la case et tout revient. Chaque appareil garde son propre choix.
 
+## Synchro en ligne (Cloudflare)
+
+Pour synchroniser le PC et le téléphone par internet, même PC éteint. Pas de compte pour les utilisateurs : un code de synchro relie leurs appareils, et la collection est chiffrée sur l'appareil avant l'envoi (le serveur ne peut pas la lire).
+
+Le serveur est un petit programme Cloudflare (`cloud/worker.js`), à installer une seule fois, gratuitement :
+
+1. Crée un compte sur [dash.cloudflare.com](https://dash.cloudflare.com) (gratuit, pas de carte bancaire).
+2. **Base de données** : page *D1 SQL Database* → *Create Database*, nom `coffre-sync` → *Create*.
+3. **Serveur** : page *Workers & Pages* → *Create application* → *Start with Hello World!* → *Get started*, nom `coffre-sync`, puis *Deploy*.
+4. Ouvre le Worker → icône *Edit code* (`</>`), remplace tout le contenu de `worker.js` par celui de `cloud/worker.js`, puis *Deploy* (ou *Save*).
+5. Dans le Worker : onglet *Bindings* → *Add binding* → *D1 database* → *Add binding*, *Variable name* : **`DB`**, base `coffre-sync` → *Add binding*.
+6. L'adresse du serveur est en haut de la page du Worker (`https://coffre-sync.<ton-nom>.workers.dev`). En l'ouvrant dans le navigateur, tu dois voir `"ok":true` et `"db":true`.
+7. Cette adresse va dans `CLOUD_URL` (fichier `src/shared/coffre-core.js`). Ce n'est pas un secret.
+
+Ensuite, dans Coffre : *Réglages → Synchro en ligne → Activer sur cet appareil* sur le premier appareil, puis *Afficher le code* et entre-le (ou scanne-le) sur les autres. La synchro Wi-Fi avec le QR code marche toujours en parallèle.
+
 ## Sauvegarde
 
 ⚙ **Réglages → Exporter une sauvegarde** crée un fichier `.coffre` qui contient tout (cartes, decks, vinyles ; les images restent en ligne). **Importer une sauvegarde** le recharge, sur ce PC ou un autre. Sur le téléphone, l'export arrive dans le dossier **Documents**.

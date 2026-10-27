@@ -1,0 +1,10 @@
+# Configuration pour déployer le serveur de synchro avec l'outil « wrangler » (facultatif :
+# le déploiement depuis le tableau de bord Cloudflare suffit, voir LISEZMOI.md).
+name = "coffre-sync"
+main = "worker.js"
+compatibility_date = "2026-06-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "coffre-sync"
+database_id = "a-remplacer-par-l-id-de-ta-base"
