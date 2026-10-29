@@ -12,8 +12,9 @@
       <h1>Coffre</h1>
       <nav class="tabs" id="tabs" role="tablist">
         <button role="tab" data-tab="fm"><span class="k fm-k">◆</span> <span class="long">Cartes </span>FM <span class="count" id="tabFmCount"></span></button>
-        <button role="tab" data-tab="ygo"><span class="k ygo-k">★</span> Yu-Gi-Oh <span class="count" id="tabYgoCount"></span></button>
-        <button role="tab" data-tab="op"><span class="k op-k">☠</span> One Piece <span class="count" id="tabOpCount"></span></button>
+        <button role="tab" data-tab="ygo"><span class="k ygo-k">★</span> <span class="long">Yu-Gi-Oh</span><span class="short">YGO</span> <span class="count" id="tabYgoCount"></span></button>
+        <button role="tab" data-tab="op"><span class="k op-k">☠</span> <span class="long">One Piece</span><span class="short">OP</span> <span class="count" id="tabOpCount"></span></button>
+        <button role="tab" data-tab="rb"><span class="k rb-k">◈</span> <span class="long">Riftbound</span><span class="short">Rift</span> <span class="count" id="tabRbCount"></span></button>
         <button role="tab" data-tab="vin"><span class="k vin-k">●</span> Vinyles <span class="count" id="tabVinCount"></span></button>
       </nav>
     </div>
@@ -98,6 +99,24 @@
       <div class="list" id="opList"></div>
     </section>
 
+    <section class="shelf rb tcg">
+      <div class="shelf-head">
+        <div class="title-row">
+          <h2><span class="k">◈</span> Riftbound</h2>
+          <span class="big" id="rbStats"></span>
+        </div>
+        <div class="tools">
+          <div class="seg" id="rbView">
+            <button data-v="col">Ma collection</button>
+            <button data-v="decks">Decks</button>
+            <button data-v="wish">Wishlist</button>
+          </div>
+        </div>
+        <div class="tools" id="rbTools"></div>
+      </div>
+      <div class="list" id="rbList"></div>
+    </section>
+
     <!-- ===== VINYLES ===== -->
     <section class="shelf vin">
       <div class="shelf-head">
@@ -138,5 +157,6 @@
   <script src="cloud.js"></script>
   <script src="ygo.js"></script>
   <script src="op.js"></script>
+  <script src="rb.js"></script>
 </body>
 </html>

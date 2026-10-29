@@ -133,6 +133,12 @@ L'onglet **One Piece** marche comme celui de Yu-Gi-Oh. La première fois, il pro
 
 ---
 
+## 8. Riftbound (toutes les cartes du jeu)
+
+L'onglet Riftbound marche comme One Piece : collection (par version : normale, art alternatif, signature, overnumbered, ou « peu importe la version »), extensions à compléter, decks (Légende, deck principal, runes, champs de bataille), wishlist, prix TCGplayer et scan du numéro imprimé en bas de la carte (ex. `OGN · 030/298`) sur le téléphone.
+
+Les cartes viennent de [Riftcodex](https://riftcodex.com) et les prix de TCGplayer (via TCGCSV). La tâche GitHub « Cartes à venir » (`scripts/riftbound.js`) assemble le tout une fois par jour dans `riftbound.json` (branche `donnees`) ; l'appli ne lit que ce fichier. La première fois, lance la tâche à la main : onglet *Actions* → « Cartes à venir » → *Run workflow*.
+
 ## Choisir les onglets
 
 ⚙ Réglages → **Onglets** : décoche Cartes FM, Yu-Gi-Oh, One Piece ou Vinyles pour cacher l'onglet. Rien n'est supprimé : recoche la case et tout revient. Chaque appareil garde son propre choix.

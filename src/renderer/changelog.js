@@ -2,6 +2,15 @@
 // et reprises comme notes de version sur GitHub). La plus récente en premier.
 window.COFFRE_CHANGELOG = [
 {
+ "v": "1.16.0",
+ "date": "29/10/2026",
+ "items": [
+  "Nouvel onglet Riftbound : toutes les cartes du jeu (extensions, promos, arts alternatifs, signatures, cartes déjà révélées des extensions à venir), avec ta collection, les extensions à compléter, la wishlist, les prix TCGplayer et le scan du numéro en bas de la carte sur le téléphone.",
+  "Decks Riftbound : Légende, deck principal, runes et champs de bataille, avec les cartes manquantes, l'alerte au-delà de 3 exemplaires, la decklist à copier et l'import d'une decklist texte.",
+  "Decks en mode liste (toutes les cartes) : le bouton « +1 collection » ne décale plus les boutons + / −."
+ ]
+},
+{
  "v": "1.15.0",
  "date": "27/10/2026",
  "items": [

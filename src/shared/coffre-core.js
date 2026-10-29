@@ -21,7 +21,7 @@
   }
 
   // Ce qui se synchronise : cartes FM, vinyles, collections Yu-Gi-Oh et One Piece, et leurs decks (chaque entrée porte « mt »)
-  const PARTS = ['fm', 'vinyls', 'ygo', 'decks', 'op', 'opdecks'];
+  const PARTS = ['fm', 'vinyls', 'ygo', 'decks', 'op', 'opdecks', 'rb', 'rbdecks'];
   function pickCollections(d) {
     const o = {}; for (const k of PARTS) o[k] = (d && d[k]) || {}; return o;
   }
@@ -336,6 +336,95 @@
     return { byId, bySet, byKey };
   }
 
+  // ---------- Riftbound (jeu de cartes League of Legends) ----------
+  // Les cartes viennent de Riftcodex (api.riftcodex.com, gratuit) et les prix de TCGplayer (via TCGCSV).
+  // Une tâche GitHub (scripts/riftbound.js) assemble tout une fois par jour dans riftbound.json (branche « donnees »),
+  // et Coffre ne lit que ce fichier : une seule petite requête par appareil, et pas d'appel direct à TCGCSV.
+  const RB_URL = 'https://raw.githubusercontent.com/BlancheLaGoat/Coffre/donnees/riftbound.json';
+  const RB_API = 'https://api.riftcodex.com';
+  const RB_IMG_BASE = 'https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/';
+  // Image : on garde seulement la fin de l'adresse quand elle est sur le serveur d'images de Riot
+  const rbImgRef = url => { const u = String(url || ''); return u.startsWith(RB_IMG_BASE) ? u.slice(RB_IMG_BASE.length) : u; };
+  const rbImgUrl = ref => { const r = String(ref || ''); return !r ? '' : /^https:\/\//.test(r) ? r : RB_IMG_BASE + r; };
+  // Nom de fichier court et sûr pour le cache d'images
+  function rbImgId(ref) {
+    const r = String(ref || ''), m = r.match(/[a-f0-9]{40}/);
+    if (m) return m[0];
+    let h1 = 0x811c9dc5, h2 = 0x01000193;
+    for (let i = 0; i < r.length; i++) { const c = r.charCodeAt(i); h1 = Math.imul(h1 ^ c, 16777619) >>> 0; h2 = Math.imul(h2 ^ c, 2246822519) >>> 0; }
+    return r ? 'u' + h1.toString(16).padStart(8, '0') + h2.toString(16).padStart(8, '0') : '';
+  }
+  // « ogn-214a-298 » → « OGN-214a » (code imprimé sur la carte, la lettre = version : a = art alternatif, s = signature)
+  function rbCode(item) {
+    const m = String((item && item.riftbound_id) || '').match(/^([a-z0-9]+)-([a-z]*)(\d+)([a-z*]?)(?:-\d+)?$/i);
+    if (m) return `${m[1].toUpperCase()}-${m[2].toUpperCase()}${m[2] ? m[3] : m[3].padStart(3, '0')}${m[4] === '*' ? 's' : m[4].toLowerCase()}`;
+    const set = String((item && item.set && item.set.set_id) || '').toUpperCase(), n = item && item.collector_number;
+    return set && n != null ? `${set}-${String(n).padStart(3, '0')}` : '';
+  }
+  const rbBaseName = n => String(n || '').replace(/\s*\((alternate art|alt art|overnumbered|signature|showcase|foil|promo)\)\s*$/i, '').trim();
+  const RB_VARIANT = it => { const md = (it && it.metadata) || {}; return md.signature ? 'Signature' : md.alternate_art ? 'Art alternatif' : md.overnumbered ? 'Overnumbered' : ''; };
+  // Riftcodex (extensions + cartes) + prix TCGplayer → base compacte, même forme que celle de One Piece :
+  // cartes { i: code, n: nom, t: type, st: sous-type, co: domaines, c: énergie, pw: puissance, m: force, ty: tags, x: texte, im: image,
+  //          p: [[extension, code de la version, rareté, version, prix $, image]] } ; extensions [[nom, code, '', date (ms), date]]
+  function rbCompact(setItems, cardItems, prices) {
+    const price = prices instanceof Map ? prices : new Map(Object.entries(prices || {}));
+    const setsIn = (Array.isArray(setItems) ? setItems : []).filter(x => x && x.set_id)
+      .map(x => ({ id: String(x.set_id).toUpperCase(), name: String(x.name || x.label || x.set_id), date: String(x.published_on || x.publish_date || '').slice(0, 10) }));
+    const sets = [], setIdx = new Map();
+    const addSet = (id, name, date) => { if (setIdx.has(id)) return setIdx.get(id); setIdx.set(id, sets.length); sets.push([name || id, id, '', Date.parse(date) || 0, date || '']); return sets.length - 1; };
+    setsIn.sort((a, b) => (Date.parse(a.date) || 0) - (Date.parse(b.date) || 0)).forEach(x => addSet(x.id, x.name, x.date));
+    const groups = new Map();
+    for (const it of Array.isArray(cardItems) ? cardItems : []) {
+      if (!it || !it.name) continue;
+      const code = rbCode(it); if (!code) continue;
+      const cl = it.classification || {}, at = it.attributes || {}, tx = it.text || {};
+      const sid = String((it.set && it.set.set_id) || code.split('-')[0]).toUpperCase();
+      const si = setIdx.has(sid) ? setIdx.get(sid) : addSet(sid, (it.set && it.set.label) || sid, '');
+      const name = rbBaseName(it.name), type = String(cl.type || '');
+      const gk = name.toLowerCase() + '|' + type.toLowerCase();
+      if (!groups.has(gk)) groups.set(gk, { n: name, t: type, st: '', co: '', c: '', pw: '', m: '', ty: '', x: '', im: '', p: [], base: null });
+      const g = groups.get(gk);
+      const variant = RB_VARIANT(it);
+      const img = rbImgRef(it.media && it.media.image_url);
+      const pr = Number(price.get(String(it.tcgplayer_id)) || 0);
+      g.p.push([si, code, String(cl.rarity || ''), variant, Math.round(pr * 100) / 100, img]);
+      // Les infos de la carte viennent de sa version normale la plus ancienne
+      const plain = !variant && !/[a-z]$/.test(code);
+      const better = !g.base || (plain && !g.base.plain) || (plain === g.base.plain && sets[si][3] < sets[g.base.si][3]);
+      if (better) {
+        g.base = { plain, si };
+        Object.assign(g, {
+          i: code, st: String(cl.supertype || ''), co: (Array.isArray(cl.domain) ? cl.domain : [cl.domain]).filter(Boolean).join(' '),
+          c: at.energy == null ? '' : at.energy, pw: at.power == null ? '' : at.power, m: at.might == null ? '' : at.might,
+          ty: (Array.isArray(it.tags) ? it.tags : []).join(' '), x: String(tx.plain || '').trim(), im: img
+        });
+      }
+    }
+    const cards = [];
+    const seen = new Set();
+    for (const g of groups.values()) {
+      if (seen.has(g.i)) g.i = g.p[0][1]; // deux cartes différentes avec le même code (rare) : on garde des codes uniques
+      if (seen.has(g.i)) continue;
+      seen.add(g.i);
+      g.p.sort((a, b) => sets[a[0]][3] - sets[b[0]][3] || (a[3] ? 1 : 0) - (b[3] ? 1 : 0) || a[1].localeCompare(b[1], 'en', { numeric: true }));
+      cards.push({ i: g.i, n: g.n, t: g.t, st: g.st, co: g.co, c: g.c, pw: g.pw, m: g.m, ty: g.ty, x: g.x, im: g.im, p: g.p });
+    }
+    cards.sort((a, b) => a.i.localeCompare(b.i, 'en', { numeric: true }));
+    return { v: 1, at: Date.now(), source: 'riftcodex.com + TCGplayer (tcgcsv.com)', sets, cards };
+  }
+  // Codes lus sur la carte : « OGN • 209/298 », « OGN-209 », « UNL 030a/219 »… → [« OGN-209 », …]
+  function rbCodesInText(text) {
+    const t = String(text || '').toUpperCase().replace(/[‐-―−]/g, '-');
+    const out = [];
+    const push = (set, num, suf) => { const k = `${set}-${num.padStart(3, '0')}${(suf || '').toLowerCase().replace('*', 's')}`; if (!out.includes(k)) out.push(k); };
+    let m;
+    const re1 = /\b([A-Z]{3})\s*[•·.\-*°oO]?\s*(\d{1,3})([A-Z*]?)\s*\/\s*\d{2,3}\b/g;
+    while ((m = re1.exec(t))) push(m[1], m[2], m[3]);
+    const re2 = /\b([A-Z]{3})-(\d{3})([A-Z*]?)\b/g;
+    while ((m = re2.exec(t))) push(m[1], m[2], m[3]);
+    return out;
+  }
+
   // Serveur de synchro en ligne (Cloudflare Worker, voir cloud/worker.js). Vide = synchro en ligne pas encore configurée.
   const CLOUD_URL = 'https://coffre-sync.ixaglax.workers.dev';
 
@@ -344,5 +433,6 @@
 
   return { PARTS, pickCollections, mergeMaps, mergeCollections, sameCollections, createVinylApi,
     YGO_URLS, ygoImgUrl, ygoCompact, ygoKey, ygoNormCode, ygoCodesInText, ygoIndex, cmLine,
-    OP_URLS, opImgUrl, opCompact, opSplitName, opCodesInText, opIndex, opKnownSets, opUpcoming, opUpcomingFrom, OP_UPCOMING_URL, CLOUD_URL };
+    OP_URLS, opImgUrl, opCompact, opSplitName, opCodesInText, opIndex, opKnownSets, opUpcoming, opUpcomingFrom, OP_UPCOMING_URL, CLOUD_URL,
+    RB_URL, RB_API, rbImgUrl, rbImgId, rbCode, rbBaseName, rbCompact, rbCodesInText };
 });

@@ -94,7 +94,7 @@
   }
 
   // ---------- Données ----------
-  const defaultData = () => ({ version: 1, fm: {}, vinyls: {}, ygo: {}, decks: {}, op: {}, opdecks: {}, settings: { source: 'discogs', discogsToken: '', layout: 'gal' } });
+  const defaultData = () => ({ version: 1, fm: {}, vinyls: {}, ygo: {}, decks: {}, op: {}, opdecks: {}, rb: {}, rbdecks: {}, settings: { source: 'discogs', discogsToken: '', layout: 'gal' } });
   let coversUrl = '';
   let lastSyncedJson = '';
 
@@ -135,7 +135,7 @@
     async load() {
       try { await FS.mkdir({ path: 'pochettes', directory: DATA, recursive: true }); } catch (e) { /* existe déjà */ }
       const d = await readJson('coffre.json', null) || await readJson('coffre.precedent.json', null) || defaultData();
-      d.fm = d.fm || {}; d.vinyls = d.vinyls || {}; d.ygo = d.ygo || {}; d.decks = d.decks || {}; d.op = d.op || {}; d.opdecks = d.opdecks || {}; d.settings = { ...defaultData().settings, ...(d.settings || {}) };
+      d.fm = d.fm || {}; d.vinyls = d.vinyls || {}; d.ygo = d.ygo || {}; d.decks = d.decks || {}; d.op = d.op || {}; d.opdecks = d.opdecks || {}; d.rb = d.rb || {}; d.rbdecks = d.rbdecks || {}; d.settings = { ...defaultData().settings, ...(d.settings || {}) };
       return d;
     },
     async save(d) {
@@ -158,7 +158,7 @@
     },
     async imgCacheInfo() {
       let bytes = 0;
-      for (const dir of ['yugioh-images', 'onepiece-images', 'pochettes']) {
+      for (const dir of ['yugioh-images', 'onepiece-images', 'riftbound-images', 'pochettes']) {
         try { const r = await FS.readdir({ path: dir, directory: DATA }); for (const f of r.files || []) bytes += (f && f.size) || 0; } catch (e) { /* vide */ }
       }
       return { bytes, max: IMG_CACHE_MAX };
@@ -173,7 +173,7 @@
       return IMG_CACHE_MAX;
     },
     async imgCacheClear() {
-      for (const dir of ['yugioh-images', 'onepiece-images']) {
+      for (const dir of ['yugioh-images', 'onepiece-images', 'riftbound-images']) {
         try { await FS.rmdir({ path: dir, directory: DATA, recursive: true }); } catch (e) { /* vide */ }
         imgDirs.delete(dir);
       }
@@ -200,7 +200,7 @@
       const now = Date.now();
       const restamp = m => Object.fromEntries(Object.entries(m || {}).map(([k, v]) => [k, { ...v, mt: now }]));
       const cur = window.CoffreApp.data;
-      const merged = Core.mergeCollections(cur, { fm: restamp(data.fm), vinyls: restamp(data.vinyls), ygo: restamp(data.ygo), decks: restamp(data.decks), op: restamp(data.op), opdecks: restamp(data.opdecks) });
+      const merged = Core.mergeCollections(cur, { fm: restamp(data.fm), vinyls: restamp(data.vinyls), ygo: restamp(data.ygo), decks: restamp(data.decks), op: restamp(data.op), opdecks: restamp(data.opdecks), rb: restamp(data.rb), rbdecks: restamp(data.rbdecks) });
       const out = { ...cur, ...merged };
       await window.coffre.save(out);
       return { ok: true, data: out };
@@ -275,6 +275,19 @@
       return db;
     },
     opImg(id) { return cardImage('onepiece-images', String(id || ''), Core.opImgUrl(id)); },
+    // ---------- Riftbound : base de cartes (fichier préparé chaque jour sur GitHub) et images ----------
+    async rbDb() { return readJson('riftbound-cartes.json', null); },
+    async rbRefresh() {
+      const res = await http({ url: Core.RB_URL + '?t=' + Date.now(), headers: { 'User-Agent': UA, Accept: 'application/json' }, readTimeout: 120000 });
+      if (res.status === 404) throw new Error("La base Riftbound n'est pas encore prête sur GitHub.");
+      if (res.status < 200 || res.status >= 300) throw new Error(`GitHub a répondu ${res.status}.`);
+      const db = asJson(res.data);
+      if (!db || db.v !== 1 || !Array.isArray(db.cards) || !db.cards.length) throw new Error('La base de cartes reçue est vide.');
+      await writeText('riftbound-cartes.json', JSON.stringify(db));
+      return db;
+    },
+    // version allégée (WebP, 450 px) si le serveur de Riot l'accepte, sinon l'image d'origine
+    rbImg(ref) { const url = Core.rbImgUrl(ref); return url ? cardImage('riftbound-images', Core.rbImgId(ref), url + (url.includes('?') ? '&' : '?') + 'w=450&fm=webp&q=85', url) : Promise.resolve(''); },
     checkUpdate,
     // L'APK s'ouvre dans le navigateur du téléphone (Chrome…), qui la télécharge vraiment.
     // (L'onglet intégré se refermait avant la fin du téléchargement.)
@@ -294,7 +307,7 @@
   // Taille choisie dans les réglages (20 à 500 Mo, 50 par défaut)
   let IMG_CACHE_MAX = 50 * 1024 * 1024;
   try { const v = Number(localStorage.getItem('coffreImgMaxMb')); if (v >= 20 && v <= 500) IMG_CACHE_MAX = v * 1048576; } catch (e) { /* défaut */ }
-  const IMG_DIRS = ['yugioh-images', 'onepiece-images'];
+  const IMG_DIRS = ['yugioh-images', 'onepiece-images', 'riftbound-images'];
   const imgDirs = new Map(); const imgJobs = new Map();
   async function imgDir(dir) {
     if (imgDirs.has(dir)) return imgDirs.get(dir);
@@ -332,7 +345,7 @@
       }
     } finally { trimming = false; }
   }
-  function cardImage(dir, id, url) {
+  function cardImage(dir, id, url, fallback) {
     if (!/^[A-Za-z0-9_-]{3,40}$/.test(id)) return Promise.resolve('');
     const name = id + '.jpg', jk = dir + '/' + name;
     if (imgJobs.has(jk)) { imgDirs.get(dir).then(d => { const f = d.files.get(name); if (f) f.t = Date.now(); }); return imgJobs.get(jk); }
@@ -344,8 +357,9 @@
       if (ygoImgRunning >= 6) await new Promise(r => ygoImgQueue.push(r));
       ygoImgRunning++;
       try {
-        const res = await http({ url, responseType: 'blob', headers: { 'User-Agent': UA } });
-        if (res.status < 200 || res.status >= 300 || !res.data) return '';
+        let res = await http({ url, responseType: 'blob', headers: { 'User-Agent': UA } }).catch(() => null);
+        if (fallback && (!res || res.status < 200 || res.status >= 300 || !res.data)) res = await http({ url: fallback, responseType: 'blob', headers: { 'User-Agent': UA } });
+        if (!res || res.status < 200 || res.status >= 300 || !res.data) return '';
         await writeB64(dir + '/' + name, res.data);
         d.files.set(name, { size: Math.round(String(res.data).length * 0.75), t: Date.now() });
         trimAll();
@@ -556,7 +570,7 @@
     }, { passive: true });
   }
   document.addEventListener('DOMContentLoaded', () => {
-    ['fmList', 'vinList', 'ygoList', 'opList'].forEach(id => { const el = document.getElementById(id); if (el) watchScroll(el); });
+    ['fmList', 'vinList', 'ygoList', 'opList', 'rbList'].forEach(id => { const el = document.getElementById(id); if (el) watchScroll(el); });
     const tabs = document.getElementById('tabs');
     if (tabs) tabs.addEventListener('click', () => document.body.classList.remove('compact'));
   });

@@ -1,6 +1,8 @@
-# Une fois par jour : récupère les cartes One Piece à venir (TCGCSV) et les publie
-# dans la branche « donnees » (fichier onepiece-a-venir.json), que l'appli Coffre lit.
+# Une fois par jour : prépare les données que l'appli Coffre lit dans la branche « donnees » :
+#  - onepiece-a-venir.json : cartes One Piece à venir (TCGCSV) ;
+#  - riftbound.json : toutes les cartes Riftbound (Riftcodex) avec leurs prix (TCGCSV).
 # Se lance aussi à la main : onglet Actions → « Cartes à venir » → Run workflow.
+# Si une source ne répond pas, le fichier de la veille est gardé.
 name: Cartes à venir
 
 on:
@@ -12,7 +14,7 @@ permissions:
   contents: write
 
 jobs:
-  one-piece:
+  donnees:
     runs-on: ubuntu-latest
     steps:
       - name: Récupérer le code
@@ -23,17 +25,30 @@ jobs:
         with:
           node-version: 22
 
-      - name: Récupérer les cartes à venir
-        run: node scripts/op-a-venir.js "$RUNNER_TEMP/onepiece-a-venir.json"
+      - name: Reprendre les fichiers de la veille
+        run: |
+          mkdir -p "$RUNNER_TEMP/pub"
+          cd "$RUNNER_TEMP/pub"
+          for f in onepiece-a-venir.json riftbound.json; do
+            curl -fsSL -o "$f" "https://raw.githubusercontent.com/${{ github.repository }}/donnees/$f" || rm -f "$f"
+          done
+          ls -la
+
+      - name: One Piece — cartes à venir
+        continue-on-error: true
+        run: node scripts/op-a-venir.js "$RUNNER_TEMP/op.json" && mv "$RUNNER_TEMP/op.json" "$RUNNER_TEMP/pub/onepiece-a-venir.json"
+
+      - name: Riftbound — toutes les cartes et les prix
+        continue-on-error: true
+        run: node scripts/riftbound.js "$RUNNER_TEMP/rb.json" && mv "$RUNNER_TEMP/rb.json" "$RUNNER_TEMP/pub/riftbound.json"
 
       - name: Publier dans la branche « donnees »
         run: |
-          cd "$RUNNER_TEMP"
-          rm -rf pub && mkdir pub && cd pub
+          cd "$RUNNER_TEMP/pub"
+          ls *.json >/dev/null 2>&1 || { echo "Aucun fichier à publier"; exit 1; }
           git init -q -b donnees
-          cp ../onepiece-a-venir.json .
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add onepiece-a-venir.json
-          git commit -q -m "Cartes à venir du $(date -u +%Y-%m-%d)"
+          git add *.json
+          git commit -q -m "Données du $(date -u +%Y-%m-%d)"
           git push -q --force "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" donnees

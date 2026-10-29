@@ -257,12 +257,12 @@
     view.dataset.mode = m;
     view.hidden = false;
     $('scanCands').innerHTML = ''; $('scanActions').innerHTML = '';
-    $('scanAutoWrap').hidden = m !== 'card' && m !== 'ygo' && m !== 'op';
+    $('scanAutoWrap').hidden = m !== 'card' && m !== 'ygo' && m !== 'op' && m !== 'rb';
     $('scanAuto').checked = App.data.settings.scanAuto !== false;
-    $('scanTitle').textContent = m === 'card' ? 'Scanner des cartes FM' : m === 'ygo' ? 'Scanner des cartes Yu-Gi-Oh' : m === 'op' ? 'Scanner des cartes One Piece' : m === 'vinyl' ? 'Code-barres du vinyle' : 'QR code du PC';
+    $('scanTitle').textContent = m === 'card' ? 'Scanner des cartes FM' : m === 'ygo' ? 'Scanner des cartes Yu-Gi-Oh' : m === 'op' ? 'Scanner des cartes One Piece' : m === 'rb' ? 'Scanner des cartes Riftbound' : m === 'vinyl' ? 'Code-barres du vinyle' : 'QR code du PC';
     Object.assign(yg, { busy: false, last: '', seen: 0, armed: true, missing: 0, hit: null, added: [], full: null, band: null, lastAdded: '' });
     cam.smooth = null; cam.lead = ''; cam.leadCount = 0; cam.armed = true; cam.lastAuto = ''; cam.added = [];
-    msg(m === 'card' ? 'Place la carte dans le cadre, bien à plat. Flou ? Éloigne un peu le téléphone ou touche l\'image.' : m === 'vinyl' ? 'Vise le code-barres au dos de la pochette.' : m === 'ygo' ? (TextReader ? 'Place la carte dans le cadre : le code sous l\'illustration (ex. SGX1-FRA18) est lu tout seul. Flou ? Éloigne un peu le téléphone ou touche l\'image.' : 'La lecture du code n\'est pas disponible sur cet appareil.') : m === 'op' ? (TextReader ? 'Place la carte dans le cadre : le code en bas à droite (ex. OP01-001) est lu tout seul. Flou ? Éloigne un peu le téléphone ou touche l\'image.' : 'La lecture du code n\'est pas disponible sur cet appareil.') : 'Vise le QR code affiché dans les réglages de Coffre sur le PC.');
+    msg(m === 'card' ? 'Place la carte dans le cadre, bien à plat. Flou ? Éloigne un peu le téléphone ou touche l\'image.' : m === 'vinyl' ? 'Vise le code-barres au dos de la pochette.' : m === 'ygo' ? (TextReader ? 'Place la carte dans le cadre : le code sous l\'illustration (ex. SGX1-FRA18) est lu tout seul. Flou ? Éloigne un peu le téléphone ou touche l\'image.' : 'La lecture du code n\'est pas disponible sur cet appareil.') : m === 'op' ? (TextReader ? 'Place la carte dans le cadre : le code en bas à droite (ex. OP01-001) est lu tout seul. Flou ? Éloigne un peu le téléphone ou touche l\'image.' : 'La lecture du code n\'est pas disponible sur cet appareil.') : m === 'rb' ? (TextReader ? 'Place la carte dans le cadre : le numéro en bas de la carte (ex. OGN · 030/298) est lu tout seul. Flou ? Éloigne un peu le téléphone ou touche l\'image.' : 'La lecture du code n\'est pas disponible sur cet appareil.') : 'Vise le QR code affiché dans les réglages de Coffre sur le PC.');
     layoutFrame();
     try {
       if (m === 'card') {
@@ -285,7 +285,7 @@
     stopCamera();
     const view = $('scanView'); if (view) view.hidden = true;
     if (qrResolve) { qrResolve(''); qrResolve = null; }
-    if ((mode === 'ygo' || mode === 'op') && yg.added.length) App.toast(`${yg.added.length} carte${yg.added.length > 1 ? 's' : ''} ${mode === 'op' ? 'One Piece' : 'Yu-Gi-Oh'} ajoutée${yg.added.length > 1 ? 's' : ''}`);
+    if ((mode === 'ygo' || mode === 'op' || mode === 'rb') && yg.added.length) App.toast(`${yg.added.length} carte${yg.added.length > 1 ? 's' : ''} ${mode === 'op' ? 'One Piece' : mode === 'rb' ? 'Riftbound' : 'Yu-Gi-Oh'} ajoutée${yg.added.length > 1 ? 's' : ''}`);
     if (mode === 'card' && cam.added.length) App.toast(`${cam.added.length} carte${cam.added.length > 1 ? 's' : ''} ajoutée${cam.added.length > 1 ? 's' : ''}`);
     mode = '';
   }
@@ -297,7 +297,7 @@
     const fr = $('scanFrame'); if (!fr) return;
     const W = window.innerWidth, H = window.innerHeight;
     let w, h;
-    if (mode === 'card' || mode === 'ygo' || mode === 'op') {
+    if (mode === 'card' || mode === 'ygo' || mode === 'op' || mode === 'rb') {
       const maxH = H * 0.56, maxW = W * 0.78;
       h = Math.min(maxH, maxW / CARD_RATIO); w = h * CARD_RATIO;
     } else if (mode === 'vinyl') { w = W * 0.86; h = Math.min(H * 0.22, w * 0.5); }
@@ -324,12 +324,12 @@
     const t0 = performance.now();
     try {
       if (mode === 'card') tickCard();
-      else if (mode === 'ygo' || mode === 'op') tickYgo();
+      else if (mode === 'ygo' || mode === 'op' || mode === 'rb') tickYgo();
       else tickCode();
     } catch (e) { /* image pas prête */ }
     if (!stream) return;
     const spent = performance.now() - t0;
-    loopTimer = setTimeout(loop, Math.max(120, (mode === 'card' ? 380 : mode === 'ygo' || mode === 'op' ? 250 : 220) - spent));
+    loopTimer = setTimeout(loop, Math.max(120, (mode === 'card' ? 380 : mode === 'ygo' || mode === 'op' || mode === 'rb' ? 250 : 220) - spent));
   }
 
   // ---------- Cartes ----------
@@ -464,11 +464,13 @@
   // Deux lectures en alternance : la carte entière (nom + code), puis la bande du code agrandie
   // (le code est petit : agrandi, il est bien mieux lu). Les deux dernières lectures sont combinées.
   // Jeu en cours de scan : Yu-Gi-Oh ou One Piece (mêmes fonctions des deux côtés)
-  const game = () => mode === 'op' ? window.CoffreOp : window.CoffreYgo;
+  const game = () => mode === 'op' ? window.CoffreOp : mode === 'rb' ? window.CoffreRb : window.CoffreYgo;
+  // Riftbound se scanne comme One Piece : un numéro par carte, et ses versions en un toucher
+  const opLike = m => m === 'op' || m === 'rb';
   async function tickYgo() {
     if (yg.busy || !TextReader) return;
     const Y = game(), m0 = mode;
-    if (!Y || !Y.ready) { msg(`La base de cartes n'est pas encore téléchargée : ouvre l'onglet ${m0 === 'op' ? 'One Piece' : 'Yu-Gi-Oh'}.`); return; }
+    if (!Y || !Y.ready) { msg(`La base de cartes n'est pas encore téléchargée : ouvre l'onglet ${m0 === 'op' ? 'One Piece' : m0 === 'rb' ? 'Riftbound' : 'Yu-Gi-Oh'}.`); return; }
     const v = $('scanVideo'), r = frameInVideo(); if (!r) return;
     const pass = yg.pass = ((yg.pass || 0) + 1) % 2;
     let sx, sy, sw, sh, outW;
@@ -481,6 +483,10 @@
       // One Piece : le code est imprimé en bas à droite de la carte
       sx = r.x + r.w * 0.50; sy = r.y + r.h * 0.84; sw = r.w * 0.55; sh = r.h * 0.18;
       outW = 1500;
+    } else if (m0 === 'rb') {
+      // Riftbound : le numéro (« OGN · 030/298 ») est sur la bande du bas de la carte
+      sx = r.x - r.w * 0.02; sy = r.y + r.h * 0.86; sw = r.w * 1.04; sh = r.h * 0.16;
+      outW = 1600;
     } else {
       // Bande sous l'illustration, côté droit, là où est imprimé le code
       sx = r.x + r.w * 0.30; sy = r.y + r.h * 0.62; sw = r.w * 0.75; sh = r.h * 0.22;
@@ -519,7 +525,7 @@
         yg.lastAdded = '';
         if (yg.hit) { yg.hit = null; $('scanCands').innerHTML = ''; }
       }
-      if (!yg.hit) msg(mode === 'op' ? 'Vise la carte entière : le code en bas à droite (ex. OP01-001), bien net.' : 'Vise la carte entière : le code sous l\'illustration (ex. SGX1-FRA18) et son nom en haut, bien nets.');
+      if (!yg.hit) msg(mode === 'op' ? 'Vise la carte entière : le code en bas à droite (ex. OP01-001), bien net.' : mode === 'rb' ? 'Vise la carte entière : le numéro en bas (ex. OGN · 030/298), bien net.' : 'Vise la carte entière : le code sous l\'illustration (ex. SGX1-FRA18) et son nom en haut, bien nets.');
       return;
     }
     yg.missing = 0;
@@ -528,7 +534,7 @@
     yg.hit = hit;
     renderYgo();
     const auto = hit.prints.length === 1 ? 0 : hit.auto;
-    const reliable = mode === 'op' || hit.sure;
+    const reliable = opLike(mode) || hit.sure;
     if ($('scanAuto').checked && yg.armed && yg.seen >= 2 && auto != null && reliable) {
       if (key === yg.lastAdded) { msg('Même carte que la précédente : retire-la du cadre, ou touche sa version pour en ajouter un autre exemplaire.'); return; }
       yg.armed = false;
@@ -540,8 +546,8 @@
     const Y = game(), hit = yg.hit;
     if (!hit) return;
     const c = hit.prints[0].card;
-    if (mode === 'op') {
-      msg(hit.prints.length > 1 ? 'Plusieurs versions existent pour ce code : touche la bonne.' : '');
+    if (opLike(mode)) {
+      msg(hit.prints.length > 1 ? 'Plusieurs versions existent pour cette carte : touche la bonne.' : '');
       $('scanCands').innerHTML = `<div class="ycand">${Y.imgTag(c.i)}<div><b>${esc(Y.label(c))}</b>
         <span class="code">${esc(c.i)}</span> · ${Y.ownedOf(c.i)} dans ta collection</div></div>
         <div class="ychoices">${hit.prints.slice(0, 10).map((x, i) => `<button class="${i === hit.auto ? 'primary' : ''}" data-scan="yadd" data-i="${i}">+ ${esc(Y.printName(x.p))}${x.p[4] ? ' · ' + esc(Y.money(x.p[4])) : ''}</button>`).join('')}
@@ -568,7 +574,7 @@
     const h = yg.hit || {};
     const lang = h.lang || Y.curLang();
     // Code de la carte pris dans la base (impression touchée), dans la langue de la carte — jamais le texte lu
-    const lcode = mode === 'op' ? x.card.i : Y.locCode(x.p[1], lang);
+    const lcode = mode === 'op' ? x.card.i : mode === 'rb' ? x.p[1] : Y.locCode(x.p[1], lang);
     const q = Y.addPrinting(x.ci, x.pi, 1, lang, lcode);
     yg.added.push({ ...x, lang, lcode });
     yg.lastAdded = yg.hit ? yg.hit.prints.map(p => p.ci + ':' + p.pi).join(',') : '';
@@ -641,11 +647,18 @@
       b.addEventListener('click', () => open('op'));
       opTools.prepend(b);
     }
+    const rbTools = document.querySelector('.shelf.rb .tools');
+    if (rbTools && !$('scanRbBtn')) {
+      const b = document.createElement('button');
+      b.id = 'scanRbBtn'; b.className = 'primary scan-btn'; b.textContent = '📷 Scanner des cartes';
+      b.addEventListener('click', () => open('rb'));
+      rbTools.prepend(b);
+    }
     // Bouton rond qui reste visible quand l'en-tête est replié
     if (!$('scanFab')) {
       const f = document.createElement('button');
       f.id = 'scanFab'; f.className = 'scan-fab'; f.textContent = '📷'; f.setAttribute('aria-label', 'Scanner');
-      f.addEventListener('click', () => open({ vin: 'vinyl', ygo: 'ygo', op: 'op' }[$('shelves').dataset.tab] || 'card'));
+      f.addEventListener('click', () => open({ vin: 'vinyl', ygo: 'ygo', op: 'op', rb: 'rb' }[$('shelves').dataset.tab] || 'card'));
       document.body.appendChild(f);
     }
   }
@@ -658,6 +671,7 @@
     openBarcode: () => open('vinyl'),
     openYgo: () => open('ygo'),
     openOp: () => open('op'),
+    openRb: () => open('rb'),
     _ygoHit: onYgoHit,
     scanQr() { return new Promise(resolve => { if (qrResolve) qrResolve(''); qrResolve = resolve; open('qr'); }); },
     isOpen: () => !!$('scanView') && !$('scanView').hidden,

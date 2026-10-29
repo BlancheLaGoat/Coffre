@@ -32,6 +32,9 @@ contextBridge.exposeInMainWorld('coffre', {
   opDb: () => ipcRenderer.invoke('op:db'),
   opRefresh: () => ipcRenderer.invoke('op:refresh'),
   opImg: id => ipcRenderer.invoke('op:img', id),
+  rbDb: () => ipcRenderer.invoke('rb:db'),
+  rbRefresh: () => ipcRenderer.invoke('rb:refresh'),
+  rbImg: ref => ipcRenderer.invoke('rb:img', ref),
   // Synchronisation avec l'appli Android
   syncInfo: () => ipcRenderer.invoke('sync:info'),
   syncReset: () => ipcRenderer.invoke('sync:reset'),

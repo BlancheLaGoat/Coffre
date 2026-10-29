@@ -1,7 +1,7 @@
 /* Coffre — deux étagères côte à côte : cartes FM (or) et vinyles (rouge vinyle) */
 :root {
   --bg: #f2f1f6; --panel: #ffffff; --panel-2: #f7f6fa; --line: #dcd9e6; --fg: #1c1a26; --muted: #6b6780;
-  --gold: #a8790c; --gold-soft: #f5ead0; --wax: #c2412d; --wax-soft: #f8e1dc; --ygo: #6a4fd0; --ygo-soft: #e7e1fb; --op: #1f6fc4; --op-soft: #dceafa; --chip: #ece9f3;
+  --gold: #a8790c; --gold-soft: #f5ead0; --wax: #c2412d; --wax-soft: #f8e1dc; --ygo: #6a4fd0; --ygo-soft: #e7e1fb; --op: #1f6fc4; --op-soft: #dceafa; --rb: #0f8a8c; --rb-soft: #d6efef; --chip: #ece9f3;
   --shadow: 0 18px 50px rgba(20, 16, 35, .25);
   --f-display: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
   --f-body: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
@@ -11,7 +11,7 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #14121b; --panel: #1d1a27; --panel-2: #24202f; --line: #322e42; --fg: #ece9f5; --muted: #9a95ad;
-    --gold: #e3b54a; --gold-soft: #3a2f17; --wax: #ef7a62; --wax-soft: #3d1f1a; --ygo: #a48cff; --ygo-soft: #2a2347; --op: #5fa8f5; --op-soft: #172d47; --chip: #2a2638;
+    --gold: #e3b54a; --gold-soft: #3a2f17; --wax: #ef7a62; --wax-soft: #3d1f1a; --ygo: #a48cff; --ygo-soft: #2a2347; --op: #5fa8f5; --op-soft: #172d47; --rb: #45c7c4; --rb-soft: #13343a; --chip: #2a2638;
     --shadow: 0 18px 50px rgba(0, 0, 0, .55);
     color-scheme: dark;
   }
@@ -29,7 +29,7 @@ button, input, select, textarea { font: inherit; color: var(--fg); }
 .tabs button { border: 0; background: transparent; border-radius: 9px; padding: 8px 16px; font-weight: 600; color: var(--muted); display: flex; align-items: center; gap: 8px; }
 .tabs button:hover { color: var(--fg); }
 .tabs button[aria-selected=true] { background: var(--chip); color: var(--fg); }
-.tabs .fm-k { color: var(--gold); } .tabs .vin-k { color: var(--wax); } .tabs .ygo-k { color: var(--ygo); } .tabs .op-k { color: var(--op); }
+.tabs .fm-k { color: var(--gold); } .tabs .vin-k { color: var(--wax); } .tabs .ygo-k { color: var(--ygo); } .tabs .op-k { color: var(--op); } .tabs .rb-k { color: var(--rb); }
 .tabs[hidden], .tabs button[hidden] { display: none; }
 .tabtoggles { display: flex; flex-wrap: wrap; gap: 8px 18px; }
 .tgl { display: flex; align-items: center; gap: 8px; cursor: pointer; }
@@ -45,8 +45,8 @@ h1 { font: 800 26px/1.1 var(--f-display); margin: 0; letter-spacing: -.01em; }
 
 /* ---------- Étagères ---------- */
 .shelves { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); padding: 0 20px 18px; }
-.shelves:not([data-tab=fm]) > .shelf.fm, .shelves:not([data-tab=vin]) > .shelf.vin, .shelves:not([data-tab=ygo]) > .shelf.ygo, .shelves:not([data-tab=op]) > .shelf.op { display: none; }
-.ygo { --tcg: var(--ygo); --tcg-soft: var(--ygo-soft); } .op { --tcg: var(--op); --tcg-soft: var(--op-soft); }
+.shelves:not([data-tab=fm]) > .shelf.fm, .shelves:not([data-tab=vin]) > .shelf.vin, .shelves:not([data-tab=ygo]) > .shelf.ygo, .shelves:not([data-tab=op]) > .shelf.op, .shelves:not([data-tab=rb]) > .shelf.rb { display: none; }
+.ygo { --tcg: var(--ygo); --tcg-soft: var(--ygo-soft); } .op { --tcg: var(--op); --tcg-soft: var(--op-soft); } .rb { --tcg: var(--rb); --tcg-soft: var(--rb-soft); }
 .shelf { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .shelf-head { padding: 14px 16px 12px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; }
 .title-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
@@ -264,7 +264,14 @@ b.price { font-size: inherit; }
 .cachemax input[type=range] { flex: 1 1 220px; max-width: 360px; accent-color: var(--gold); }
 .cachemax[hidden] { display: none; }
 .coladd { font-size: 12px; padding: 4px 9px; white-space: nowrap; flex: none; }
-.yrow .coladd { margin-right: 6px; }
+.yrow:has(> .coladd) { grid-template-columns: 44px minmax(0, 1fr) auto auto; }
+.yrow .coladd { margin-right: 2px; }
+@media (max-width: 640px) {
+  .yrow:has(> .coladd) { grid-template-columns: 44px minmax(0, 1fr) auto; }
+  .yrow > .coladd { grid-column: 2; grid-row: 2; justify-self: start; margin: -4px 0 2px; }
+  .yrow:has(> .coladd) > .ypic { grid-row: 1 / span 2; }
+  .yrow:has(> .coladd) > .qty { grid-column: 3; grid-row: 1 / span 2; }
+}
 .gcard .coladd { width: 100%; }
 .totop { position: fixed; right: 22px; bottom: calc(22px + env(safe-area-inset-bottom, 0px)); z-index: 18; width: 46px; height: 46px; border-radius: 99px; border: 1px solid var(--line); padding: 0; display: flex; align-items: center; justify-content: center; background: var(--panel); color: var(--fg); box-shadow: var(--shadow); cursor: pointer; opacity: .92; }
 .totop:hover { opacity: 1; }
@@ -280,3 +287,5 @@ b.price { font-size: inherit; }
 .cloudcode > div { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex: 1 1 240px; }
 .cloudcode code { font: 600 15px/1.5 var(--f-mono); letter-spacing: .04em; background: var(--chip); border-radius: 8px; padding: 8px 10px; overflow-wrap: anywhere; user-select: all; }
 .cloudcode .qr { width: 160px; height: 160px; border-radius: 8px; background: #fff; padding: 6px; }
+
+.tabs .short { display: none; }

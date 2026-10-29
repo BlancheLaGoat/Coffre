@@ -644,7 +644,7 @@ function openSettings() {
     <h3>Images</h3>
     <div class="actions" style="justify-content:flex-start"><span id="stImg" class="hint">…</span><button data-act="imgClear">Vider les images des cartes</button><button data-act="dbRefresh" title="Nouvelles cartes et extensions, banlist, prix">Mettre à jour les cartes maintenant</button></div>
     <label class="cachemax" id="stImgMaxBox" hidden>Taille max des images : <b id="stImgMaxV">…</b><input type="range" id="stImgMax" min="20" max="500" step="10" aria-label="Taille maximale des images enregistrées, en Mo"></label>
-    <p class="hint">Les pochettes de vinyles s'affichent depuis Discogs et ne sont pas enregistrées. Les images Yu-Gi-Oh et One Piece sont gardées dans un cache limité (200 Mo par défaut sur PC, 50 Mo sur téléphone ; YGOPRODeck interdit de les recharger sans arrêt) : au-delà, les plus anciennes s'effacent toutes seules. Plus petit = moins de place prise, mais les images se rechargent plus souvent.</p>
+    <p class="hint">Les pochettes de vinyles s'affichent depuis Discogs et ne sont pas enregistrées. Les images Yu-Gi-Oh, One Piece et Riftbound sont gardées dans un cache limité (200 Mo par défaut sur PC, 50 Mo sur téléphone ; YGOPRODeck interdit de les recharger sans arrêt) : au-delà, les plus anciennes s'effacent toutes seules. Plus petit = moins de place prise, mais les images se rechargent plus souvent.</p>
     <h3>Application</h3>
     <div class="actions" style="justify-content:flex-start"><span class="ver">Coffre version ${esc(info.version)}</span>
       <button data-act="news">Nouveautés</button>
@@ -737,7 +737,7 @@ $('sheet').addEventListener('click', async e => {
     case 'news': return openNews((window.COFFRE_CHANGELOG || []).slice(0, 15), true);
     case 'dbRefresh':
       b.disabled = true; b.textContent = 'Mise à jour…';
-      await Promise.all([window.CoffreYgo && window.CoffreYgo.ready && window.CoffreYgo.refreshDb(), window.CoffreOp && window.CoffreOp.ready && window.CoffreOp.refreshDb()].filter(Boolean));
+      await Promise.all([window.CoffreYgo && window.CoffreYgo.ready && window.CoffreYgo.refreshDb(), window.CoffreOp && window.CoffreOp.ready && window.CoffreOp.refreshDb(), window.CoffreRb && window.CoffreRb.ready && window.CoffreRb.refreshDb()].filter(Boolean));
       b.disabled = false; b.textContent = 'Mettre à jour les cartes maintenant'; return;
     case 'imgClear': if (window.coffre.imgCacheClear) await window.coffre.imgCacheClear(); return loadImgInfo();
     default: if (ext.settingsClick) return ext.settingsClick(b.dataset.act, b);
@@ -824,10 +824,10 @@ window.coffre.onUpdate(s => {
 // ============================================================
 //  DÉMARRAGE
 // ============================================================
-function renderAll() { renderFm(); renderVinyls(); if (window.CoffreYgo) window.CoffreYgo.render(); if (window.CoffreOp) window.CoffreOp.render(); }
+function renderAll() { renderFm(); renderVinyls(); if (window.CoffreYgo) window.CoffreYgo.render(); if (window.CoffreOp) window.CoffreOp.render(); if (window.CoffreRb) window.CoffreRb.render(); }
 
 // Onglets Cartes FM / Vinyles (Ctrl+1 et Ctrl+2 au clavier)
-const TABS = [['fm', 'Cartes FM'], ['ygo', 'Yu-Gi-Oh'], ['op', 'One Piece'], ['vin', 'Vinyles']];
+const TABS = [['fm', 'Cartes FM'], ['ygo', 'Yu-Gi-Oh'], ['op', 'One Piece'], ['rb', 'Riftbound'], ['vin', 'Vinyles']];
 const tabOn = k => !(data.settings.hiddenTabs || []).includes(k);
 // Cache les onglets désactivés dans les réglages (les données ne sont pas touchées)
 function applyTabs() {
@@ -848,12 +848,13 @@ document.addEventListener('keydown', e => {
   if (e.key === '1') showTab('fm');
   if (e.key === '2') showTab('ygo');
   if (e.key === '3') showTab('op');
-  if (e.key === '4') showTab('vin');
+  if (e.key === '4') showTab('rb');
+  if (e.key === '5') showTab('vin');
 });
 
 // Changements arrivés d'un autre appareil (synchro)
 function applyRemote(c) {
-  data.fm = c.fm || data.fm; data.vinyls = c.vinyls || data.vinyls; data.ygo = c.ygo || data.ygo || {}; data.decks = c.decks || data.decks || {}; data.op = c.op || data.op || {}; data.opdecks = c.opdecks || data.opdecks || {};
+  data.fm = c.fm || data.fm; data.vinyls = c.vinyls || data.vinyls; data.ygo = c.ygo || data.ygo || {}; data.decks = c.decks || data.decks || {}; data.op = c.op || data.op || {}; data.opdecks = c.opdecks || data.opdecks || {}; data.rb = c.rb || data.rb || {}; data.rbdecks = c.rbdecks || data.rbdecks || {};
   renderAll();
   document.dispatchEvent(new Event('coffre:changed'));
   if (modalKind === 'vinyl') {
@@ -911,8 +912,8 @@ window.CoffreApp = {
   seg('fmLayout', data.settings.layout || 'gal', v => { data.settings.layout = v; scheduleSave(); renderFm(); });
   seg('fmView', 'all', v => { fmF.v = v; renderFm(); });
   seg('vinView', 'all', v => { vinF.v = v; renderVinyls(); });
-  data.ygo = data.ygo || {}; data.decks = data.decks || {}; data.op = data.op || {}; data.opdecks = data.opdecks || {};
-  const want = ['vin', 'ygo', 'op'].includes(data.settings.tab) ? data.settings.tab : 'fm';
+  data.ygo = data.ygo || {}; data.decks = data.decks || {}; data.op = data.op || {}; data.opdecks = data.opdecks || {}; data.rb = data.rb || {}; data.rbdecks = data.rbdecks || {};
+  const want = ['vin', 'ygo', 'op', 'rb'].includes(data.settings.tab) ? data.settings.tab : 'fm';
   $('shelves').dataset.tab = want; applyTabs(); showTab($('shelves').dataset.tab);
   renderAll();
   if (ext.ready) ext.ready();
