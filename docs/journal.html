@@ -18,6 +18,9 @@ summary{cursor:pointer;padding:8px 12px}pre{margin:0;padding:12px;overflow:auto;
 <span style="color:#6cc58c">+ scan : mode Riftbound (bande du bas de la carte) ; onglet, couleur et libellés courts sur téléphone (YGO, OP, Rift)</span>
 <span style="color:#6cc58c">+ .yrow:has(&gt; .coladd) : 4 colonnes (2 lignes sur téléphone)</span>
 <span style="color:#6cc58c">+ &quot;version&quot;: &quot;1.16.0&quot;,</span></pre></details>
+<details><summary><code>scripts/riftbound.js</code>, <code>src/shared/coffre-core.js</code> <span class="mod">modifié (données Riftbound, sans nouvelle version)</span></summary><pre><span style="color:#6cc58c">+ Radiance (et toute extension que Riftcodex n&#x27;a pas encore) : cartes prises chez TCGplayer via TCGCSV (rbFromTcg)</span>
+<span style="color:#6cc58c">+ promos OPP / PR / JDG : le code garde le total (OPP-013/024 ≠ OPP-013/221) : certaines promos étaient perdues</span>
+<span style="color:#6cc58c">+ versions « (Metal) », « (Starter) »… rangées avec leur carte ; fiches en double fusionnées</span></pre></details>
 <h2>v1.15.0 <span class="d">— 27/10/2026</span></h2>
 <ul><li>Synchro en ligne : ta collection (cartes, decks, wishlist, vinyles) se synchronise entre tes appareils par internet, même quand le PC est éteint. Réglages → Synchro en ligne → « Activer sur cet appareil », puis entre le code (ou scanne-le avec le téléphone) sur tes autres appareils.</li><li>Pas de compte à créer : un code secret relie tes appareils, et la collection est chiffrée sur l&#x27;appareil avant l&#x27;envoi (le serveur ne peut pas la lire). La synchro Wi-Fi avec le QR code marche toujours.</li></ul>
 <details><summary><code>cloud/worker.js</code>, <code>cloud/wrangler.toml</code> <span class="new">nouveau</span></summary><pre><span style="color:#6cc58c">+ Cloudflare Worker + base D1 « DB » : GET / PUT / DELETE /v1/s/&lt;id&gt;</span>

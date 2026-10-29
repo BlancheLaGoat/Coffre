@@ -355,14 +355,32 @@
     return r ? 'u' + h1.toString(16).padStart(8, '0') + h2.toString(16).padStart(8, '0') : '';
   }
   // « ogn-214a-298 » → « OGN-214a » (code imprimé sur la carte, la lettre = version : a = art alternatif, s = signature)
+  // Les extensions de promos (OPP, PR, JDG…) réutilisent les numéros de plusieurs extensions : on y garde le total (OPP-013/024).
+  const RB_PROMO_SETS = /^(OPP|PR|JDG|PP|PROMO)$/;
   function rbCode(item) {
-    const m = String((item && item.riftbound_id) || '').match(/^([a-z0-9]+)-([a-z]*)(\d+)([a-z*]?)(?:-\d+)?$/i);
-    if (m) return `${m[1].toUpperCase()}-${m[2].toUpperCase()}${m[2] ? m[3] : m[3].padStart(3, '0')}${m[4] === '*' ? 's' : m[4].toLowerCase()}`;
+    const m = String((item && item.riftbound_id) || '').match(/^([a-z0-9]+)-([a-z]*)(\d+)([a-z*]?)(?:-(\d+))?$/i);
+    if (m) {
+      const set = m[1].toUpperCase();
+      return `${set}-${m[2].toUpperCase()}${m[2] ? m[3] : m[3].padStart(3, '0')}${m[4] === '*' ? 's' : m[4].toLowerCase()}${RB_PROMO_SETS.test(set) && m[5] ? '/' + m[5] : ''}`;
+    }
     const set = String((item && item.set && item.set.set_id) || '').toUpperCase(), n = item && item.collector_number;
     return set && n != null ? `${set}-${String(n).padStart(3, '0')}` : '';
   }
-  const rbBaseName = n => String(n || '').replace(/\s*\((alternate art|alt art|overnumbered|signature|showcase|foil|promo)\)\s*$/i, '').trim();
-  const RB_VARIANT = it => { const md = (it && it.metadata) || {}; return md.signature ? 'Signature' : md.alternate_art ? 'Art alternatif' : md.overnumbered ? 'Overnumbered' : ''; };
+  // « Annie - Dark Child (Metal) » → nom « Annie - Dark Child », version « Métal »
+  const RB_SUFFIX = /\s*\(([^()]{2,30})\)\s*$/;
+  const RB_VARIANTS = { 'alternate art': 'Art alternatif', 'alt art': 'Art alternatif', overnumbered: 'Overnumbered', signature: 'Signature', metal: 'Métal', starter: 'Starter', foil: 'Foil', promo: 'Promo', showcase: 'Showcase' };
+  function rbBaseName(n) {
+    let t = String(n || '').trim(), m;
+    while ((m = t.match(RB_SUFFIX)) && !/^\d+$/.test(m[1])) t = t.slice(0, m.index).trim();
+    return t;
+  }
+  function RB_VARIANT(it) {
+    const md = (it && it.metadata) || {}, out = [];
+    if (md.signature) out.push('Signature'); else if (md.alternate_art) out.push('Art alternatif'); else if (md.overnumbered) out.push('Overnumbered');
+    let t = String((it && it.name) || '').trim(), m;
+    while ((m = t.match(RB_SUFFIX)) && !/^\d+$/.test(m[1])) { const v = RB_VARIANTS[m[1].toLowerCase()] || m[1]; if (!out.includes(v)) out.unshift(v); t = t.slice(0, m.index).trim(); }
+    return out.join(' · ');
+  }
   // Riftcodex (extensions + cartes) + prix TCGplayer → base compacte, même forme que celle de One Piece :
   // cartes { i: code, n: nom, t: type, st: sous-type, co: domaines, c: énergie, pw: puissance, m: force, ty: tags, x: texte, im: image,
   //          p: [[extension, code de la version, rareté, version, prix $, image]] } ; extensions [[nom, code, '', date (ms), date]]
@@ -381,29 +399,37 @@
       const sid = String((it.set && it.set.set_id) || code.split('-')[0]).toUpperCase();
       const si = setIdx.has(sid) ? setIdx.get(sid) : addSet(sid, (it.set && it.set.label) || sid, '');
       const name = rbBaseName(it.name), type = String(cl.type || '');
-      const gk = name.toLowerCase() + '|' + type.toLowerCase();
+      let gk = name.toLowerCase() + '|' + type.toLowerCase();
+      // version sans type (fiche TCGplayer incomplète) : rangée avec la carte du même nom
+      if (!type) { const k = [...groups.keys()].find(x => x.startsWith(name.toLowerCase() + '|')); if (k) gk = k; }
       if (!groups.has(gk)) groups.set(gk, { n: name, t: type, st: '', co: '', c: '', pw: '', m: '', ty: '', x: '', im: '', p: [], base: null });
       const g = groups.get(gk);
       const variant = RB_VARIANT(it);
       const img = rbImgRef(it.media && it.media.image_url);
       const pr = Number(price.get(String(it.tcgplayer_id)) || 0);
+      const dup = g.p.find(x => x[1] === code);
+      if (dup) { if (!dup[4] && pr) dup[4] = Math.round(pr * 100) / 100; if (!dup[5] && img) dup[5] = img; continue; }   // fiche en double chez Riftcodex
       g.p.push([si, code, String(cl.rarity || ''), variant, Math.round(pr * 100) / 100, img]);
       // Les infos de la carte viennent de sa version normale la plus ancienne
-      const plain = !variant && !/[a-z]$/.test(code);
-      const better = !g.base || (plain && !g.base.plain) || (plain === g.base.plain && sets[si][3] < sets[g.base.si][3]);
+      // la fiche de référence : version normale > version spéciale, extension normale > promos, puis la plus ancienne
+      const rank = (variant || /[a-z]$/.test(code) ? 2 : 0) + (RB_PROMO_SETS.test(sid) ? 1 : 0) + (type ? 0 : 4);
+      const better = !g.base || rank < g.base.rank || (rank === g.base.rank && sets[si][3] < sets[g.base.si][3]);
       if (better) {
-        g.base = { plain, si };
+        g.base = { rank, si };
         Object.assign(g, {
-          i: code, st: String(cl.supertype || ''), co: (Array.isArray(cl.domain) ? cl.domain : [cl.domain]).filter(Boolean).join(' '),
+          i: code, t: type || g.t, st: String(cl.supertype || ''), co: (Array.isArray(cl.domain) ? cl.domain : [cl.domain]).filter(Boolean).join(' '),
           c: at.energy == null ? '' : at.energy, pw: at.power == null ? '' : at.power, m: at.might == null ? '' : at.might,
           ty: (Array.isArray(it.tags) ? it.tags : []).join(' '), x: String(tx.plain || '').trim(), im: img
         });
       }
     }
     const cards = [];
-    const seen = new Set();
+    const seen = new Set(), keys = new Set();
     for (const g of groups.values()) {
-      if (seen.has(g.i)) g.i = g.p[0][1]; // deux cartes différentes avec le même code (rare) : on garde des codes uniques
+      // codes de versions uniques dans toute la base (sinon deux cartes se partageraient le même compteur)
+      g.p = g.p.filter(x => !keys.has(x[1]) && keys.add(x[1]));
+      if (!g.p.length) continue;
+      if (seen.has(g.i) || !g.p.some(x => x[1] === g.i)) g.i = (g.p.find(x => !seen.has(x[1])) || g.p[0])[1];
       if (seen.has(g.i)) continue;
       seen.add(g.i);
       g.p.sort((a, b) => sets[a[0]][3] - sets[b[0]][3] || (a[3] ? 1 : 0) - (b[3] ? 1 : 0) || a[1].localeCompare(b[1], 'en', { numeric: true }));
@@ -411,6 +437,31 @@
     }
     cards.sort((a, b) => a.i.localeCompare(b.i, 'en', { numeric: true }));
     return { v: 1, at: Date.now(), source: 'riftcodex.com + TCGplayer (tcgcsv.com)', sets, cards };
+  }
+  // Produits TCGplayer (TCGCSV) d'une extension → fiches au format Riftcodex, pour les extensions que Riftcodex n'a pas encore
+  function rbFromTcg(group, products) {
+    const abbr = String((group && group.abbreviation) || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const items = [];
+    const strip = t => String(t || '').replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim();
+    for (const it of (products && products.results) || products || []) {
+      const ext = {}; for (const e of it.extendedData || []) ext[String(e.name || '').toLowerCase().replace(/[^a-z]/g, '')] = e.value;
+      const num = String(ext.number || ext.cardnumber || '').trim();
+      const m = num.match(/(?:([A-Z]{2,4})[\s\-·•]*)?([A-Z]*)(\d{1,3})([a-z*]?)\s*(?:\/\s*(\d{1,3}))?/i);
+      if (!m || !abbr) continue;   // produits scellés (boosters, boîtes) : pas de numéro de carte
+      const name = String(it.name || '').replace(/\s*-\s*\d{1,3}\/\d{1,3}\s*$/, '').trim();
+      const n = Number(m[3]), total = m[5] ? Number(m[5]) : 0;
+      const dom = String(ext.domain || ext.domains || ext.color || '').split(/[;,/]+/).map(x => x.trim()).filter(Boolean);
+      const num0 = v => v == null || v === '' || isNaN(Number(v)) ? null : Number(v);
+      items.push({
+        name, riftbound_id: `${abbr.toLowerCase()}-${(m[2] || '').toLowerCase()}${m[3]}${(m[4] || '').toLowerCase()}${total ? '-' + total : ''}`, tcgplayer_id: String(it.productId),
+        collector_number: n, attributes: { energy: num0(ext.energy ?? ext.cost), might: num0(ext.might), power: num0(ext.power) },
+        classification: { type: String(ext.cardtype || ext.type || '').split(/[;,]/)[0].trim(), supertype: String(ext.supertype || '').trim() || null, rarity: String(ext.rarity || '').trim(), domain: dom },
+        text: { plain: strip(ext.description || ext.cardtext || ext.text) }, set: { set_id: abbr, label: group.name },
+        media: { image_url: it.productId ? `https://tcgplayer-cdn.tcgplayer.com/product/${it.productId}_400w.jpg` : '' }, tags: String(ext.tags || ext.subtype || '').split(/[;,]/).map(x => x.trim()).filter(Boolean),
+        metadata: { alternate_art: /alternate art|alt art/i.test(it.name || ''), overnumbered: !!(total && n > total), signature: /signature/i.test(it.name || '') }
+      });
+    }
+    return { set: { name: group.name, set_id: abbr, published_on: String(group.publishedOn || '').slice(0, 10) }, items };
   }
   // Codes lus sur la carte : « OGN • 209/298 », « OGN-209 », « UNL 030a/219 »… → [« OGN-209 », …]
   function rbCodesInText(text) {
@@ -434,5 +485,5 @@
   return { PARTS, pickCollections, mergeMaps, mergeCollections, sameCollections, createVinylApi,
     YGO_URLS, ygoImgUrl, ygoCompact, ygoKey, ygoNormCode, ygoCodesInText, ygoIndex, cmLine,
     OP_URLS, opImgUrl, opCompact, opSplitName, opCodesInText, opIndex, opKnownSets, opUpcoming, opUpcomingFrom, OP_UPCOMING_URL, CLOUD_URL,
-    RB_URL, RB_API, rbImgUrl, rbImgId, rbCode, rbBaseName, rbCompact, rbCodesInText };
+    RB_URL, RB_API, rbImgUrl, rbImgId, rbCode, rbBaseName, rbCompact, rbFromTcg, rbCodesInText };
 });

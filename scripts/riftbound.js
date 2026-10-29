@@ -28,12 +28,12 @@ async function allPages(path) {
   }
   return out;
 }
-// Prix du marché TCGplayer par produit (le moins cher entre normal et foil quand les deux existent)
-async function tcgPrices() {
-  const map = new Map();
+// TCGplayer via TCGCSV : prix de toutes les cartes, et cartes des extensions que Riftcodex n'a pas encore (ex. Radiance)
+async function fromTcg(knownSets) {
+  const prices = new Map(), extra = { sets: [], items: [] };
   const cats = await getJson('https://tcgcsv.com/tcgplayer/categories');
   const cat = ((cats && cats.results) || []).find(c => /riftbound/i.test(`${c.name} ${c.displayName}`));
-  if (!cat) { console.log('TCGCSV : catégorie Riftbound introuvable, pas de prix'); return map; }
+  if (!cat) { console.log('TCGCSV : catégorie Riftbound introuvable, pas de prix'); return { prices, extra }; }
   const base = `https://tcgcsv.com/tcgplayer/${cat.categoryId}/`;
   const groups = (await getJson(base + 'groups')).results || [];
   for (const g of groups) {
@@ -43,23 +43,38 @@ async function tcgPrices() {
     for (const r of (pr && pr.results) || []) {
       const v = r.marketPrice || r.midPrice || r.lowPrice || 0;
       if (!v) continue;
-      const k = String(r.productId), cur = map.get(k);
-      if (!cur || (r.subTypeName === 'Normal') || v < cur) map.set(k, v);
+      const k = String(r.productId), cur = map(prices, k);
+      if (!cur || (r.subTypeName === 'Normal') || v < cur) prices.set(k, v);
+    }
+    // Extension absente de Riftcodex (récente ou à venir) : on prend ses cartes chez TCGplayer
+    const ab = String(g.abbreviation || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const recent = (Date.parse(g.publishedOn) || 0) > Date.now() - 200 * 864e5;
+    const nm = String(g.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (ab && recent && !knownSets.has(ab) && !knownSets.has('name:' + nm) && ![...knownSets].some(k => k.startsWith('name:') && nm.includes(k.slice(5))) && !/promo|sealed|bundle|deck|box/i.test(g.name || '')) {
+      await pause(150);
+      try {
+        const prods = await getJson(base + g.groupId + '/products');
+        const r = Core.rbFromTcg(g, prods);
+        if (r.items.length >= 10) { extra.sets.push(r.set); extra.items.push(...r.items); console.log(`TCGCSV : ${g.name} (${ab}) ajoutée, ${r.items.length} cartes`); }
+      } catch (e) { console.log(`TCGCSV : ${g.name} illisible (${e.message || e})`); }
     }
   }
-  console.log(`TCGCSV : catégorie ${cat.categoryId}, ${groups.length} extensions, ${map.size} prix`);
-  return map;
+  console.log(`TCGCSV : catégorie ${cat.categoryId}, ${groups.length} groupes, ${prices.size} prix`);
+  return { prices, extra };
 }
+const map = (m, k) => m.get(k);
 (async () => {
   const out = process.argv[2] || 'riftbound.json';
   const sets = await allPages('/sets');
   const cards = await allPages('/cards');
-  let prices = new Map();
-  try { prices = await tcgPrices(); } catch (e) { console.log('Prix indisponibles : ' + (e.message || e)); }
-  const db = Core.rbCompact(sets, cards, prices);
+  const known = new Set(sets.map(x => String(x.set_id || '').toUpperCase().replace(/[^A-Z0-9]/g, '')));
+  for (const x of sets) { const n = String(x.name || '').toLowerCase().replace(/[^a-z0-9]/g, ''); if (n.length >= 4) known.add('name:' + n); }
+  let tcg = { prices: new Map(), extra: { sets: [], items: [] } };
+  try { tcg = await fromTcg(known); } catch (e) { console.log('TCGCSV indisponible : ' + (e.message || e)); }
+  const db = Core.rbCompact([...sets, ...tcg.extra.sets], [...cards, ...tcg.extra.items], tcg.prices);
   if (db.cards.length < 100) throw new Error(`Base trop petite (${db.cards.length} cartes) : rien n'est publié.`);
   fs.writeFileSync(out, JSON.stringify(db));
   const prints = db.cards.reduce((a, c) => a + c.p.length, 0);
-  console.log(`${sets.length} extensions, ${cards.length} fiches → ${db.cards.length} cartes, ${prints} versions · ${Math.round(fs.statSync(out).size / 1024)} Ko`);
+  console.log(`${sets.length} extensions, ${cards.length} fiches Riftcodex + ${tcg.extra.items.length} TCGplayer → ${db.cards.length} cartes, ${prints} versions · ${Math.round(fs.statSync(out).size / 1024)} Ko`);
   console.log('Extensions : ' + db.sets.map(x => `${x[1]} (${x[4] || '?'})`).join(', '));
 })().catch(e => { console.error(e.message || e); process.exit(1); });
