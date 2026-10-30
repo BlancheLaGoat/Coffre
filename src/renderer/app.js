@@ -610,7 +610,7 @@ function updateLabel() {
     case 'none': return "Tu as la dernière version.";
     case 'available': return `Version ${s.version} trouvée, téléchargement…`;
     case 'downloading': return `Téléchargement de la mise à jour : ${s.percent} %`;
-    case 'ready': return info.platform === 'mobile' ? `Version ${s.version} disponible : touche « Télécharger », puis ouvre le fichier pour l'installer.` : `Version ${s.version} prête à être installée.`;
+    case 'ready': return info.platform === 'mobile' ? `Version ${s.version} disponible : touche « Mettre à jour ». Si Obtainium est installé, la mise à jour passe par lui ; sinon l'APK se télécharge, ouvre-la pour l'installer.` : `Version ${s.version} prête à être installée.`;
     case 'error': return `Impossible de vérifier les mises à jour : ${s.message}`;
     default: return '';
   }
@@ -649,7 +649,7 @@ function openSettings() {
     <div class="actions" style="justify-content:flex-start"><span class="ver">Coffre version ${esc(info.version)}</span>
       <button data-act="news">Nouveautés</button>
       <button data-act="check">Chercher une mise à jour</button>
-      ${updateState.status === 'ready' ? `<button class="primary" data-act="install">${info.platform === 'mobile' ? 'Télécharger la mise à jour' : 'Redémarrer et mettre à jour'}</button>` : ''}</div>
+      ${updateState.status === 'ready' ? `<button class="primary" data-act="install">${info.platform === 'mobile' ? 'Mettre à jour' : 'Redémarrer et mettre à jour'}</button>${info.platform === 'mobile' ? '<button data-act="installApk" title="Sans passer par Obtainium">Télécharger l\'APK</button>' : ''}` : ''}</div>
     <p class="hint" id="stUpd">${esc(updateLabel())}</p>`, 'vinyl');
   loadPhoneSection();
   loadImgInfo();
@@ -733,6 +733,7 @@ $('sheet').addEventListener('click', async e => {
     }
     case 'check': { const r = await window.coffre.checkUpdate(); updateState = r.status === 'checking' ? { status: 'checking' } : r; $('stUpd').textContent = updateLabel(); return; }
     case 'install': return window.coffre.installUpdate();
+    case 'installApk': return window.coffre.installUpdate('apk');
     case 'phoneReset': await window.coffre.syncReset(); return loadPhoneSection();
     case 'news': return openNews((window.COFFRE_CHANGELOG || []).slice(0, 15), true);
     case 'dbRefresh':
@@ -810,7 +811,7 @@ window.coffre.onUpdate(s => {
   updateState = s;
   const bar = $('updateBar');
   if (s.status === 'ready') {
-    bar.innerHTML = `<span>Version ${esc(s.version)} prête</span><button class="primary" id="updNow">${info.platform === 'mobile' ? 'Télécharger' : 'Redémarrer'}</button>`;
+    bar.innerHTML = `<span>Version ${esc(s.version)} prête</span><button class="primary" id="updNow">${info.platform === 'mobile' ? 'Mettre à jour' : 'Redémarrer'}</button>`;
     bar.hidden = false;
     $('updNow').addEventListener('click', () => window.coffre.installUpdate());
   } else if (s.status === 'available' || s.status === 'downloading') {

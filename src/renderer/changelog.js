@@ -2,6 +2,13 @@
 // et reprises comme notes de version sur GitHub). La plus récente en premier.
 window.COFFRE_CHANGELOG = [
 {
+ "v": "1.16.3",
+ "date": "30/10/2026",
+ "items": [
+  "Téléphone : quand une mise à jour est disponible, le bouton « Mettre à jour » passe par Obtainium s'il est installé (la première fois, Coffre s'y ajoute tout seul ; ensuite Obtainium s'ouvre directement). Sans Obtainium, l'APK se télécharge comme avant. Réglages → « Télécharger l'APK » force le téléchargement direct."
+ ]
+},
+{
  "v": "1.16.2",
  "date": "30/10/2026",
  "items": [

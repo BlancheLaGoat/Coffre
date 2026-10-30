@@ -16,6 +16,11 @@ if (!xml.includes('android.permission.CAMERA')) {
     '<uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.CAMERA" />\n    <uses-feature android:name="android.hardware.camera" android:required="false" />');
 }
 if (!xml.includes('usesCleartextTraffic')) xml = xml.replace('<application', '<application\n        android:usesCleartextTraffic="true"');
+// Android 11+ : pour savoir si Obtainium est installé (mises à jour de Coffre par Obtainium)
+if (!xml.includes('dev.imranr.obtainium')) {
+  xml = xml.replace('<application', '<queries>\n        <package android:name="dev.imranr.obtainium" />\n        <package android:name="dev.imranr.obtainium.fdroid" />\n        <intent>\n            <action android:name="android.intent.action.VIEW" />\n            <data android:scheme="obtainium" />\n        </intent>\n    </queries>\n\n    <application');
+  if (!xml.includes('dev.imranr.obtainium')) throw new Error('AndroidManifest.xml : <queries> non ajouté');
+}
 if (!xml.includes('android.permission.CAMERA') || !xml.includes('usesCleartextTraffic')) throw new Error('AndroidManifest.xml : modification impossible');
 fs.writeFileSync(mf, xml);
 

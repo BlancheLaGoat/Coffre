@@ -106,6 +106,15 @@
     for (let i = 0; i < 3; i++) { if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0); }
     return false;
   };
+  // Obtainium (gestionnaire de mises à jour d'applis Android) : version Play/GitHub ou F-Droid
+  const OBTAINIUM = ['dev.imranr.obtainium', 'dev.imranr.obtainium.fdroid'];
+  async function obtainiumPkg() {
+    if (!P.AppLauncher) return '';
+    for (const pkg of OBTAINIUM) {
+      try { const r = await P.AppLauncher.canOpenUrl({ url: pkg }); if (r && r.value) return pkg; } catch (e) { /* suivant */ }
+    }
+    return '';
+  }
   async function checkUpdate() {
     try {
       const res = await http({ url: `https://api.github.com/repos/${REPO}/releases/latest`, headers: { 'User-Agent': UA, Accept: 'application/vnd.github+json' } });
@@ -291,11 +300,31 @@
     checkUpdate,
     // L'APK s'ouvre dans le navigateur du téléphone (Chrome…), qui la télécharge vraiment.
     // (L'onglet intégré se refermait avant la fin du téléchargement.)
-    async installUpdate() {
+    // Avec Obtainium installé : la mise à jour passe par lui (la première fois, Coffre s'y ajoute).
+    // Sinon, ou si on le demande (mode 'apk'), l'APK se télécharge comme avant.
+    async installUpdate(mode) {
       if (!apkUrl) return;
+      const App = window.CoffreApp, set = App && App.data && App.data.settings;
+      if (mode !== 'apk' && set && !set.noObtainium) {
+        const pkg = await obtainiumPkg();
+        if (pkg) {
+          try {
+            if (!set.obtainiumAdded) {
+              await P.AppLauncher.openUrl({ url: `obtainium://add/https://github.com/${REPO}` });
+              set.obtainiumAdded = Date.now(); App.scheduleSave();
+              App.toast('Dans Obtainium : touche « Ajouter », puis installe la mise à jour de Coffre');
+            } else {
+              await P.AppLauncher.openUrl({ url: pkg });
+              App.toast('Mets Coffre à jour dans Obtainium');
+            }
+            return;
+          } catch (e) { /* Obtainium ne s'ouvre pas : téléchargement direct */ }
+        }
+      }
       try { if (P.AppLauncher) { await P.AppLauncher.openUrl({ url: apkUrl }); return; } } catch (e) { /* repli ci-dessous */ }
       window.location.href = apkUrl;
     },
+    hasObtainium: () => obtainiumPkg().then(Boolean),
     onUpdate(cb) { updateCb = cb; }
   };
 
