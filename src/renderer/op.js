@@ -46,6 +46,22 @@
   const gal = () => App.data.settings.opLayout !== 'list';
   const layoutSeg = id => `<div class="seg" id="${id}"><button data-v="gal" aria-pressed="${gal()}">Galerie</button><button data-v="list" aria-pressed="${!gal()}">Liste</button></div>`;
   function setLayout(v) { App.data.settings.opLayout = v; App.scheduleSave(); render(); }
+  // Decks : galerie, liste, ou « Exemplaires » (une image par exemplaire : en couleur ceux que tu as, en gris les autres)
+  const deckMode = () => App.data.settings.opDeckLayout === 'copies' ? 'copies' : gal() ? 'gal' : 'list';
+  const deckLayoutSeg = id => `<div class="seg" id="${id}">${[['gal', 'Galerie'], ['list', 'Liste'], ['copies', 'Exemplaires']].map(([v, n]) => `<button data-v="${v}" aria-pressed="${deckMode() === v}">${n}</button>`).join('')}</div>`;
+  function setDeckLayout(v) {
+    if (v === 'copies') App.data.settings.opDeckLayout = 'copies';
+    else { delete App.data.settings.opDeckLayout; App.data.settings.opLayout = v; }
+    App.scheduleSave(); render();
+  }
+  // Une image par exemplaire ; « reste » = exemplaires possédés pas encore placés (partagés entre les zones du deck)
+  function copiesHtml(arr, reste) {
+    return `<div class="dcopies">${arr.map(x => Array.from({ length: x.q }, () => {
+      const id = x.c.i, n = reste.get(id) || 0, own = n > 0;
+      if (own) reste.set(id, n - 1);
+      return `<button class="dcopy${own ? ' own' : ''}" data-o="card" data-id="${esc(id)}" title="${esc(label(x.c))}${own ? '' : ' (manquante)'}">${imgTag(x.c.im)}</button>`;
+    }).join('')).join('')}</div>`;
+  }
   // Version d'une impression : « SR », « SR · Parallèle »…
   const rarName = p => [p[2], p[3]].filter(Boolean).join(' · ') || '?';
   const printImg = (c, p) => (p && p[5]) || c.im;
@@ -303,7 +319,8 @@
     const dq = q => `<div class="qty"><button data-o="dq" data-d="-1" aria-label="Retirer du deck">−</button><output>${q}</output><button data-o="dq" data-d="1" aria-label="Ajouter au deck">+</button></div>`;
     const ownTxt = (q, owned) => owned >= q ? `<span class="own">${owned} possédée${owned > 1 ? 's' : ''}</span>` : `<span class="miss">il en manque ${q - owned}</span>`;
     const sortFn = (a, b) => (Number(a.c.c) || 0) - (Number(b.c.c) || 0) || label(a.c).localeCompare(label(b.c), 'fr');
-    const group = (title, arr) => arr.length ? `<h4>${title} <span class="num">${arr.reduce((a, x) => a + x.q, 0)}</span></h4>` + (gal()
+    const reste = new Map(entries.map(x => [x.c.i, x.owned]));
+    const group = (title, arr) => arr.length ? `<h4>${title} <span class="num">${arr.reduce((a, x) => a + x.q, 0)}</span></h4>` + (deckMode() === 'copies' ? copiesHtml(arr.sort(sortFn), reste) : gal()
       ? `<div class="gal">${arr.sort(sortFn).map(({ c, q, owned }) => `<div class="gcard${owned >= q ? ' own' : ' short'}" data-id="${esc(c.i)}">
           <button class="pic" data-o="card" aria-label="Détails de ${esc(label(c))}">${imgTag(c.im)}<span class="badge">×${q}</span></button>
           <div class="cap"><span class="num">${ownTxt(q, owned)}</span>${esc(label(c))}${priceTag(c.i)}</div>${cadd(c)}${dq(q)}</div>`).join('')}</div>`
@@ -330,7 +347,7 @@
       <div class="ydeckbar">
         <input type="search" id="odQ" placeholder="Ajouter une carte : nom ou code (OP01-001)…" value="${esc(st.deckQ)}">
         <div class="seg" id="odView"><button data-v="all" aria-pressed="${st.deckView === 'all'}">Toutes</button><button data-v="miss" aria-pressed="${st.deckView === 'miss'}">Manquantes</button></div>
-        ${layoutSeg('odLayout')}
+        ${deckLayoutSeg('odLayout')}
       </div>
       ${st.deckQ ? `<div class="yresults">${results.length ? results.map(c => resultHtml(c, `<button class="primary" data-o="dadd">+ ${isLeader(c) ? 'Leader' : 'Deck'}</button>`)).join('') : '<p class="hint">Aucune carte trouvée.</p>'}</div>` : ''}
       <div class="ydecklist">${group('Leader', leaders)}${group('Deck', main)}${!shown.length ? `<p class="hint">${st.deckView === 'miss' ? 'Aucune carte manquante.' : 'Deck vide : cherche ton Leader et tes cartes au-dessus pour les ajouter.'}</p>` : ''}</div>
@@ -704,7 +721,7 @@
     if (k === 'op-deck') {
       const d = decks()[st.deckId]; if (!d) return;
       d.cards = d.cards || {};
-      if (b.dataset.v && b.closest('#odLayout')) { setLayout(b.dataset.v); return renderDeck(); }
+      if (b.dataset.v && b.closest('#odLayout')) { setDeckLayout(b.dataset.v); return renderDeck(); }
       if (b.dataset.v) { st.deckView = b.dataset.v; return renderDeck(); }
       if (y === 'dadd' && row) { const id = row.dataset.id; d.cards[id] = (d.cards[id] || 0) + 1; touchDeck(d); afterChange(); return; }
       if (y === 'cadd' && row) { addOneToCollection(row.dataset.id); afterChange(); return; }

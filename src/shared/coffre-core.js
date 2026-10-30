@@ -94,7 +94,7 @@
   // ---------- Base de cartes Yu-Gi-Oh (YGOPRODeck) ----------
   const YGO_API = 'https://db.ygoprodeck.com/api/v7/';
   const YGO_URLS = {
-    en: YGO_API + 'cardinfo.php',
+    en: YGO_API + 'cardinfo.php?misc=yes',   // misc : formats où la carte est autorisée (GOAT, Edison…)
     fr: YGO_API + 'cardinfo.php?language=fr',
     sets: YGO_API + 'cardsets.php'
   };
@@ -133,10 +133,14 @@
         // Texte de la carte : en français si YGOPRODeck l'a, sinon en anglais
         x: String(frDesc.get(c.id) || c.desc || '').trim(),
         // Banlist TCG (Europe) : 0 interdite, 1 limitée, 2 semi-limitée ; absente = 3 exemplaires autorisés
-        ...(BAN[(c.banlist_info || {}).ban_tcg] != null ? { b: BAN[c.banlist_info.ban_tcg] } : {})
+        ...(BAN[(c.banlist_info || {}).ban_tcg] != null ? { b: BAN[c.banlist_info.ban_tcg] } : {}),
+        // Banlist GOAT (avril 2005), même codage
+        ...(BAN[(c.banlist_info || {}).ban_goat] != null ? { g: BAN[c.banlist_info.ban_goat] } : {}),
+        // Formats anciens où la carte est autorisée : G = GOAT, E = Edison
+        fo: (() => { const f = ((c.misc_info || [])[0] || {}).formats || []; return (f.includes('GOAT') ? 'G' : '') + (f.includes('Edison') ? 'E' : ''); })()
       });
     }
-    return { v: 4, at: Date.now(), cards, sets: setList };
+    return { v: 5, at: Date.now(), cards, sets: setList };
   }
 
   // Clé d'une impression dans la collection : « SGX1-ENA18|C »
@@ -493,11 +497,154 @@
   // Serveur de synchro en ligne (Cloudflare Worker, voir cloud/worker.js). Vide = synchro en ligne pas encore configurée.
   const CLOUD_URL = 'https://coffre-sync.ixaglax.workers.dev';
 
+  // Banlist du format Edison (liste TCG du 1er mars 2010, figée ; source : edisonformat.net) : nom anglais → 0 interdite, 1 limitée, 2 semi-limitée
+  const YGO_EDISON = {
+    // interdites (43)
+    "Black Luster Soldier - Envoy of the Beginning": 0,
+    "Chaos Emperor Dragon - Envoy of the End": 0,
+    "Cyber Jar": 0,
+    "Cyber-Stein": 0,
+    "Dark Magician of Chaos": 0,
+    "Destiny HERO - Disk Commander": 0,
+    "Fiber Jar": 0,
+    "Magical Scientist": 0,
+    "Magician of Faith": 0,
+    "Makyura the Destructor": 0,
+    "Sinister Serpent": 0,
+    "Tribe-Infecting Virus": 0,
+    "Tsukuyomi": 0,
+    "Victory Dragon": 0,
+    "Witch of the Black Forest": 0,
+    "Yata-Garasu": 0,
+    "Thousand-Eyes Restrict": 0,
+    "Dark Strike Fighter": 0,
+    "Butterfly Dagger - Elma": 0,
+    "Card of Safe Return": 0,
+    "Change of Heart": 0,
+    "Confiscation": 0,
+    "Dark Hole": 0,
+    "Delinquent Duo": 0,
+    "Dimension Fusion": 0,
+    "Graceful Charity": 0,
+    "Harpie's Feather Duster": 0,
+    "Last Will": 0,
+    "Monster Reborn": 0,
+    "Metamorphosis": 0,
+    "Mirage of Nightmare": 0,
+    "Painful Choice": 0,
+    "Pot of Greed": 0,
+    "Premature Burial": 0,
+    "Raigeki": 0,
+    "Snatch Steal": 0,
+    "The Forceful Sentry": 0,
+    "Crush Card Virus": 0,
+    "Exchange of the Spirit": 0,
+    "Imperial Order": 0,
+    "Last Turn": 0,
+    "Ring of Destruction": 0,
+    "Time Seal": 0,
+    // limitées (70)
+    "Left Arm of the Forbidden One": 1,
+    "Left Leg of the Forbidden One": 1,
+    "Right Arm of the Forbidden One": 1,
+    "Right Leg of the Forbidden One": 1,
+    "Blackwing - Gale the Whirlwind": 1,
+    "Card Trooper": 1,
+    "Chaos Sorcerer": 1,
+    "Dark Armed Dragon": 1,
+    "Elemental HERO Stratos": 1,
+    "Exodia the Forbidden One": 1,
+    "Gladiator Beast Bestiari": 1,
+    "Lumina, Lightsworn Summoner": 1,
+    "Marshmallon": 1,
+    "Mezuki": 1,
+    "Mind Master": 1,
+    "Morphing Jar": 1,
+    "Necroface": 1,
+    "Necro Gardna": 1,
+    "Neo-Spacian Grand Mole": 1,
+    "Night Assailant": 1,
+    "Plaguespreader Zombie": 1,
+    "Rescue Cat": 1,
+    "Gorz the Emissary of Darkness": 1,
+    "Sangan": 1,
+    "Snipe Hunter": 1,
+    "Spirit Reaper": 1,
+    "Summoner Monk": 1,
+    "Tragoedia": 1,
+    "Black Rose Dragon": 1,
+    "Brionac, Dragon of the Ice Barrier": 1,
+    "Goyo Guardian": 1,
+    "Advanced Ritual Art": 1,
+    "Allure of Darkness": 1,
+    "Brain Control": 1,
+    "Burial from a Different Dimension": 1,
+    "Card Destruction": 1,
+    "Charge of the Light Brigade": 1,
+    "Cold Wave": 1,
+    "Destiny Draw": 1,
+    "Emergency Teleport": 1,
+    "Foolish Burial": 1,
+    "Future Fusion": 1,
+    "Giant Trunade": 1,
+    "Heavy Storm": 1,
+    "Level Limit - Area B": 1,
+    "Limiter Removal": 1,
+    "Megamorph": 1,
+    "Mind Control": 1,
+    "Monster Gate": 1,
+    "Mystical Space Typhoon": 1,
+    "One for One": 1,
+    "Overload Fusion": 1,
+    "Reasoning": 1,
+    "Reinforcement of the Army": 1,
+    "Scapegoat": 1,
+    "Swords of Revealing Light": 1,
+    "Call of the Haunted": 1,
+    "Ceasefire": 1,
+    "Gravity Bind": 1,
+    "Magic Cylinder": 1,
+    "Magical Explosion": 1,
+    "Mind Crush": 1,
+    "Mirror Force": 1,
+    "Ojama Trio": 1,
+    "Return from the Different Dimension": 1,
+    "Solemn Judgment": 1,
+    "The Transmigration Prophecy": 1,
+    "Torrential Tribute": 1,
+    "Trap Dustshoot": 1,
+    "Wall of Revealing Light": 1,
+    // semi-limitées (19)
+    "Cyber Dragon": 2,
+    "Dandylion": 2,
+    "Destiny HERO - Malicious": 2,
+    "Goblin Zombie": 2,
+    "Honest": 2,
+    "Judgment Dragon": 2,
+    "Lonefire Blossom": 2,
+    "Treeborn Frog": 2,
+    "Demise, King of Armageddon": 2,
+    "Black Whirlwind": 2,
+    "Chain Strike": 2,
+    "Gold Sarcophagus": 2,
+    "Magical Stone Excavation": 2,
+    "United We Stand": 2,
+    "Bottomless Trap Hole": 2,
+    "Royal Decree": 2,
+    "Royal Oppression": 2,
+    "Skill Drain": 2,
+    "Ultimate Offering": 2
+  };
+  // Recherche tolérante (tirets, apostrophes, majuscules)
+  const ygoNormName = t => String(t || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const YGO_EDISON_N = new Map(Object.entries(YGO_EDISON).map(([k, v]) => [ygoNormName(k), v]));
+  const ygoEdisonBan = name => YGO_EDISON_N.get(ygoNormName(name));
+
   // Ligne pour la wishlist Cardmarket : « 2 Dark Magician »
   const cmLine = (qty, name) => `${qty} ${name}`;
 
   return { PARTS, pickCollections, mergeMaps, mergeCollections, sameCollections, createVinylApi,
-    YGO_URLS, ygoImgUrl, ygoCompact, ygoKey, ygoNormCode, ygoCodesInText, ygoIndex, cmLine,
+    YGO_URLS, ygoImgUrl, ygoCompact, YGO_EDISON, ygoEdisonBan, ygoKey, ygoNormCode, ygoCodesInText, ygoIndex, cmLine,
     OP_URLS, opImgUrl, opCompact, opSplitName, opCodesInText, opIndex, opKnownSets, opUpcoming, opUpcomingFrom, OP_UPCOMING_URL, CLOUD_URL,
     RB_URL, RB_API, rbImgUrl, rbImgId, rbCode, rbBaseName, rbCompact, rbFromTcg, rbCodesInText };
 });

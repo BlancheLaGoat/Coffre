@@ -23,7 +23,7 @@
     // Mise à jour discrète toutes les deux semaines (nouvelles extensions)
     // Mise à jour discrète (nouvelles cartes, prix Cardmarket) chaque semaine, ou si la base est d'un ancien format
     const hasUp = st.db && st.db.sets.some((x, i) => isUpcoming(i));
-    if (st.db && (st.db.v !== 4 || now() - (st.db.at || 0) > (hasUp ? 3 : 7) * 864e5)) refreshDb(true);
+    if (st.db && (st.db.v !== 5 || now() - (st.db.at || 0) > (hasUp ? 3 : 7) * 864e5)) refreshDb(true);
   }
   async function refreshDb(silent) {
     if (st.loading) return;
@@ -46,12 +46,36 @@
   const isExtra = c => EXTRA.test(c.t || '');
   // Banlist TCG : nombre d'exemplaires autorisés dans un deck (3 si la carte n'est pas sur la liste)
   const BAN_TXT = ['Interdite', 'Limitée', 'Semi-limitée'];
-  const banMax = c => c.b != null ? c.b : 3;
-  const banIcon = c => c.b != null ? `<span class="ban b${c.b}" title="Banlist TCG : ${BAN_TXT[c.b]}">${c.b}</span>` : '';
-  const banTag = c => c.b != null ? `<span class="bantag b${c.b}">${BAN_TXT[c.b]}${c.b ? ' (' + c.b + ')' : ''}</span>` : '';
+  // Formats de jeu d'un deck : TCG actuel, GOAT (avril 2005), Edison (mars 2010)
+  const FORMATS = { tcg: { name: 'TCG (actuel)', short: 'TCG' }, goat: { name: 'GOAT (avril 2005)', short: 'GOAT' }, edison: { name: 'Edison (mars 2010)', short: 'Edison' } };
+  const fmtOf = d => FORMATS[d && d.fmt] ? d.fmt : 'tcg';
+  // Carte autorisée dans le format ? (base trop ancienne, sans l'info : on suppose que oui)
+  const legal = (c, f = 'tcg') => f === 'tcg' || c.fo == null || c.fo.includes(f === 'goat' ? 'G' : 'E');
+  const banOf = (c, f = 'tcg') => f === 'goat' ? c.g : f === 'edison' ? Core.ygoEdisonBan(c.n) : c.b;
+  const banMax = (c, f = 'tcg') => !legal(c, f) ? 0 : banOf(c, f) != null ? banOf(c, f) : 3;
+  const banIcon = (c, f = 'tcg') => !legal(c, f) ? `<span class="ban b0" title="Pas autorisée en ${FORMATS[f].short}">×</span>`
+    : banOf(c, f) != null ? `<span class="ban b${banOf(c, f)}" title="Banlist ${FORMATS[f].short} : ${BAN_TXT[banOf(c, f)]}">${banOf(c, f)}</span>` : '';
+  const banTag = (c, f = 'tcg') => !legal(c, f) ? `<span class="bantag b0">Hors format ${FORMATS[f].short}</span>`
+    : banOf(c, f) != null ? `<span class="bantag b${banOf(c, f)}">${BAN_TXT[banOf(c, f)]}${banOf(c, f) ? ' (' + banOf(c, f) + ')' : ''}</span>` : '';
   const gal = () => App.data.settings.ygoLayout !== 'list';
   const layoutSeg = id => `<div class="seg" id="${id}"><button data-v="gal" aria-pressed="${gal()}">Galerie</button><button data-v="list" aria-pressed="${!gal()}">Liste</button></div>`;
   function setLayout(v) { App.data.settings.ygoLayout = v; App.scheduleSave(); render(); }
+  // Decks : galerie, liste, ou « Exemplaires » (une image par exemplaire : en couleur ceux que tu as, en gris les autres)
+  const deckMode = () => App.data.settings.ygoDeckLayout === 'copies' ? 'copies' : gal() ? 'gal' : 'list';
+  const deckLayoutSeg = id => `<div class="seg" id="${id}">${[['gal', 'Galerie'], ['list', 'Liste'], ['copies', 'Exemplaires']].map(([v, n]) => `<button data-v="${v}" aria-pressed="${deckMode() === v}">${n}</button>`).join('')}</div>`;
+  function setDeckLayout(v) {
+    if (v === 'copies') App.data.settings.ygoDeckLayout = 'copies';
+    else { delete App.data.settings.ygoDeckLayout; App.data.settings.ygoLayout = v; }
+    App.scheduleSave(); render();
+  }
+  // Une image par exemplaire ; « reste » = exemplaires possédés pas encore placés (partagés entre les zones du deck)
+  function copiesHtml(arr, reste, f) {
+    return `<div class="dcopies">${arr.map(x => Array.from({ length: x.q }, () => {
+      const id = String(x.c.i), n = reste.get(id) || 0, own = n > 0;
+      if (own) reste.set(id, n - 1);
+      return `<button class="dcopy${own ? ' own' : ''}" data-y="card" data-id="${esc(id)}" title="${esc(label(x.c))}${own ? '' : ' (manquante)'}">${imgTag(x.c.i)}${banIcon(x.c, f)}</button>`;
+    }).join('')).join('')}</div>`;
+  }
 
   // ---------- Images (téléchargées une fois, puis gardées sur l'appareil) ----------
   const imgTag = (id, cls = '') => `<img class="yimg ${cls}" data-ygo="${id}" alt="" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">`;
@@ -279,7 +303,7 @@
   }
   function banIssues(d) {
     let n = 0;
-    for (const [id, q] of deckNeed(d)) { const c = card(Number(id)); if (c && q > banMax(c)) n++; }
+    for (const [id, q] of deckNeed(d)) { const c = card(Number(id)); if (c && q > banMax(c, fmtOf(d))) n++; }
     return n;
   }
   function missingCost(d) {
@@ -296,7 +320,7 @@
       return `<button class="ydeck" data-y="deck" data-deck="${id}">
         <span class="ycover">${cover ? imgTag(cover) : ''}</span>
         <span class="t">${esc(d.name || 'Deck sans nom')}</span>
-        <span class="a">${banIssues(d) ? '<b class="miss">⚠ banlist</b> · ' : ''}${total} cartes · ${missing ? `<b class="miss">${missing} manquante${missing > 1 ? 's' : ''}</b>` : 'complet'}${missingCost(d) ? ` · ≈ ${money(missingCost(d))} à acheter` : ''}</span></button>`;
+        <span class="a">${fmtOf(d) !== 'tcg' ? `<span class="tag">${FORMATS[fmtOf(d)].short}</span> ` : ''}${banIssues(d) ? '<b class="miss">⚠ banlist</b> · ' : ''}${total} cartes · ${missing ? `<b class="miss">${missing} manquante${missing > 1 ? 's' : ''}</b>` : 'complet'}${missingCost(d) ? ` · ≈ ${money(missingCost(d))} à acheter` : ''}</span></button>`;
     }).join('') + `</div>`;
   }
 
@@ -347,9 +371,15 @@
     App.toast('Deck importé' + (notes.length ? ' (' + notes.join(', ') + ')' : ''));
   }
 
+  // Nouveau deck : on choisit d'abord le format de jeu
   function newDeck() {
+    App.openModal(`<div class="sheet-head"><h3>Nouveau deck</h3><button class="close" data-y="close">Fermer</button></div>
+      <p class="hint">Choisis le format de jeu : Coffre vérifie la banlist et les cartes autorisées. Tu pourras le changer ensuite dans le deck.</p>
+      <div class="fmtpick">${Object.entries(FORMATS).map(([k, f]) => `<button class="${k === 'tcg' ? 'primary' : ''}" data-y="mkDeck" data-fmt="${k}"><b>${f.name}</b><span class="hint">${k === 'tcg' ? 'Banlist TCG du moment, toutes les cartes' : k === 'goat' ? 'Banlist d\'avril 2005, cartes sorties jusque-là' : 'Banlist de mars 2010, cartes sorties jusque-là'}</span></button>`).join('')}</div>`, 'tcg ygo', 'ygo-newdeck');
+  }
+  function createDeck(fmt) {
     const id = 'd' + now().toString(36) + Math.random().toString(36).slice(2, 6);
-    decks()[id] = { name: 'Nouveau deck', cards: {}, created: now(), mt: now() };
+    decks()[id] = { name: 'Nouveau deck', cards: {}, created: now(), mt: now(), ...(fmt && fmt !== 'tcg' ? { fmt } : {}) };
     App.scheduleSave();
     render();
     openDeck(id);
@@ -412,20 +442,22 @@
     const dq = (q, z) => `<div class="qty"><button data-y="dq" data-z="${z}" data-d="-1" aria-label="Retirer">−</button><output>${q}</output><button data-y="dq" data-z="${z}" data-d="1" aria-label="Ajouter">+</button></div>`;
     const ownTxt = x => x.owned >= x.need ? `<span class="own">${x.owned} possédée${x.owned > 1 ? 's' : ''}</span>` : `<span class="miss">il en manque ${x.need - x.owned}</span>`;
     const tile = x => `<div class="gcard${x.owned >= x.need ? ' own' : ' short'}" data-id="${x.c.i}">
-        <button class="pic" data-y="card" aria-label="Détails de ${esc(label(x.c))}">${imgTag(x.c.i)}${banIcon(x.c)}<span class="badge">×${x.q}</span></button>
+        <button class="pic" data-y="card" aria-label="Détails de ${esc(label(x.c))}">${imgTag(x.c.i)}${banIcon(x.c, fmt)}<span class="badge">×${x.q}</span></button>
         <div class="cap"><span class="num">${ownTxt(x)}</span>${esc(label(x.c))}${priceTag(x.c.i)}</div>${cadd(x.c)}${dq(x.q, x.z)}</div>`;
     const row = x => `
       <div class="yrow${x.owned >= x.need ? ' ok' : ' short'}" data-id="${x.c.i}">
         <button class="ypic" data-y="card">${imgTag(x.c.i)}</button>
         <div class="yinfo"><button class="nm" data-y="card">${esc(label(x.c))}</button>${sub(x.c) ? `<span class="en">${esc(sub(x.c))}</span>` : ''}
-          <span class="meta">${banTag(x.c)}${x.need > banMax(x.c) ? `<span class="miss">max ${banMax(x.c)} (deck + side)</span>` : ''}${ownTxt(x)}${x.owned < x.need ? `<span>(${x.owned} possédée${x.owned > 1 ? 's' : ''})</span>` : ''}${priceTag(x.c.i)}</span></div>
+          <span class="meta">${banTag(x.c, fmt)}${legal(x.c, fmt) && x.need > banMax(x.c, fmt) ? `<span class="miss">max ${banMax(x.c, fmt)} (deck + side)</span>` : ''}${ownTxt(x)}${x.owned < x.need ? `<span>(${x.owned} possédée${x.owned > 1 ? 's' : ''})</span>` : ''}${priceTag(x.c.i)}</span></div>
         ${cadd(x.c)}${dq(x.q, x.z)}</div>`;
-    const group = (title, arr) => { if (!arr.length) return ''; arr.sort((a, b) => label(a.c).localeCompare(label(b.c), 'fr')); return `<h4>${title} <span class="num">${arr.reduce((a, x) => a + x.q, 0)}</span></h4>` + (gal() ? `<div class="gal">${arr.map(tile).join('')}</div>` : arr.map(row).join('')); };
+    const reste = new Map(uniq.map(x => [String(x.c.i), x.owned]));
+    const group = (title, arr) => { if (!arr.length) return ''; arr.sort((a, b) => label(a.c).localeCompare(label(b.c), 'fr')); return `<h4>${title} <span class="num">${arr.reduce((a, x) => a + x.q, 0)}</span></h4>` + (deckMode() === 'copies' ? copiesHtml(arr, reste, fmt) : gal() ? `<div class="gal">${arr.map(tile).join('')}</div>` : arr.map(row).join('')); };
     const main = shown.filter(x => !isExtra(x.c)), extra = shown.filter(x => isExtra(x.c));
     const mainCount = entries.filter(x => !isExtra(x.c)).reduce((a, x) => a + x.q, 0);
     const extraCount = entries.filter(x => isExtra(x.c)).reduce((a, x) => a + x.q, 0);
     const sideCount = sideE.reduce((a, x) => a + x.q, 0);
-    const banBad = uniq.filter(x => x.q > banMax(x.c));
+    const fmt = fmtOf(d), F = FORMATS[fmt];
+    const banBad = uniq.filter(x => x.q > banMax(x.c, fmt));
     const results = searchCards(st.deckQ, 30);
     const cm = missingList.map(x => Core.cmLine(x.q - x.owned, x.c.n)).join('\n');
     const deckValue = uniq.reduce((a, x) => a + x.q * (x.c.cm || 0), 0);
@@ -437,11 +469,12 @@
       ${uniq.length ? coverSelect('ydCover', d, uniq.map(x => x.c)) : ''}
       <p class="hint">${mainCount} cartes dans le Main Deck${extraCount ? ` · ${extraCount} dans l'Extra Deck` : ''}${sideCount ? ` · ${sideCount} dans le Side Deck` : ''} · ${missingList.length ? `<b class="miss">${missingList.reduce((a, x) => a + x.q - x.owned, 0)} carte(s) manquante(s)</b>` : 'tu as toutes les cartes'}
         ${deckValue ? `<br>Prix du deck ≈ <b class="price">${money(deckValue)}</b>${missValue ? ` · ce qu'il te manque ≈ <b class="price miss">${money(missValue)}</b>` : ''} <span class="hint">(Cardmarket, ${pricesDate()})</span>` : ''}</p>
-      ${banBad.length ? `<p class="banwarn">⚠ Pas conforme à la banlist TCG : ${banBad.map(x => `${esc(label(x.c))} (${x.q}, max ${banMax(x.c)})`).join(' · ')}${sideCount ? ' <span class="hint">(deck + side)</span>' : ''}</p>` : ''}
+      <label class="dcover">Format <select id="ydFmt">${Object.entries(FORMATS).map(([k, f]) => `<option value="${k}"${k === fmt ? ' selected' : ''}>${f.name}</option>`).join('')}</select></label>
+      ${banBad.length ? `<p class="banwarn">⚠ Pas conforme au format ${F.short} : ${banBad.map(x => `${esc(label(x.c))} (${legal(x.c, fmt) ? `${x.q}, max ${banMax(x.c, fmt)}` : 'pas autorisée'})`).join(' · ')}${sideCount ? ' <span class="hint">(deck + side)</span>' : ''}</p>` : ''}
       <div class="ydeckbar">
         <input type="search" id="ydQ" placeholder="Ajouter une carte : nom (français ou anglais) ou code…" value="${esc(st.deckQ)}">
         <div class="seg" id="ydView"><button data-v="all" aria-pressed="${st.deckView === 'all'}">Toutes</button><button data-v="miss" aria-pressed="${st.deckView === 'miss'}">Manquantes</button></div>
-        ${layoutSeg('ydLayout')}
+        ${deckLayoutSeg('ydLayout')}
       </div>
       ${st.deckQ ? `<div class="yresults">${results.length ? results.map(c => resultHtml(c, `<div class="yadd2"><button class="primary" data-y="dadd">+ Deck</button><button data-y="sadd" title="Ajouter au Side Deck">+ Side</button></div>`)).join('') : '<p class="hint">Aucune carte trouvée.</p>'}</div>` : ''}
       <div class="ydecklist">${group('Main Deck', main)}${group('Extra Deck', extra)}${group('Side Deck', shownSide)}${!shown.length && !shownSide.length ? `<p class="hint">${st.deckView === 'miss' ? 'Aucune carte manquante.' : 'Deck vide : cherche une carte au-dessus pour l\'ajouter.'}</p>` : ''}</div>
@@ -523,6 +556,7 @@
             ${c.k !== '' ? `<dt>ATK / DEF</dt><dd>${c.k} / ${c.d === '' ? '—' : c.d}</dd>` : ''}
             <dt>Dans ta collection</dt><dd><b>${ownedOf(c.i)}</b></dd>
             <dt>Banlist TCG</dt><dd>${c.b != null ? banTag(c) : 'Illimitée (3)'}</dd>
+            ${c.fo != null ? `<dt>GOAT</dt><dd>${banTag(c, 'goat') || 'Autorisée (3)'}</dd><dt>Edison</dt><dd>${banTag(c, 'edison') || 'Autorisée (3)'}</dd>` : ''}
             ${c.cm ? `<dt>Prix Cardmarket</dt><dd><b class="price">${money(c.cm)}</b> <span class="hint">(prix de référence, toutes éditions)</span></dd>` : ''}</dl>
           <div class="actions" style="justify-content:flex-start">
             ${ds.length ? `<select id="ycDeck">${ds.map(([id, d]) => `<option value="${id}">${esc(d.name || 'Deck')}</option>`).join('')}</select><button data-y="toDeck">Ajouter au deck</button>` : ''}
@@ -714,6 +748,7 @@
   $('sheet').addEventListener('change', e => {
     if (e.target.id === 'yaLang' || e.target.id === 'ycLang') { App.data.settings.ygoLang = e.target.value; App.scheduleSave(); refreshOpenModal(); return; }
     if (e.target.id === 'ydName') { const d = decks()[st.deckId]; if (d) { d.name = e.target.value.trim() || 'Deck sans nom'; touchDeck(d); render(); } }
+    if (e.target.id === 'ydFmt') { const d = decks()[st.deckId]; if (d) { if (e.target.value === 'tcg') delete d.fmt; else d.fmt = e.target.value; touchDeck(d); render(); App.toast(`Format : ${FORMATS[fmtOf(d)].name}`); } }
     if (e.target.id === 'ydCover') { const d = decks()[st.deckId]; if (d) { if (e.target.value) d.cover = e.target.value; else delete d.cover; touchDeck(d); render(); } }
   });
   $('sheet').addEventListener('click', async e => {
@@ -722,6 +757,7 @@
     const y = b.dataset.y;
     if (y === 'close') return App.closeModal();
     if (y === 'back') { const back = cardBack; cardBack = null; return back && back(); }
+    if (y === 'mkDeck') return createDeck(b.dataset.fmt);
     const row = b.closest('[data-id]');
     if (y === 'card' && row) {
       const back = k === 'ygo-add' ? openAdd : k === 'ygo-deck' ? (() => openDeck(st.deckId, true)) : null;
@@ -767,7 +803,7 @@
     if (k === 'ygo-deck') {
       const d = decks()[st.deckId]; if (!d) return;
       d.cards = d.cards || {};
-      if (b.dataset.v && b.closest('#ydLayout')) { setLayout(b.dataset.v); return renderDeck(); }
+      if (b.dataset.v && b.closest('#ydLayout')) { setDeckLayout(b.dataset.v); return renderDeck(); }
       if (b.dataset.v) { st.deckView = b.dataset.v; return renderDeck(); }
       if (y === 'dadd' && row) { const id = Number(row.dataset.id); d.cards[id] = (d.cards[id] || 0) + 1; touchDeck(d); afterChange(); return; }
       if (y === 'cadd' && row) { addOneToCollection(Number(row.dataset.id)); afterChange(); return; }

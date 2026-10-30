@@ -293,3 +293,17 @@ b.price { font-size: inherit; }
 /* Foil (Riftbound) */
 .tag.foil { background: linear-gradient(100deg, #f6d365, #fda085 30%, #a1c4fd 65%, #c2e9fb); color: #222; border: 0; }
 .yprint.yfoil { padding-left: 28px; border-top-style: dashed; }
+
+/* Decks en « Exemplaires » : une image par exemplaire, en gris ceux qui manquent */
+.dcopies { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 6px; padding: 4px 0 10px; }
+.dcopy { position: relative; border: 0; padding: 0; background: none; border-radius: 5px; overflow: hidden; cursor: pointer; min-height: 0; }
+.dcopy img, .dcopy .noimgbox { width: 100%; aspect-ratio: 421/614; object-fit: cover; display: block; border-radius: 5px; }
+.dcopy:not(.own) img, .dcopy:not(.own) .noimgbox { filter: grayscale(1); opacity: .42; }
+.dcopy .ban { position: absolute; top: 3px; left: 3px; }
+.dcopy:hover img { outline: 2px solid var(--tcg, var(--ygo)); outline-offset: -2px; }
+@media (max-width: 640px) { .dcopies { grid-template-columns: repeat(auto-fill, minmax(58px, 1fr)); gap: 4px; } }
+
+/* Choix du format d'un nouveau deck Yu-Gi-Oh */
+.fmtpick { display: grid; gap: 10px; }
+.fmtpick button { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; padding: 12px 14px; }
+.fmtpick button .hint { color: inherit; opacity: .8; }

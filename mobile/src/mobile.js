@@ -238,8 +238,8 @@
       // 1. depuis le PC associé (rapide, déjà compactée)
       if (Sync.pair) {
         try { db = await Sync.reach(h => Sync.call(h, '/api/ygodb', { method: 'GET', readTimeout: 120000 })); } catch (e) { db = null; }
-        // base du PC vide, ou d'un ancien format (sans le texte des cartes) : on la prend directement
-        if (db && (!(db.cards && db.cards.length) || db.v !== 4)) db = null;
+        // base du PC vide, ou d'un ancien format (sans les formats GOAT / Edison) : on la prend directement
+        if (db && (!(db.cards && db.cards.length) || db.v !== 5)) db = null;
       }
       // 2. sinon directement depuis YGOPRODeck
       if (!db) {

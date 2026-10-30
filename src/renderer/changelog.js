@@ -2,6 +2,22 @@
 // et reprises comme notes de version sur GitHub). La plus récente en premier.
 window.COFFRE_CHANGELOG = [
 {
+ "v": "1.17.0",
+ "date": "30/10/2026",
+ "items": [
+  "Decks Yu-Gi-Oh : choix du format de jeu à la création (TCG actuel, GOAT d'avril 2005 ou Edison de mars 2010), et menu « Format » dans le deck pour en changer à tout moment.",
+  "Le deck est vérifié selon son format : cartes pas encore sorties à l'époque marquées « Hors format », limites de la banlist du format (icônes, alerte en haut du deck). La fiche d'une carte indique son statut en TCG, GOAT et Edison.",
+  "La base de cartes Yu-Gi-Oh se met à jour toute seule une fois pour récupérer ces informations."
+ ]
+},
+{
+ "v": "1.16.4",
+ "date": "30/10/2026",
+ "items": [
+  "Decks (Yu-Gi-Oh, One Piece et Riftbound) : nouvel affichage « Exemplaires », à côté de Galerie et Liste. Chaque exemplaire du deck a sa propre image : en couleur ceux que tu as, en gris ceux qui manquent (avec 2 cartes sur 3, deux en couleur et la troisième grise). Touche une image pour ouvrir la fiche de la carte. Le choix est gardé pour les decks sans changer l'affichage de ta collection."
+ ]
+},
+{
  "v": "1.16.3",
  "date": "30/10/2026",
  "items": [
