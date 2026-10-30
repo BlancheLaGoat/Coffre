@@ -2,6 +2,14 @@
 // et reprises comme notes de version sur GitHub). La plus récente en premier.
 window.COFFRE_CHANGELOG = [
 {
+ "v": "1.16.2",
+ "date": "30/10/2026",
+ "items": [
+  "Riftbound : les cartes foil. Pour les cartes qui existent en normale et en foil (souvent les communes et peu communes), une case « Foil » s'ajoute dans la fiche, dans les extensions, dans la recherche et au scan ; les foils sont comptées à part, avec leur propre prix. Les cartes qui n'existent qu'en foil sont marquées « Foil ».",
+  "Riftbound : noms des versions plus propres (« Heartsteel Overnumbered » une seule fois, plus de « R01a » pris pour une version), et les réimpressions de Radiance sont rangées avec leur carte d'origine."
+ ]
+},
+{
  "v": "1.16.1",
  "date": "30/10/2026",
  "items": [

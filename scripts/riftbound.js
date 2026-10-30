@@ -40,11 +40,13 @@ async function fromTcg(knownSets) {
     await pause(150);   // règles de TCGCSV : pas de rafale
     let pr;
     try { pr = await getJson(base + g.groupId + '/prices'); } catch (e) { continue; }
+    // Une ligne par finition : « Normal » et/ou « Foil » (même sans prix, la ligne dit que la finition existe)
     for (const r of (pr && pr.results) || []) {
       const v = r.marketPrice || r.midPrice || r.lowPrice || 0;
-      if (!v) continue;
-      const k = String(r.productId), cur = map(prices, k);
-      if (!cur || (r.subTypeName === 'Normal') || v < cur) prices.set(k, v);
+      const k = String(r.productId), cur = map(prices, k) || { n: 0, f: 0, hn: false, hf: false };
+      if (/foil/i.test(r.subTypeName || '')) { cur.hf = true; if (v && (!cur.f || v < cur.f)) cur.f = v; }
+      else { cur.hn = true; if (v && (!cur.n || v < cur.n)) cur.n = v; }
+      prices.set(k, cur);
     }
     // Extension absente de Riftcodex (récente ou à venir) : on prend ses cartes chez TCGplayer
     const ab = String(g.abbreviation || '').toUpperCase().replace(/[^A-Z0-9]/g, '');

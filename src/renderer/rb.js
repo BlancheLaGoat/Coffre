@@ -107,18 +107,25 @@
   // Langue de la carte physique (le code est le même dans toutes les langues)
   const LANGS = ['FR', 'EN', 'ZH'];
   const curLang = () => LANGS.includes(App.data.settings.rbLang) ? App.data.settings.rbLang : 'FR';
-  const keyFor = (pkey, lang) => pkey + (lang && lang !== 'EN' ? '|' + lang : '');
+  const keyFor = (pkey, lang, foil) => pkey + (lang && lang !== 'EN' ? '|' + lang : '') + (foil ? '|F' : '');
+  // Finition d'une version (données TCGplayer) : 0 = normale seulement, 1 = normale ou foil, 2 = foil seulement
+  const finish = p => p[6] == null ? 1 : p[6];
+  const canFoil = p => finish(p) === 1;
+  const isFoilOnly = p => finish(p) === 2;
   const langSelect = id => `<select id="${id}" class="ylang" aria-label="Langue de tes cartes" title="Langue de tes cartes">${LANGS.map(l => `<option${l === curLang() ? ' selected' : ''}>${l}</option>`).join('')}</select>`;
-  function addPrinting(ci, pi, delta = 1, lang) {
+  // foil : exemplaire foil d'une version qui existe aussi en normal (une version « foil seulement » se range comme une normale)
+  function addPrinting(ci, pi, delta = 1, lang, foil) {
     const c = st.db.cards[ci], p = c.p[pi];
     lang = lang || curLang();
+    foil = !!foil && canFoil(p);
     const base = { id: c.i, k: p[1] };
     if (lang !== 'EN') base.lang = lang;
-    return changeEntry(keyFor(p[1], lang), base, delta);
+    if (foil) base.foil = true;
+    return changeEntry(keyFor(p[1], lang, foil), base, delta);
   }
   // Exemplaires d'une version, toutes langues confondues
   function qtyAny(pkey) { return qIndex().byKey.get(pkey) || 0; }
-  const qtyLang = pkey => { const e = col()[keyFor(pkey, curLang())]; return (e && e.qty) || 0; };
+  const qtyLang = (pkey, foil) => { const e = col()[keyFor(pkey, curLang(), foil)]; return (e && e.qty) || 0; };
   function addGeneric(id, delta = 1) { return changeEntry(`${id}|*`, { id, k: '' }, delta); }
   // Depuis un deck : une seule version → on ajoute celle-là ; sinon « peu importe la version » (modifiable dans la fiche)
   function addOneToCollection(id) {
@@ -134,7 +141,9 @@
   const usd = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'USD' });
   const money = v => usd.format(v || 0);
   const priceOf = id => { const c = card(id); return (c && c.cm) || 0; };
-  const entryPrice = e => { const p = entryPrint(e); return (p && p[4]) || priceOf(e.id); };
+  const entryPrice = e => { const p = entryPrint(e); return (p && (e.foil && p[7] ? p[7] : p[4])) || priceOf(e.id); };
+  // Libellé d'un exemplaire : « Rare », « Rare · Foil »…
+  const foilTag = (p, e) => (e && e.foil) || (p && isFoilOnly(p)) ? ' · Foil' : '';
   const tag = v => v ? `<span class="price">${money(v)}</span>` : '';
   const priceTag = (id, qty = 1) => tag(priceOf(id) * qty);
   const pricesDate = () => st.db ? new Date(st.db.at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }) : '';
@@ -206,11 +215,11 @@
     rows.sort(by[st.sort] || by.name);
     if (gal()) return `<div class="gal">` + rows.map(({ key, e, c, p }) => `<div class="gcard own" data-key="${esc(key)}" data-id="${esc(c.i)}">
         <button class="pic" data-r="card" aria-label="Détails de ${esc(label(c))}">${imgTag(printImg(c, p))}<span class="badge">×${e.qty}</span></button>
-        <div class="cap"><span class="num">${esc(p ? p[1] : c.i)} · ${p ? esc(rarName(p)) : 'toute version'}${e.lang ? ' · ' + esc(e.lang) : ''}</span>${tag(entryPrice(e))}${esc(label(c))}</div>${App.qtyHtml(e.qty)}</div>`).join('') + `</div>`;
+        <div class="cap"><span class="num">${esc(p ? p[1] : c.i)} · ${p ? esc(rarName(p) + foilTag(p, e)) : 'toute version'}${e.lang ? ' · ' + esc(e.lang) : ''}</span>${tag(entryPrice(e))}${esc(label(c))}</div>${App.qtyHtml(e.qty)}</div>`).join('') + `</div>`;
     return rows.map(({ key, e, c, p }) => `<div class="yrow" data-key="${esc(key)}" data-id="${esc(c.i)}">
         <button class="ypic" data-r="card">${imgTag(printImg(c, p))}</button>
         <div class="yinfo"><button class="nm" data-r="card">${esc(label(c))}</button>
-          <span class="meta"><span class="code">${esc(p ? p[1] : c.i)}</span>${e.lang ? `<span class="tag">${esc(e.lang)}</span>` : ''}${p ? `<span>${esc(rarName(p))}</span><span>${esc(setName(p[0]))}</span>${upTag(p[0])}` : `<span class="tag">peu importe la version</span>`}${tag(entryPrice(e))}</span></div>
+          <span class="meta"><span class="code">${esc(p ? p[1] : c.i)}</span>${e.lang ? `<span class="tag">${esc(e.lang)}</span>` : ''}${p ? `<span>${esc(rarName(p))}</span>${foilTag(p, e) ? '<span class="tag foil">Foil</span>' : ''}<span>${esc(setName(p[0]))}</span>${upTag(p[0])}` : `<span class="tag">peu importe la version</span>`}${tag(entryPrice(e))}</span></div>
         ${App.qtyHtml(e.qty)}</div>`).join('');
   }
 
@@ -470,7 +479,7 @@
     const box = $('rcardSheet'); if (!box) return;
     const c = card(box.dataset.id); if (!c) return;
     const gen = col()[`${c.i}|*`];
-    const prints = c.p.map((p, pi) => ({ p, pi, q: qtyLang(p[1]), all: qtyAny(p[1]) }));
+    const prints = c.p.map((p, pi) => ({ p, pi, q: qtyLang(p[1]), qf: qtyLang(p[1], true), all: qtyAny(p[1]) }));
     const ds = liveDecks();
     const wish = decks()[WISH] && !decks()[WISH].deleted && (decks()[WISH].cards || {})[c.i];
     box.innerHTML = `
@@ -494,9 +503,10 @@
           <h4 class="yaddh">Ajouter à ma collection ${langSelect('rcLang')}</h4>
           <div class="yprints">
             <div class="yprint" data-gen="1"><div><b>Peu importe la version</b></div>${App.qtyHtml((gen && gen.qty) || 0)}</div>
-            ${prints.map(({ p, pi, q, all }) => `<div class="yprint${all ? ' own' : ''}" data-pi="${pi}">
-              <div><span class="code">${esc(p[1])}</span>${all > q ? ` <span class="own">+${all - q} autre langue</span>` : ''} <span class="tag">${esc(rarName(p))}</span>${p[4] ? ' ' + tag(p[4]) : ''}<div class="hint">${esc(setName(p[0]))} ${upTag(p[0])}</div></div>
-              ${App.qtyHtml(q)}</div>`).join('')}
+            ${prints.map(({ p, pi, q, qf, all }) => `<div class="yprint${all ? ' own' : ''}" data-pi="${pi}">
+              <div><span class="code">${esc(p[1])}</span>${all > q + qf ? ` <span class="own">+${all - q - qf} autre langue</span>` : ''} <span class="tag">${esc(rarName(p))}</span>${isFoilOnly(p) ? ' <span class="tag foil">Foil</span>' : ''}${p[4] ? ' ' + tag(p[4]) : ''}<div class="hint">${esc(setName(p[0]))} ${upTag(p[0])}</div></div>
+              ${App.qtyHtml(q)}</div>
+              ${canFoil(p) ? `<div class="yprint yfoil${qf ? ' own' : ''}" data-pi="${pi}" data-foil="1"><div><span class="tag foil">Foil</span>${p[7] ? ' ' + tag(p[7]) : ''}</div>${App.qtyHtml(qf)}</div>` : ''}`).join('')}
           </div>
         </div></div>`;
     loadImages(box);
@@ -581,11 +591,11 @@
         ${miss ? `<button data-r="copySet" title="Format wishlist Cardmarket : 1x Nom CODE">Copier les manquantes</button>` : ''}
         ${rars.length > 1 ? `<div class="yrars"><button class="chip" data-rar="" aria-pressed="${!st.setRarity}">Toutes</button>${rars.map(([k, v]) => `<button class="chip${v.own === v.total ? ' done' : ''}" data-rar="${esc(k)}" aria-pressed="${st.setRarity === k}">${esc(k)} <b>${v.own}/${v.total}</b></button>`).join('')}</div>` : ''}</div>
       <textarea id="rsCm" hidden readonly>${esc(miss)}</textarea>
-      ${rows.length ? rows.map(({ ci, pi, c, p }) => { const q = qtyLang(p[1]), all = qtyAny(p[1]); return `<div class="yres${all ? ' owned' : ''}" data-id="${esc(c.i)}">
+      ${rows.length ? rows.map(({ ci, pi, c, p }) => { const q = qtyLang(p[1]), qf = qtyLang(p[1], true), all = qtyAny(p[1]) - qf; return `<div class="yres${all + qf ? ' owned' : ''}" data-id="${esc(c.i)}">
         <button class="ypic" data-r="card">${imgTag(printImg(c, p))}</button>
         <div class="yinfo"><button class="nm" data-r="card">${esc(label(c))}</button>
-          <span class="meta"><span class="code">${esc(p[1])}</span><span class="rar">${esc(rarName(p))}</span>${tag(p[4])}${all > q ? `<span class="own">${all - q} dans une autre langue</span>` : ''}</span></div>
-        <div class="yquick" data-ci="${ci}" data-pi="${pi}">${App.qtyHtml(q)}</div></div>`; }).join('') : `<p class="hint">${st.setView === 'miss' ? 'Rien ne manque ici.' : 'Aucune carte.'}</p>`}`;
+          <span class="meta"><span class="code">${esc(p[1])}</span><span class="rar">${esc(rarName(p))}</span>${isFoilOnly(p) ? '<span class="tag foil">Foil</span>' : ''}${tag(p[4])}${all > q ? `<span class="own">${all - q} dans une autre langue</span>` : ''}</span></div>
+        <div class="yquicks"><div class="yquick" data-ci="${ci}" data-pi="${pi}">${canFoil(p) ? '<span class="hint">Normale</span>' : ''}${App.qtyHtml(q)}</div>${canFoil(p) ? `<div class="yquick" data-ci="${ci}" data-pi="${pi}" data-foil="1"><span class="tag foil">Foil</span>${App.qtyHtml(qf)}</div>` : ''}</div></div>`; }).join('') : `<p class="hint">${st.setView === 'miss' ? 'Rien ne manque ici.' : 'Aucune carte.'}</p>`}`;
     loadImages(el);
   }
 
@@ -597,7 +607,8 @@
     const exact = card(q.toUpperCase().replace(/\s+/g, ''));
     const res = searchCards(q).filter(c => c !== exact);
     const sets = searchSets(q);
-    const quick = c => c.p.map((p, pi) => `<div class="yquick" data-ci="${st.idx.byId.get(c.i)}" data-pi="${pi}"><span class="tag">${esc(rarName(p))}</span> <span class="hint">${esc(setCode(p[0]) || setName(p[0]))}</span>${App.qtyHtml(qtyLang(p[1]))}</div>`).join('');
+    const quick = c => c.p.map((p, pi) => `<div class="yquick" data-ci="${st.idx.byId.get(c.i)}" data-pi="${pi}"><span class="tag">${esc(rarName(p))}</span>${isFoilOnly(p) ? ' <span class="tag foil">Foil</span>' : ''} <span class="hint">${esc(setCode(p[0]) || setName(p[0]))}</span>${App.qtyHtml(qtyLang(p[1]))}</div>`
+      + (canFoil(p) ? `<div class="yquick" data-ci="${st.idx.byId.get(c.i)}" data-pi="${pi}" data-foil="1"><span class="tag">${esc(rarName(p))}</span> <span class="tag foil">Foil</span> <span class="hint">${esc(setCode(p[0]) || setName(p[0]))}</span>${App.qtyHtml(qtyLang(p[1], true))}</div>` : '')).join('');
     el.innerHTML = (sets.length ? `<h4>Extensions</h4><div class="ysets">${sets.map(i => { const { own, total } = setProgress(i); const x = st.db.sets[i];
       return `<button class="yset" data-r="set" data-set="${i}"><b>${esc(x[0])} ${upTag(i)}</b><span class="hint">${esc(x[1] || '')} · ${own}/${total}</span></button>`; }).join('')}</div>${res.length || exact ? '<h4>Cartes</h4>' : ''}` : '')
       + (exact ? resultHtml(exact, `<div class="yquicks">${quick(exact)}</div>`) : '')
@@ -697,7 +708,7 @@
     if (k === 'rb-card' && b.dataset.act) {
       const id = $('rcardSheet').dataset.id, pr = b.closest('.yprint');
       const delta = b.dataset.act === 'inc' ? 1 : -1;
-      if (pr.dataset.gen) addGeneric(id, delta); else addPrinting(st.idx.byId.get(id), Number(pr.dataset.pi), delta);
+      if (pr.dataset.gen) addGeneric(id, delta); else addPrinting(st.idx.byId.get(id), Number(pr.dataset.pi), delta, undefined, !!pr.dataset.foil);
       afterChange(); return;
     }
     if (k === 'rb-card' && y === 'toWish') {
@@ -723,7 +734,7 @@
     }
     if (k === 'rb-add' && b.dataset.act) {
       const q = b.closest('.yquick');
-      addPrinting(Number(q.dataset.ci), Number(q.dataset.pi), b.dataset.act === 'inc' ? 1 : -1);
+      addPrinting(Number(q.dataset.ci), Number(q.dataset.pi), b.dataset.act === 'inc' ? 1 : -1, undefined, !!q.dataset.foil);
       afterChange(); return;
     }
     // deck
@@ -761,8 +772,12 @@
       const hit = st.idx.byKey.get(key) || st.idx.byKey.get(key.replace(/[a-z]$/, ''));
       if (!hit) continue;
       const [ci, pi0] = hit, c = st.db.cards[ci];
-      const prints = c.p.map((p, pi) => ({ ci, pi, card: c, p }));
-      return { code: c.p[pi0][1], card: c, prints, auto: pi0, lang: '' };
+      const prints = [];
+      c.p.forEach((p, pi) => {
+        prints.push({ ci, pi, card: c, p: isFoilOnly(p) ? p.slice(0, 3).concat([[p[3], 'Foil'].filter(Boolean).join(' · ')], p.slice(4)) : p });
+        if (canFoil(p)) prints.push({ ci, pi, card: c, p: p.slice(0, 3).concat([[p[3], 'Foil'].filter(Boolean).join(' · '), p[7] || p[4]], p.slice(5)), foil: true });
+      });
+      return { code: c.p[pi0][1], card: c, prints, auto: prints.findIndex(x => x.pi === pi0 && !x.foil), lang: '' };
     }
     return null;
   }
@@ -771,7 +786,7 @@
     get ready() { return !!st.db; },
     render, refreshDb, lookupScan, curLang, openCard, label,
     locCode: code => code, cardByName,
-    addPrinting: (ci, pi, delta, lang) => addPrinting(ci, pi, delta, lang),
+    addPrinting: (ci, pi, delta, lang, lcode, foil) => addPrinting(ci, pi, delta, lang, foil),
     addGeneric: id => addGeneric(id, 1), removeGeneric: id => addGeneric(id, -1),
     imgTag: (id, cls) => { const c = card(id); return imgTag(c ? c.im : id, cls); },
     printName: p => rarName(p), toDecklist, parseDecklist,

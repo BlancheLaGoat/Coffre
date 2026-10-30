@@ -378,12 +378,18 @@
     const md = (it && it.metadata) || {}, out = [];
     if (md.signature) out.push('Signature'); else if (md.alternate_art) out.push('Art alternatif'); else if (md.overnumbered) out.push('Overnumbered');
     let t = String((it && it.name) || '').trim(), m;
-    while ((m = t.match(RB_SUFFIX)) && !/^\d+$/.test(m[1])) { const v = RB_VARIANTS[m[1].toLowerCase()] || m[1]; if (!out.includes(v)) out.unshift(v); t = t.slice(0, m.index).trim(); }
-    return out.join(' · ');
+    while ((m = t.match(RB_SUFFIX)) && !/^\d+$/.test(m[1])) {
+      // « (R01a) » = numéro de carte, pas une version
+      if (!/^[a-z]{0,3}\d{1,3}[a-z*]?$/i.test(m[1])) { const v = RB_VARIANTS[m[1].toLowerCase()] || m[1]; if (!out.includes(v)) out.unshift(v); }
+      t = t.slice(0, m.index).trim();
+    }
+    // « Heartsteel Overnumbered » + « Overnumbered » → une seule fois
+    return out.filter((v, i) => !out.some((w, j) => j !== i && w.length > v.length && w.toLowerCase().includes(v.toLowerCase()))).join(' · ');
   }
   // Riftcodex (extensions + cartes) + prix TCGplayer → base compacte, même forme que celle de One Piece :
   // cartes { i: code, n: nom, t: type, st: sous-type, co: domaines, c: énergie, pw: puissance, m: force, ty: tags, x: texte, im: image,
-  //          p: [[extension, code de la version, rareté, version, prix $, image]] } ; extensions [[nom, code, '', date (ms), date]]
+  //          p: [[extension, code de la version, rareté, version, prix $, image, finition, prix foil $]] } ; extensions [[nom, code, '', date (ms), date]]
+  // finition : 0 = normale seulement, 1 = normale ou foil, 2 = foil seulement (d'après les produits TCGplayer)
   function rbCompact(setItems, cardItems, prices) {
     const price = prices instanceof Map ? prices : new Map(Object.entries(prices || {}));
     const setsIn = (Array.isArray(setItems) ? setItems : []).filter(x => x && x.set_id)
@@ -399,17 +405,25 @@
       const sid = String((it.set && it.set.set_id) || code.split('-')[0]).toUpperCase();
       const si = setIdx.has(sid) ? setIdx.get(sid) : addSet(sid, (it.set && it.set.label) || sid, '');
       const name = rbBaseName(it.name), type = String(cl.type || '');
-      let gk = name.toLowerCase() + '|' + type.toLowerCase();
+      // « Ahri, Confident » (TCGplayer) = « Ahri - Confident » (Riftcodex)
+      const nk = name.toLowerCase().replace(/\s*[,\u2013\u2014-]\s*/g, ' - ').replace(/\s+/g, ' ');
+      let gk = nk + '|' + type.toLowerCase();
       // version sans type (fiche TCGplayer incomplète) : rangée avec la carte du même nom
-      if (!type) { const k = [...groups.keys()].find(x => x.startsWith(name.toLowerCase() + '|')); if (k) gk = k; }
+      if (!type) { const k = [...groups.keys()].find(x => x.startsWith(nk + '|')); if (k) gk = k; }
       if (!groups.has(gk)) groups.set(gk, { n: name, t: type, st: '', co: '', c: '', pw: '', m: '', ty: '', x: '', im: '', p: [], base: null });
       const g = groups.get(gk);
       const variant = RB_VARIANT(it);
       const img = rbImgRef(it.media && it.media.image_url);
-      const pr = Number(price.get(String(it.tcgplayer_id)) || 0);
+      // Prix : nombre (ancien format) ou { n: prix normal, f: prix foil, hn/hf : la finition existe chez TCGplayer }
+      const raw = price.get(String(it.tcgplayer_id));
+      const pz = raw == null ? null : typeof raw === 'number' ? { n: raw, hn: true } : raw;
+      const r2 = v => Math.round((Number(v) || 0) * 100) / 100;
+      const finish = !pz ? 1 : pz.hn && pz.hf ? 1 : pz.hf ? 2 : 0;
+      const pr = !pz ? 0 : finish === 2 ? r2(pz.f) : r2(pz.n || pz.f);
+      const pf = pz && finish === 1 ? r2(pz.f) : 0;
       const dup = g.p.find(x => x[1] === code);
-      if (dup) { if (!dup[4] && pr) dup[4] = Math.round(pr * 100) / 100; if (!dup[5] && img) dup[5] = img; continue; }   // fiche en double chez Riftcodex
-      g.p.push([si, code, String(cl.rarity || ''), variant, Math.round(pr * 100) / 100, img]);
+      if (dup) { if (!dup[4] && pr) dup[4] = pr; if (!dup[5] && img) dup[5] = img; continue; }   // fiche en double chez Riftcodex
+      g.p.push([si, code, String(cl.rarity || ''), variant, pr, img, finish, pf]);
       // Les infos de la carte viennent de sa version normale la plus ancienne
       // la fiche de référence : version normale > version spéciale, extension normale > promos, puis la plus ancienne
       const rank = (variant || /[a-z]$/.test(code) ? 2 : 0) + (RB_PROMO_SETS.test(sid) ? 1 : 0) + (type ? 0 : 4);

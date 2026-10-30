@@ -289,3 +289,7 @@ b.price { font-size: inherit; }
 .cloudcode .qr { width: 160px; height: 160px; border-radius: 8px; background: #fff; padding: 6px; }
 
 .tabs .short { display: none; }
+
+/* Foil (Riftbound) */
+.tag.foil { background: linear-gradient(100deg, #f6d365, #fda085 30%, #a1c4fd 65%, #c2e9fb); color: #222; border: 0; }
+.yprint.yfoil { padding-left: 28px; border-top-style: dashed; }

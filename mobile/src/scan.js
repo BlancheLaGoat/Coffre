@@ -575,12 +575,12 @@
     const lang = h.lang || Y.curLang();
     // Code de la carte pris dans la base (impression touchée), dans la langue de la carte — jamais le texte lu
     const lcode = mode === 'op' ? x.card.i : mode === 'rb' ? x.p[1] : Y.locCode(x.p[1], lang);
-    const q = Y.addPrinting(x.ci, x.pi, 1, lang, lcode);
+    const q = Y.addPrinting(x.ci, x.pi, 1, lang, lcode, x.foil);
     yg.added.push({ ...x, lang, lcode });
     yg.lastAdded = yg.hit ? yg.hit.prints.map(p => p.ci + ':' + p.pi).join(',') : '';
     Y.render();
     if (navigator.vibrate) navigator.vibrate(auto ? [30, 40, 30] : 30);
-    App.toast(`${Y.label(x.card)} (${lcode}) ajoutée · ×${q}`);
+    App.toast(`${Y.label(x.card)} (${lcode}${x.foil ? ', foil' : ''}) ajoutée · ×${q}`);
     const fr = $('scanFrame'); fr.classList.remove('ok'); void fr.offsetWidth; fr.classList.add('ok');
     renderYgo();
   }
@@ -603,7 +603,7 @@
     if (act === 'yundo') {
       const x = yg.added.pop(); if (!x) return;
       const Y = game();
-      if (x.generic) Y.removeGeneric(x.card.i); else Y.addPrinting(x.ci, x.pi, -1, x.lang, x.lcode);
+      if (x.generic) Y.removeGeneric(x.card.i); else Y.addPrinting(x.ci, x.pi, -1, x.lang, x.lcode, x.foil);
       Y.render();
       App.toast(`${Y.label(x.card)} retirée`);
       return renderYgo();
