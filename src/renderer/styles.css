@@ -204,7 +204,7 @@ body.mobile .desktop-only { display: none !important; }
 .tcg .gcard .badge, .sheet.tcg .gcard .badge { background: var(--tcg, var(--ygo)); color: #fff; }
 .ydecklist .gal { padding: 6px 0 12px; }
 
-#yaRes { max-height: none; flex: 1; min-height: 0; }
+#yaRes, #oaRes, #raRes { max-height: none; flex: 1; min-height: 0; }
 .ysets { display: flex; flex-direction: column; gap: 6px; padding: 6px 0; }
 .yset { display: flex; flex-direction: column; align-items: flex-start; text-align: left; gap: 2px; }
 .yset-head { position: sticky; top: 0; z-index: 1; background: var(--panel); display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }

@@ -2,6 +2,13 @@
 // et reprises comme notes de version sur GitHub). La plus récente en premier.
 window.COFFRE_CHANGELOG = [
 {
+ "v": "1.16.1",
+ "date": "30/10/2026",
+ "items": [
+  "Ajouter des cartes : quand on ouvre une extension (Riftbound et One Piece), la liste des cartes prend toute la hauteur. Sur téléphone, l'en-tête de l'extension défile avec la liste et les raretés tiennent sur une ligne qui glisse : les cartes ne sont plus cachées."
+ ]
+},
+{
  "v": "1.16.0",
  "date": "29/10/2026",
  "items": [

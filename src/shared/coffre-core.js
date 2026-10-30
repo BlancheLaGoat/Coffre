@@ -454,7 +454,7 @@
       const num0 = v => v == null || v === '' || isNaN(Number(v)) ? null : Number(v);
       items.push({
         name, riftbound_id: `${abbr.toLowerCase()}-${(m[2] || '').toLowerCase()}${m[3]}${(m[4] || '').toLowerCase()}${total ? '-' + total : ''}`, tcgplayer_id: String(it.productId),
-        collector_number: n, attributes: { energy: num0(ext.energy ?? ext.cost), might: num0(ext.might), power: num0(ext.power) },
+        collector_number: n, attributes: { energy: num0(ext.energy ?? ext.energycost ?? ext.cost ?? ext.manacost), might: num0(ext.might), power: num0(ext.power ?? ext.powercost ?? ext.runecost) },
         classification: { type: String(ext.cardtype || ext.type || '').split(/[;,]/)[0].trim(), supertype: String(ext.supertype || '').trim() || null, rarity: String(ext.rarity || '').trim(), domain: dom },
         text: { plain: strip(ext.description || ext.cardtext || ext.text) }, set: { set_id: abbr, label: group.name },
         media: { image_url: it.productId ? `https://tcgplayer-cdn.tcgplayer.com/product/${it.productId}_400w.jpg` : '' }, tags: String(ext.tags || ext.subtype || '').split(/[;,]/).map(x => x.trim()).filter(Boolean),

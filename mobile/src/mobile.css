@@ -95,3 +95,8 @@ body.mobile .tabs .short { display: inline; }
 /* flèche « remonter » au-dessus du bouton de scan */
 body.mobile .totop { right: 22px; bottom: calc(90px + env(safe-area-inset-bottom, 0px)); }
 body.mobile .totop.inmodal { bottom: calc(22px + env(safe-area-inset-bottom, 0px)); }
+
+/* Extension ouverte sur téléphone : l'en-tête défile avec la liste (sinon il cache les cartes), raretés sur une ligne qui glisse */
+body.mobile .yset-head { position: static; }
+body.mobile .yrars { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
+body.mobile .yrars .chip { flex: none; }
