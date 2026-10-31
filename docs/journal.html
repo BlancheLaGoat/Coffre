@@ -4,6 +4,11 @@ h1{margin:0 0 4px}h2{margin:28px 0 8px;color:#e3b54a}.d{color:#9a95ad}details{bo
 summary{cursor:pointer;padding:8px 12px}pre{margin:0;padding:12px;overflow:auto;max-height:520px;font:12px Consolas,monospace;background:#100e16;border-top:1px solid #322e42}
 .mod{font-size:11px;background:#3a2f17;color:#e3b54a;padding:1px 6px;border-radius:4px}.new{font-size:11px;background:#1f3a26;color:#6cc58c;padding:1px 6px;border-radius:4px}ul{margin:4px 0 0}</style></head><body>
 <h1>Journal des modifications</h1><p class="d">Coffre — clique sur un fichier pour voir son code.</p>
+<h2>v1.17.2 <span class="d">— 31/10/2026</span></h2>
+<ul><li>Riftbound : la recherche trouve aussi les versions spéciales (« kda », « SP2 », « signature »…), et les cartes Radiance de type « Champion Unit » sont affichées comme des unités Champion.</li></ul>
+<details><summary><code>src/renderer/rb.js</code>, <code>coffre-core.js</code>, <code>changelog.js</code>, <code>package.json</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ rb.js : texte de recherche de chaque carte + codes et noms de ses versions (avec une forme sans ponctuation : « kda »)</span>
+<span style="color:#6cc58c">+ rbFromTcg : « Champion Unit » → type Unit, sous-type Champion</span>
+<span style="color:#6cc58c">+ &quot;version&quot;: &quot;1.17.2&quot;,</span></pre></details>
 <h2>v1.17.1 <span class="d">— 31/10/2026</span></h2>
 <ul><li>Riftbound : les cartes de Radiance qui partagent leur numéro avec une autre version (arts spéciaux K/DA, Heartsteel…) ne s&#x27;écrasent plus entre elles, et les cartes de Vendetta et des promos que Riftcodex renvoyait mal sont maintenant toutes récupérées.</li></ul>
 <details><summary><code>src/shared/coffre-core.js</code>, <code>src/renderer/rb.js</code>, <code>scripts/riftbound.js</code>, <code>changelog.js</code>, <code>package.json</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ rbCompact : fiches triées (code, version normale d&#x27;abord, produit) ; même numéro mais autre carte ou autre version → code distinct « RAD-001/kdaspecialartcard » au lieu d&#x27;être écrasé</span>

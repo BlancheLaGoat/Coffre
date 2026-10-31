@@ -491,7 +491,9 @@
       items.push({
         name, riftbound_id: `${abbr.toLowerCase()}-${(m[1] || '').toLowerCase()}${m[2]}${(m[3] || '').toLowerCase()}${total ? '-' + total : ''}`, tcgplayer_id: String(it.productId),
         collector_number: n, attributes: { energy: num0(ext.energy ?? ext.energycost ?? ext.cost ?? ext.manacost), might: num0(ext.might), power: num0(ext.power ?? ext.powercost ?? ext.runecost) },
-        classification: { type: String(ext.cardtype || ext.type || '').split(/[;,]/)[0].trim(), supertype: String(ext.supertype || '').trim() || null, rarity: String(ext.rarity || '').trim(), domain: dom },
+        // « Champion Unit » (TCGplayer) = type Unit + sous-type Champion (comme chez Riftcodex)
+        classification: (() => { const raw = String(ext.cardtype || ext.type || '').split(/[;,]/)[0].trim(), mm = raw.match(/^(champion|signature|token)\s+(.+)$/i);
+          return { type: mm ? mm[2] : raw, supertype: (mm ? mm[1][0].toUpperCase() + mm[1].slice(1).toLowerCase() : String(ext.supertype || '').trim()) || null, rarity: String(ext.rarity || '').trim(), domain: dom }; })(),
         text: { plain: strip(ext.description || ext.cardtext || ext.text) }, set: { set_id: abbr, label: group.name },
         media: { image_url: it.productId ? `https://tcgplayer-cdn.tcgplayer.com/product/${it.productId}_400w.jpg` : '' }, tags: String(ext.tags || ext.subtype || '').split(/[;,]/).map(x => x.trim()).filter(Boolean),
         metadata: { alternate_art: /alternate art|alt art/i.test(it.name || ''), overnumbered: !!(total && n > total), signature: /signature/i.test(it.name || '') }

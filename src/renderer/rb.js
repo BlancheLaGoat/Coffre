@@ -16,6 +16,8 @@
   function setDb(db) {
     if (!db || !db.cards) return;
     st.db = db; st.idx = Core.opIndex(db);
+    // la recherche trouve aussi les versions : « kda », « SP2 », « signature », « RAD-SP2 »…
+    for (const c of db.cards) { const v = c.p.map(p => `${p[1]} ${p[3] || ''}`).join(' ').toLowerCase(); c.s += ' ' + v + ' ' + v.replace(/[^a-z0-9 ]/g, ''); }
   }
   async function loadDb() {
     try { setDb(await window.coffre.rbDb()); } catch (e) { /* pas encore téléchargée */ }

@@ -2,6 +2,13 @@
 // et reprises comme notes de version sur GitHub). La plus récente en premier.
 window.COFFRE_CHANGELOG = [
 {
+ "v": "1.17.2",
+ "date": "31/10/2026",
+ "items": [
+  "Riftbound : la recherche trouve aussi les versions spéciales (« kda », « SP2 », « signature »…), et les cartes Radiance de type « Champion Unit » sont affichées comme des unités Champion."
+ ]
+},
+{
  "v": "1.17.1",
  "date": "31/10/2026",
  "items": [
