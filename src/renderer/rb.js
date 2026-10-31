@@ -41,6 +41,8 @@
   const setName = i => (st.db.sets[i] || [''])[0];
   const setCode = i => (st.db.sets[i] || ['', ''])[1];
   const label = c => c.n;
+  // Code affiché : sans le suffixe interne des versions spéciales au même numéro (« RAD-001/kdaspecialartcard » → « RAD-001 »)
+  const shownCode = k => String(k || '').replace(/\/[a-z][a-z0-9]*$/, '');
   // Zones d'un deck Riftbound : Légende (1), deck principal (40), runes (12), champs de bataille (3)
   const zoneOf = c => { const t = String(c.t || '').toLowerCase(); return t === 'legend' ? 'legend' : t === 'battlefield' ? 'bf' : t === 'rune' ? 'rune' : 'main'; };
   const isLeader = c => zoneOf(c) === 'legend';
@@ -231,11 +233,11 @@
     rows.sort(by[st.sort] || by.name);
     if (gal()) return `<div class="gal">` + rows.map(({ key, e, c, p }) => `<div class="gcard own" data-key="${esc(key)}" data-id="${esc(c.i)}">
         <button class="pic" data-r="card" aria-label="Détails de ${esc(label(c))}">${imgTag(printImg(c, p))}<span class="badge">×${e.qty}</span></button>
-        <div class="cap"><span class="num">${esc(p ? p[1] : c.i)} · ${p ? esc(rarName(p) + foilTag(p, e)) : 'toute version'}${e.lang ? ' · ' + esc(e.lang) : ''}</span>${tag(entryPrice(e))}${esc(label(c))}</div>${App.qtyHtml(e.qty)}</div>`).join('') + `</div>`;
+        <div class="cap"><span class="num">${esc(shownCode(p ? p[1] : c.i))} · ${p ? esc(rarName(p) + foilTag(p, e)) : 'toute version'}${e.lang ? ' · ' + esc(e.lang) : ''}</span>${tag(entryPrice(e))}${esc(label(c))}</div>${App.qtyHtml(e.qty)}</div>`).join('') + `</div>`;
     return rows.map(({ key, e, c, p }) => `<div class="yrow" data-key="${esc(key)}" data-id="${esc(c.i)}">
         <button class="ypic" data-r="card">${imgTag(printImg(c, p))}</button>
         <div class="yinfo"><button class="nm" data-r="card">${esc(label(c))}</button>
-          <span class="meta"><span class="code">${esc(p ? p[1] : c.i)}</span>${e.lang ? `<span class="tag">${esc(e.lang)}</span>` : ''}${p ? `<span>${esc(rarName(p))}</span>${foilTag(p, e) ? '<span class="tag foil">Foil</span>' : ''}<span>${esc(setName(p[0]))}</span>${upTag(p[0])}` : `<span class="tag">peu importe la version</span>`}${tag(entryPrice(e))}</span></div>
+          <span class="meta"><span class="code">${esc(shownCode(p ? p[1] : c.i))}</span>${e.lang ? `<span class="tag">${esc(e.lang)}</span>` : ''}${p ? `<span>${esc(rarName(p))}</span>${foilTag(p, e) ? '<span class="tag foil">Foil</span>' : ''}<span>${esc(setName(p[0]))}</span>${upTag(p[0])}` : `<span class="tag">peu importe la version</span>`}${tag(entryPrice(e))}</span></div>
         ${App.qtyHtml(e.qty)}</div>`).join('');
   }
 
@@ -312,7 +314,7 @@
   const statLine = c => [catFr(c), colorFr(c), c.c !== '' ? `énergie ${c.c}` : '', c.pw !== '' && c.pw != null ? `puissance ${c.pw}` : '', c.m !== '' && c.m != null ? `force ${c.m}` : ''].filter(Boolean).join(' · ');
   const resultHtml = (c, act) => `<div class="yres" data-id="${esc(c.i)}">
       <button class="ypic" data-r="card">${imgTag(c.im)}</button>
-      <div class="yinfo"><button class="nm" data-r="card">${esc(label(c))}</button><span class="en">${esc(c.i)}</span>
+      <div class="yinfo"><button class="nm" data-r="card">${esc(label(c))}</button><span class="en">${esc(shownCode(c.i))}</span>
         <span class="meta"><span>${esc(statLine(c))}</span>${ownedOf(c.i) ? `<span class="own">${ownedOf(c.i)} dans ta collection</span>` : ''}</span></div>
       ${act}</div>`;
 
@@ -462,10 +464,10 @@
       ${st.wishQ ? `<div class="yresults">${results.length ? results.map(c => resultHtml(c, `<button class="primary" data-r="wadd">+ Wishlist</button>`)).join('') : '<p class="hint">Aucune carte trouvée.</p>'}</div>` : ''}
       ${entries.length ? (gal() ? `<div class="gal">${entries.map(({ c, q, owned }) => `<div class="gcard own" data-id="${esc(c.i)}">
           <button class="pic" data-r="card" aria-label="Détails de ${esc(label(c))}">${imgTag(c.im)}<span class="badge">×${q}</span></button>
-          <div class="cap"><span class="num">${ownTxt(owned) || esc(c.i)}</span>${esc(label(c))}${priceTag(c.i, q)}</div>${wq(q)}</div>`).join('')}</div>`
+          <div class="cap"><span class="num">${ownTxt(owned) || esc(shownCode(c.i))}</span>${esc(label(c))}${priceTag(c.i, q)}</div>${wq(q)}</div>`).join('')}</div>`
         : entries.map(({ c, q, owned }) => `<div class="yrow" data-id="${esc(c.i)}">
           <button class="ypic" data-r="card">${imgTag(c.im)}</button>
-          <div class="yinfo"><button class="nm" data-r="card">${esc(label(c))}</button><span class="en">${esc(c.i)}</span>
+          <div class="yinfo"><button class="nm" data-r="card">${esc(label(c))}</button><span class="en">${esc(shownCode(c.i))}</span>
             <span class="meta">${ownTxt(owned)}${priceTag(c.i, q)}</span></div>${wq(q)}</div>`).join(''))
         : `<p class="empty">Ta wishlist est vide : cherche une carte au-dessus, ou ouvre la fiche d'une carte et touche « Ajouter à la wishlist ».</p>`}
       ${entries.length ? `<div class="ycm"><h4>Pour ta wishlist Cardmarket</h4>
@@ -521,7 +523,7 @@
           <div class="yprints">
             <div class="yprint" data-gen="1"><div><b>Peu importe la version</b></div>${App.qtyHtml((gen && gen.qty) || 0)}</div>
             ${prints.map(({ p, pi, q, qf, all }) => `<div class="yprint${all ? ' own' : ''}" data-pi="${pi}">
-              <div><span class="code">${esc(p[1])}</span>${all > q + qf ? ` <span class="own">+${all - q - qf} autre langue</span>` : ''} <span class="tag">${esc(rarName(p))}</span>${isFoilOnly(p) ? ' <span class="tag foil">Foil</span>' : ''}${p[4] ? ' ' + tag(p[4]) : ''}<div class="hint">${esc(setName(p[0]))} ${upTag(p[0])}</div></div>
+              <div><span class="code">${esc(shownCode(p[1]))}</span>${all > q + qf ? ` <span class="own">+${all - q - qf} autre langue</span>` : ''} <span class="tag">${esc(rarName(p))}</span>${isFoilOnly(p) ? ' <span class="tag foil">Foil</span>' : ''}${p[4] ? ' ' + tag(p[4]) : ''}<div class="hint">${esc(setName(p[0]))} ${upTag(p[0])}</div></div>
               ${App.qtyHtml(q)}</div>
               ${canFoil(p) ? `<div class="yprint yfoil${qf ? ' own' : ''}" data-pi="${pi}" data-foil="1"><div><span class="tag foil">Foil</span>${p[7] ? ' ' + tag(p[7]) : ''}</div>${App.qtyHtml(qf)}</div>` : ''}`).join('')}
           </div>
@@ -611,7 +613,7 @@
       ${rows.length ? rows.map(({ ci, pi, c, p }) => { const q = qtyLang(p[1]), qf = qtyLang(p[1], true), all = qtyAny(p[1]) - qf; return `<div class="yres${all + qf ? ' owned' : ''}" data-id="${esc(c.i)}">
         <button class="ypic" data-r="card">${imgTag(printImg(c, p))}</button>
         <div class="yinfo"><button class="nm" data-r="card">${esc(label(c))}</button>
-          <span class="meta"><span class="code">${esc(p[1])}</span><span class="rar">${esc(rarName(p))}</span>${isFoilOnly(p) ? '<span class="tag foil">Foil</span>' : ''}${tag(p[4])}${all > q ? `<span class="own">${all - q} dans une autre langue</span>` : ''}</span></div>
+          <span class="meta"><span class="code">${esc(shownCode(p[1]))}</span><span class="rar">${esc(rarName(p))}</span>${isFoilOnly(p) ? '<span class="tag foil">Foil</span>' : ''}${tag(p[4])}${all > q ? `<span class="own">${all - q} dans une autre langue</span>` : ''}</span></div>
         <div class="yquicks"><div class="yquick" data-ci="${ci}" data-pi="${pi}">${canFoil(p) ? '<span class="hint">Normale</span>' : ''}${App.qtyHtml(q)}</div>${canFoil(p) ? `<div class="yquick" data-ci="${ci}" data-pi="${pi}" data-foil="1"><span class="tag foil">Foil</span>${App.qtyHtml(qf)}</div>` : ''}</div></div>`; }).join('') : `<p class="hint">${st.setView === 'miss' ? 'Rien ne manque ici.' : 'Aucune carte.'}</p>`}`;
     loadImages(el);
   }

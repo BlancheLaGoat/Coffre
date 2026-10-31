@@ -16,6 +16,18 @@ async function getJson(url, tries = 3) {
     } catch (e) { if (i >= tries) throw e; await pause(2000 * i); }
   }
 }
+// Toutes les fiches d'une liste, en plusieurs ordres de tri si besoin : sans tri stable, les pages de Riftcodex
+// se chevauchent (des cartes reviennent deux fois et d'autres jamais). On réunit les passes jusqu'à tout avoir.
+const itemKey = it => `${it.riftbound_id || ''}|${it.name || ''}|${it.tcgplayer_id || ''}`;
+async function allCards(filter, expected) {
+  const seen = new Map();
+  const orders = ['sort=public_code&dir=1', 'sort=collector_number&dir=1', 'sort=name&dir=1', 'sort=name&dir=-1', 'sort=public_code&dir=-1'];
+  for (const o of orders) {
+    for (const it of await allPages(`/cards?${filter ? filter + '&' : ''}${o}`)) if (!seen.has(itemKey(it))) seen.set(itemKey(it), it);
+    if (expected && seen.size >= expected) break;
+  }
+  return [...seen.values()];
+}
 async function allPages(path) {
   const out = [];
   for (let page = 1; page <= 200; page++) {
@@ -68,7 +80,16 @@ const map = (m, k) => m.get(k);
 (async () => {
   const out = process.argv[2] || 'riftbound.json';
   const sets = await allPages('/sets');
-  const cards = await allPages('/cards');
+  // extension par extension (le nombre de cartes annoncé permet de vérifier qu'on les a toutes), puis une passe globale
+  const byKey = new Map();
+  for (const x of sets) {
+    const got = await allCards('set_id=' + encodeURIComponent(String(x.set_id || '').toLowerCase()), x.card_count || 0);
+    for (const it of got) byKey.set(itemKey(it), it);
+    const ids = new Set(got.map(it => it.riftbound_id));
+    console.log(`${x.set_id} : ${got.length} fiches reçues (${ids.size} codes différents) pour ${x.card_count || '?'} annoncées`);
+  }
+  for (const it of await allCards('', 1)) byKey.set(itemKey(it), it);
+  const cards = [...byKey.values()];
   const known = new Set(sets.map(x => String(x.set_id || '').toUpperCase().replace(/[^A-Z0-9]/g, '')));
   for (const x of sets) { const n = String(x.name || '').toLowerCase().replace(/[^a-z0-9]/g, ''); if (n.length >= 4) known.add('name:' + n); }
   let tcg = { prices: new Map(), extra: { sets: [], items: [] } };

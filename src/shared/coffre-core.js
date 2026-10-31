@@ -402,9 +402,15 @@
     const addSet = (id, name, date) => { if (setIdx.has(id)) return setIdx.get(id); setIdx.set(id, sets.length); sets.push([name || id, id, '', Date.parse(date) || 0, date || '']); return sets.length - 1; };
     setsIn.sort((a, b) => (Date.parse(a.date) || 0) - (Date.parse(b.date) || 0)).forEach(x => addSet(x.id, x.name, x.date));
     const groups = new Map();
-    for (const it of Array.isArray(cardItems) ? cardItems : []) {
-      if (!it || !it.name) continue;
-      const code = rbCode(it); if (!code) continue;
+    // Ordre fixe (code, puis version normale avant les spéciales, puis produit) : les codes attribués restent les mêmes d'un jour à l'autre
+    const items = (Array.isArray(cardItems) ? cardItems : []).filter(it => it && it.name && rbCode(it))
+      .map(it => ({ it, code: rbCode(it), v: RB_VARIANT(it) }))
+      .sort((a, b) => a.code.localeCompare(b.code, 'en', { numeric: true }) || (a.v ? 1 : 0) - (b.v ? 1 : 0) || a.v.localeCompare(b.v) || String(a.it.tcgplayer_id || '').localeCompare(String(b.it.tcgplayer_id || '')));
+    // code de version → { carte, version } déjà attribué
+    const used = new Map();
+    const slug = t => String(t || '').toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g, '');
+    for (const { it, code: code0 } of items) {
+      let code = code0;
       const cl = it.classification || {}, at = it.attributes || {}, tx = it.text || {};
       const sid = String((it.set && it.set.set_id) || code.split('-')[0]).toUpperCase();
       const si = setIdx.has(sid) ? setIdx.get(sid) : addSet(sid, (it.set && it.set.label) || sid, '');
@@ -425,8 +431,19 @@
       const finish = !pz ? 1 : pz.hn && pz.hf ? 1 : pz.hf ? 2 : 0;
       const pr = !pz ? 0 : finish === 2 ? r2(pz.f) : r2(pz.n || pz.f);
       const pf = pz && finish === 1 ? r2(pz.f) : 0;
-      const dup = g.p.find(x => x[1] === code);
-      if (dup) { if (!dup[4] && pr) dup[4] = pr; if (!dup[5] && img) dup[5] = img; continue; }   // fiche en double chez Riftcodex
+      // Même code déjà pris : vraie fiche en double (même carte, même version) → on fusionne ;
+      // sinon c'est une autre version au même numéro (art spécial K/DA, Heartsteel…) → code distinct « RAD-001/kda »
+      const prev = used.get(code);
+      if (prev && prev.gk === gk && (prev.v === variant || /[a-z]$/.test(code))) {   // (« 038a » déjà marqué comme version : même chose)
+        const dup = g.p.find(x => x[1] === code);
+        if (dup) { if (!dup[4] && pr) dup[4] = pr; if (!dup[5] && img) dup[5] = img; if (!dup[3] && variant) dup[3] = variant; }
+        continue;
+      }
+      if (prev) {
+        const base = code + '/' + (slug(variant) || slug(name).slice(0, 12) || String(it.tcgplayer_id || 'x'));
+        code = base; for (let n = 2; used.has(code); n++) code = base + n;
+      }
+      used.set(code, { gk, v: variant });
       g.p.push([si, code, String(cl.rarity || ''), variant, pr, img, finish, pf]);
       // Les infos de la carte viennent de sa version normale la plus ancienne
       // la fiche de référence : version normale > version spéciale, extension normale > promos, puis la plus ancienne

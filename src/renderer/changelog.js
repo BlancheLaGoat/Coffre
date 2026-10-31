@@ -2,6 +2,13 @@
 // et reprises comme notes de version sur GitHub). La plus récente en premier.
 window.COFFRE_CHANGELOG = [
 {
+ "v": "1.17.1",
+ "date": "31/10/2026",
+ "items": [
+  "Riftbound : les cartes de Radiance qui partagent leur numéro avec une autre version (arts spéciaux K/DA, Heartsteel…) ne s'écrasent plus entre elles, et les cartes de Vendetta et des promos que Riftcodex renvoyait mal sont maintenant toutes récupérées."
+ ]
+},
+{
  "v": "1.17.0",
  "date": "30/10/2026",
  "items": [
