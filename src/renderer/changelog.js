@@ -5,7 +5,7 @@ window.COFFRE_CHANGELOG = [
  "v": "1.17.1",
  "date": "31/10/2026",
  "items": [
-  "Riftbound : les cartes de Radiance qui partagent leur numéro avec une autre version (arts spéciaux K/DA, Heartsteel…) ne s'écrasent plus entre elles, et les cartes de Vendetta et des promos que Riftcodex renvoyait mal sont maintenant toutes récupérées."
+  "Riftbound : les cartes spéciales K/DA de Radiance (numérotées SP1 à SP5, comme Akali, Brash) sont bien dans la base, et le scan lit leur numéro (« RAD · SP2/005 »). Les cartes qui partagent leur numéro avec une autre version ne s'écrasent plus, et les cartes de Vendetta et des promos que Riftcodex renvoyait mal sont toutes récupérées."
  ]
 },
 {

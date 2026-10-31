@@ -481,14 +481,15 @@
     for (const it of (products && products.results) || products || []) {
       const ext = {}; for (const e of it.extendedData || []) ext[String(e.name || '').toLowerCase().replace(/[^a-z]/g, '')] = e.value;
       const num = String(ext.number || ext.cardnumber || '').trim();
-      const m = num.match(/(?:([A-Z]{2,4})[\s\-·•]*)?([A-Z]*)(\d{1,3})([a-z*]?)\s*(?:\/\s*(\d{1,3}))?/i);
+      // « SP2/005 » (carte spéciale), « R01 », « 001a/180 », « RAD-001 » : le code de l'extension devant est retiré, le reste garde ses lettres
+      const m = num.replace(new RegExp('^' + abbr + '[\\s\\-·•]*', 'i'), '').match(/^([A-Z]*)(\d{1,3})([a-z*]?)\s*(?:\/\s*(\d{1,3}))?/i);
       if (!m || !abbr) continue;   // produits scellés (boosters, boîtes) : pas de numéro de carte
       const name = String(it.name || '').replace(/\s*-\s*\d{1,3}\/\d{1,3}\s*$/, '').trim();
-      const n = Number(m[3]), total = m[5] ? Number(m[5]) : 0;
+      const n = Number(m[2]), total = m[4] ? Number(m[4]) : 0;
       const dom = String(ext.domain || ext.domains || ext.color || '').split(/[;,/]+/).map(x => x.trim()).filter(Boolean);
       const num0 = v => v == null || v === '' || isNaN(Number(v)) ? null : Number(v);
       items.push({
-        name, riftbound_id: `${abbr.toLowerCase()}-${(m[2] || '').toLowerCase()}${m[3]}${(m[4] || '').toLowerCase()}${total ? '-' + total : ''}`, tcgplayer_id: String(it.productId),
+        name, riftbound_id: `${abbr.toLowerCase()}-${(m[1] || '').toLowerCase()}${m[2]}${(m[3] || '').toLowerCase()}${total ? '-' + total : ''}`, tcgplayer_id: String(it.productId),
         collector_number: n, attributes: { energy: num0(ext.energy ?? ext.energycost ?? ext.cost ?? ext.manacost), might: num0(ext.might), power: num0(ext.power ?? ext.powercost ?? ext.runecost) },
         classification: { type: String(ext.cardtype || ext.type || '').split(/[;,]/)[0].trim(), supertype: String(ext.supertype || '').trim() || null, rarity: String(ext.rarity || '').trim(), domain: dom },
         text: { plain: strip(ext.description || ext.cardtext || ext.text) }, set: { set_id: abbr, label: group.name },
@@ -502,8 +503,11 @@
   function rbCodesInText(text) {
     const t = String(text || '').toUpperCase().replace(/[‐-―−]/g, '-');
     const out = [];
-    const push = (set, num, suf) => { const k = `${set}-${num.padStart(3, '0')}${(suf || '').toLowerCase().replace('*', 's')}`; if (!out.includes(k)) out.push(k); };
+    const push = (set, num, suf, pre = '') => { const k = `${set}-${pre}${pre ? String(Number(num)) : num.padStart(3, '0')}${(suf || '').toLowerCase().replace('*', 's')}`; if (!out.includes(k)) out.push(k); };
     let m;
+    // cartes spéciales : « RAD · SP2/005 »
+    const re0 = /\b([A-Z]{3})\s*[•·.\-*°oO]?\s*(SP|R)\s?(\d{1,2})([A-Z*]?)\s*\/\s*\d{1,3}\b/g;
+    while ((m = re0.exec(t))) push(m[1], m[3], m[4], m[2]);
     const re1 = /\b([A-Z]{3})\s*[•·.\-*°oO]?\s*(\d{1,3})([A-Z*]?)\s*\/\s*\d{2,3}\b/g;
     while ((m = re1.exec(t))) push(m[1], m[2], m[3]);
     const re2 = /\b([A-Z]{3})-(\d{3})([A-Z*]?)\b/g;

@@ -9,6 +9,8 @@ summary{cursor:pointer;padding:8px 12px}pre{margin:0;padding:12px;overflow:auto;
 <details><summary><code>src/shared/coffre-core.js</code>, <code>src/renderer/rb.js</code>, <code>scripts/riftbound.js</code>, <code>changelog.js</code>, <code>package.json</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ rbCompact : fiches triées (code, version normale d&#x27;abord, produit) ; même numéro mais autre carte ou autre version → code distinct « RAD-001/kdaspecialartcard » au lieu d&#x27;être écrasé</span>
 <span style="color:#6cc58c">+ vraies fiches en double (même carte, même version) fusionnées, en gardant le nom de la version</span>
 <span style="color:#6cc58c">+ rb.js : shownCode() affiche « RAD-001 » sans le suffixe interne</span>
+<span style="color:#6cc58c">+ rbFromTcg : « SP2/005 » lu comme carte spéciale SP2 (avant : « SP » pris pour le code d&#x27;extension → RAD-002, écrasée)</span>
+<span style="color:#6cc58c">+ rbCodesInText : scan des numéros « RAD · SP2/005 »</span>
 <span style="color:#6cc58c">+ &quot;version&quot;: &quot;1.17.1&quot;,</span></pre></details>
 <h2>v1.17.0 <span class="d">— 30/10/2026</span></h2>
 <ul><li>Decks Yu-Gi-Oh : choix du format de jeu à la création (TCG actuel, GOAT d&#x27;avril 2005 ou Edison de mars 2010), et menu « Format » dans le deck pour en changer à tout moment.</li><li>Le deck est vérifié selon son format : cartes pas encore sorties à l&#x27;époque marquées « Hors format », limites de la banlist du format (icônes, alerte en haut du deck). La fiche d&#x27;une carte indique son statut en TCG, GOAT et Edison.</li><li>La base de cartes Yu-Gi-Oh se met à jour toute seule une fois pour récupérer ces informations.</li></ul>
