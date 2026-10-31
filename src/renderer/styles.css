@@ -291,6 +291,9 @@ b.price { font-size: inherit; }
 .tabs .short { display: none; }
 
 /* Foil (Riftbound) */
+.gcard .badge.foil, .tcg .gcard .badge.foil { background: linear-gradient(100deg, #f6d365, #fda085 30%, #a1c4fd 65%, #c2e9fb); color: #222; }
+.gcard .cap .mix, .yrow .meta .mix { display: block; color: var(--muted); font-size: 11px; }
+.yrow .meta .mix { display: inline; }
 .tag.foil { background: linear-gradient(100deg, #f6d365, #fda085 30%, #a1c4fd 65%, #c2e9fb); color: #222; border: 0; }
 .yprint.yfoil { padding-left: 28px; border-top-style: dashed; }
 

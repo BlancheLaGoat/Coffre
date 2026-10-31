@@ -18,6 +18,31 @@
     st.db = db; st.idx = Core.opIndex(db);
     // la recherche trouve aussi les versions : « kda », « SP2 », « signature », « RAD-SP2 »…
     for (const c of db.cards) { const v = c.p.map(p => `${p[1]} ${p[3] || ''}`).join(' ').toLowerCase(); c.s += ' ' + v + ' ' + v.replace(/[^a-z0-9 ]/g, ''); }
+    if (App.data) fixEntries();
+  }
+  // Anciennes bases : les cartes spéciales K/DA (SP1…SP5) étaient lues comme RAD-001…005 et se mélangeaient avec
+  // les vraies RAD-001…005 (Lingering Animus rangée sous « Seraphine, Not Alone »…). Le numéro de version enregistré
+  // est le bon : on rattache l'exemplaire à la carte qui porte ce numéro aujourd'hui. Idem pour une carte qui a changé de code.
+  function fixEntries() {
+    const ownerOf = k => { const hit = k && st.idx.byKey.get(k); return hit ? st.db.cards[hit[0]].i : null; };
+    const idOf = id => card(id) ? id : ownerOf(id);
+    const t = now(); let n = 0;
+    for (const e of Object.values(App.data.rb || {})) {
+      if (!e || !e.qty) continue;
+      const to = ownerOf(e.k) || idOf(e.id);
+      if (to && to !== e.id) { e.id = to; e.mt = t; n += e.qty; }
+    }
+    for (const d of Object.values(App.data.rbdecks || {})) {
+      if (!d || d.deleted) continue;
+      let ch = false;
+      for (const z of ['cards', 'side']) {
+        const m = d[z]; if (!m) continue;
+        for (const [id, q] of Object.entries(m)) { const to = idOf(id); if (to && to !== id) { delete m[id]; m[to] = (m[to] || 0) + q; ch = true; } }
+      }
+      if (d.cover && !card(d.cover) && idOf(d.cover)) { d.cover = idOf(d.cover); ch = true; }
+      if (ch) d.mt = t;
+    }
+    if (n) { dirty(); App.scheduleSave(); App.toast(`Riftbound : ${n} exemplaire${n > 1 ? 's' : ''} rattaché${n > 1 ? 's' : ''} à la bonne carte (mélange des cartes K/DA de Radiance corrigé)`); }
   }
   async function loadDb() {
     try { setDb(await window.coffre.rbDb()); } catch (e) { /* pas encore téléchargée */ }
@@ -104,17 +129,26 @@
   let qix = null;
   function qIndex() {
     if (qix && qix.src === col()) return qix;
-    const byId = new Map(), byKey = new Map();
+    const byId = new Map(), byKey = new Map(), foilById = new Map();
     for (const e of Object.values(col())) {
       if (!e || !e.qty) continue;
       byId.set(e.id, (byId.get(e.id) || 0) + e.qty);
+      if (isFoilEntry(e)) foilById.set(e.id, (foilById.get(e.id) || 0) + e.qty);
       if (e.k) byKey.set(e.k, (byKey.get(e.k) || 0) + e.qty);
     }
-    qix = { src: col(), byId, byKey, prog: new Map() };
+    qix = { src: col(), byId, byKey, foilById, prog: new Map() };
     return qix;
   }
   const dirty = () => { qix = null; };
   function ownedOf(id) { return qIndex().byId.get(id) || 0; }
+  function foilOf(id) { return qIndex().foilById.get(id) || 0; }
+  // « 3 », « 3 normales + 1 foil », « 2 foil »
+  function ownDetail(id) {
+    const n = ownedOf(id), f = foilOf(id);
+    if (!f) return String(n);
+    if (f === n) return `${n} foil`;
+    return `${n - f} normale${n - f > 1 ? 's' : ''} + ${f} foil`;
+  }
   function changeEntry(key, base, delta) {
     const e = { ...(col()[key] || base) };
     e.qty = Math.max(0, (e.qty || 0) + delta);
@@ -155,6 +189,7 @@
     const n = ownedOf(c.i);
     App.toast(`${label(c)} ajoutée à ta collection (${n} possédée${n > 1 ? 's' : ''})`);
   }
+  const isFoilEntry = e => { if (e.foil) return true; const p = st.idx && entryPrint(e); return !!(p && isFoilOnly(p)); };
   const entryPrint = e => { if (!e || !e.k || !st.idx.byKey.has(e.k)) return null; const [ci, pi] = st.idx.byKey.get(e.k); return st.db.cards[ci].p[pi]; };
 
   // ---------- Prix (TCGplayer, en dollars) ----------
@@ -232,14 +267,19 @@
     }
     const by = { name: (a, b) => label(a.c).localeCompare(label(b.c), 'fr') || a.c.i.localeCompare(b.c.i), added: (a, b) => (b.e.mt || 0) - (a.e.mt || 0), code: (a, b) => a.c.i.localeCompare(b.c.i, 'en', { numeric: true }),
       price: (a, b) => entryPrice(b.e) - entryPrice(a.e) || label(a.c).localeCompare(label(b.c), 'fr') };
-    rows.sort(by[st.sort] || by.name);
+    // même carte : version par version, la normale avant la foil
+    const tie = (a, b) => a.c.i !== b.c.i ? 0 : (a.e.k || '~').localeCompare(b.e.k || '~', 'en', { numeric: true }) || (isFoilEntry(a.e) - isFoilEntry(b.e)) || (a.e.lang || '').localeCompare(b.e.lang || '');
+    const sorter = by[st.sort] || by.name;
+    rows.sort((a, b) => sorter(a, b) || tie(a, b));
+    const mix = c => foilOf(c.i) && foilOf(c.i) < ownedOf(c.i) ? `<span class="mix">En tout : ${esc(ownDetail(c.i))}</span>` : '';
+    const badge = e => isFoilEntry(e) ? `<span class="badge foil" title="Exemplaires foil">×${e.qty} ✦</span>` : `<span class="badge">×${e.qty}</span>`;
     if (gal()) return `<div class="gal">` + rows.map(({ key, e, c, p }) => `<div class="gcard own" data-key="${esc(key)}" data-id="${esc(c.i)}">
-        <button class="pic" data-r="card" aria-label="Détails de ${esc(label(c))}">${imgTag(printImg(c, p))}<span class="badge">×${e.qty}</span></button>
-        <div class="cap"><span class="num">${esc(shownCode(p ? p[1] : c.i))} · ${p ? esc(rarName(p) + foilTag(p, e)) : 'toute version'}${e.lang ? ' · ' + esc(e.lang) : ''}</span>${tag(entryPrice(e))}${esc(label(c))}</div>${App.qtyHtml(e.qty)}</div>`).join('') + `</div>`;
+        <button class="pic" data-r="card" aria-label="Détails de ${esc(label(c))}">${imgTag(printImg(c, p))}${badge(e)}</button>
+        <div class="cap"><span class="num">${esc(shownCode(p ? p[1] : c.i))} · ${p ? esc(rarName(p) + foilTag(p, e)) : 'toute version'}${e.lang ? ' · ' + esc(e.lang) : ''}</span>${tag(entryPrice(e))}${esc(label(c))}${mix(c)}</div>${App.qtyHtml(e.qty)}</div>`).join('') + `</div>`;
     return rows.map(({ key, e, c, p }) => `<div class="yrow" data-key="${esc(key)}" data-id="${esc(c.i)}">
         <button class="ypic" data-r="card">${imgTag(printImg(c, p))}</button>
         <div class="yinfo"><button class="nm" data-r="card">${esc(label(c))}</button>
-          <span class="meta"><span class="code">${esc(shownCode(p ? p[1] : c.i))}</span>${e.lang ? `<span class="tag">${esc(e.lang)}</span>` : ''}${p ? `<span>${esc(rarName(p))}</span>${foilTag(p, e) ? '<span class="tag foil">Foil</span>' : ''}<span>${esc(setName(p[0]))}</span>${upTag(p[0])}` : `<span class="tag">peu importe la version</span>`}${tag(entryPrice(e))}</span></div>
+          <span class="meta"><span class="code">${esc(shownCode(p ? p[1] : c.i))}</span>${e.lang ? `<span class="tag">${esc(e.lang)}</span>` : ''}${p ? `<span>${esc(rarName(p))}</span>${foilTag(p, e) ? '<span class="tag foil">Foil</span>' : ''}<span>${esc(setName(p[0]))}</span>${upTag(p[0])}` : `<span class="tag">peu importe la version</span>`}${tag(entryPrice(e))}${mix(c)}</span></div>
         ${App.qtyHtml(e.qty)}</div>`).join('');
   }
 
@@ -317,7 +357,7 @@
   const resultHtml = (c, act) => `<div class="yres" data-id="${esc(c.i)}">
       <button class="ypic" data-r="card">${imgTag(c.im)}</button>
       <div class="yinfo"><button class="nm" data-r="card">${esc(label(c))}</button><span class="en">${esc(shownCode(c.i))}</span>
-        <span class="meta"><span>${esc(statLine(c))}</span>${ownedOf(c.i) ? `<span class="own">${ownedOf(c.i)} dans ta collection</span>` : ''}</span></div>
+        <span class="meta"><span>${esc(statLine(c))}</span>${ownedOf(c.i) ? `<span class="own">${esc(ownDetail(c.i))} dans ta collection</span>` : ''}</span></div>
       ${act}</div>`;
 
   function openDeck(id, keep) {
@@ -515,7 +555,7 @@
             ${c.pw !== '' && c.pw != null ? `<dt>Puissance</dt><dd>${esc(c.pw)}</dd>` : ''}
             ${c.m !== '' && c.m != null ? `<dt>Force</dt><dd>${esc(c.m)}</dd>` : ''}
             ${c.ty ? `<dt>Tags</dt><dd>${esc(c.ty)}</dd>` : ''}
-            <dt>Dans ta collection</dt><dd><b>${ownedOf(c.i)}</b></dd>
+            <dt>Dans ta collection</dt><dd><b>${ownedOf(c.i)}</b>${foilOf(c.i) ? ` <span class="hint">(${esc(ownDetail(c.i))})</span>` : ''}</dd>
             ${c.cm ? `<dt>Prix</dt><dd><b class="price">${money(c.cm)}</b> <span class="hint">(TCGplayer, version normale)</span></dd>` : ''}</dl>
           <div class="actions" style="justify-content:flex-start">
             ${ds.length ? `<select id="rcDeck">${ds.map(([id, d]) => `<option value="${id}">${esc(d.name || 'Deck')}</option>`).join('')}</select><button data-r="toDeck">Ajouter au deck</button>` : ''}
@@ -633,7 +673,7 @@
     el.innerHTML = (sets.length ? `<h4>Extensions</h4><div class="ysets">${sets.map(i => { const { own, total } = setProgress(i); const x = st.db.sets[i];
       return `<button class="yset" data-r="set" data-set="${i}"><b>${esc(x[0])} ${upTag(i)}</b><span class="hint">${esc(x[1] || '')} · ${own}/${total}</span></button>`; }).join('')}</div>${res.length || exact ? '<h4>Cartes</h4>' : ''}` : '')
       + (exact ? resultHtml(exact, `<div class="yquicks">${quick(exact)}</div>`) : '')
-      + (res.length ? res.map(c => resultHtml(c, c.p.length === 1 ? quick(c) : `<button data-r="card">Choisir la version</button>`)).join('') : (exact || sets.length ? '' : '<p class="hint">Aucune carte ni extension trouvée.</p>'));
+      + (res.length ? res.map(c => resultHtml(c, c.p.length <= 5 ? `<div class="yquicks">${quick(c)}</div>` : `<button data-r="card">Choisir la version (${c.p.length})</button>`)).join('') : (exact || sets.length ? '' : '<p class="hint">Aucune carte ni extension trouvée.</p>'));
     loadImages(el);
   }
 

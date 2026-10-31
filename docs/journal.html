@@ -4,10 +4,17 @@ h1{margin:0 0 4px}h2{margin:28px 0 8px;color:#e3b54a}.d{color:#9a95ad}details{bo
 summary{cursor:pointer;padding:8px 12px}pre{margin:0;padding:12px;overflow:auto;max-height:520px;font:12px Consolas,monospace;background:#100e16;border-top:1px solid #322e42}
 .mod{font-size:11px;background:#3a2f17;color:#e3b54a;padding:1px 6px;border-radius:4px}.new{font-size:11px;background:#1f3a26;color:#6cc58c;padding:1px 6px;border-radius:4px}ul{margin:4px 0 0}</style></head><body>
 <h1>Journal des modifications</h1><p class="d">Coffre — clique sur un fichier pour voir son code.</p>
+<h2>v1.17.3 <span class="d">— 31/10/2026</span></h2>
+<ul><li>Riftbound : indicateur normales / foil dans la collection, et rattachement automatique des cartes mélangées avec les K/DA de Radiance (RAD-001, RAD-004, RAD-005).</li></ul>
+<details><summary><code>src/renderer/rb.js</code>, <code>styles.css</code>, <code>changelog.js</code>, <code>package.json</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ fixEntries() au chargement de la base : un exemplaire est rattaché à la carte qui porte aujourd&#x27;hui son numéro de version (Lingering Animus, Brawl, Amateur Demolitionist) ; decks : codes de carte disparus remappés</span>
+<span style="color:#6cc58c">+ foilOf() / ownDetail() : « 3 normales + 1 foil » dans la collection, la fiche et la recherche</span>
+<span style="color:#6cc58c">+ collection : même carte → version normale avant la foil ; badge foil irisé « ×1 ✦ »</span>
+<span style="color:#6cc58c">+ &quot;version&quot;: &quot;1.17.3&quot;,</span></pre></details>
 <h2>v1.17.2 <span class="d">— 31/10/2026</span></h2>
 <ul><li>Riftbound : la recherche trouve aussi les versions spéciales (« kda », « SP2 », « signature »…), et les cartes Radiance de type « Champion Unit » sont affichées comme des unités Champion.</li></ul>
 <details><summary><code>src/renderer/rb.js</code>, <code>coffre-core.js</code>, <code>changelog.js</code>, <code>package.json</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ rb.js : texte de recherche de chaque carte + codes et noms de ses versions (avec une forme sans ponctuation : « kda »)</span>
 <span style="color:#6cc58c">+ rbFromTcg : « Champion Unit » → type Unit, sous-type Champion</span>
+<span style="color:#6cc58c">+ ajout de cartes : jusqu&#x27;à 5 versions affichées directement dans les résultats (avant : « Choisir la version » dès 2 versions)</span>
 <span style="color:#6cc58c">+ &quot;version&quot;: &quot;1.17.2&quot;,</span></pre></details>
 <h2>v1.17.1 <span class="d">— 31/10/2026</span></h2>
 <ul><li>Riftbound : les cartes de Radiance qui partagent leur numéro avec une autre version (arts spéciaux K/DA, Heartsteel…) ne s&#x27;écrasent plus entre elles, et les cartes de Vendetta et des promos que Riftcodex renvoyait mal sont maintenant toutes récupérées.</li></ul>

@@ -1,6 +1,6 @@
 {
   "name": "coffre-mobile",
-  "version": "1.17.2",
+  "version": "1.17.3",
   "private": true,
   "description": "Coffre pour Android : scan des cartes FM et des vinyles, synchronisé avec le PC",
   "scripts": {

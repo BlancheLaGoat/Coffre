@@ -2,10 +2,18 @@
 // et reprises comme notes de version sur GitHub). La plus récente en premier.
 window.COFFRE_CHANGELOG = [
 {
+ "v": "1.17.3",
+ "date": "31/10/2026",
+ "items": [
+  "Riftbound : quand tu as une carte en normale et en foil, la version normale s'affiche en premier, l'étiquette des foils est irisée (« ×1 ✦ ») et un « En tout : 3 normales + 1 foil » s'affiche sous la carte. Le détail apparaît aussi dans la fiche de la carte et dans la recherche.",
+  "Riftbound : les cartes ajoutées avant la correction des K/DA de Radiance (par exemple des Lingering Animus comptées comme « Seraphine, Not Alone ») sont rattachées toutes seules à la bonne carte."
+ ]
+},
+{
  "v": "1.17.2",
  "date": "31/10/2026",
  "items": [
-  "Riftbound : la recherche trouve aussi les versions spéciales (« kda », « SP2 », « signature »…), et les cartes Radiance de type « Champion Unit » sont affichées comme des unités Champion."
+  "Riftbound, ajouter des cartes : les versions d'une carte (normale, art alternatif, K/DA, signature…) s'affichent directement dans les résultats, avec leurs boutons + / −, au lieu d'être cachées derrière « Choisir la version ». La recherche trouve aussi les versions (« kda », « SP2 », « signature »…), et les cartes « Champion Unit » sont affichées comme des unités Champion."
  ]
 },
 {
