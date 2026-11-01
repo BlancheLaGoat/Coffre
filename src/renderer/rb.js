@@ -18,7 +18,25 @@
     st.db = db; st.idx = Core.opIndex(db);
     // la recherche trouve aussi les versions : « kda », « SP2 », « signature », « RAD-SP2 »…
     for (const c of db.cards) { const v = c.p.map(p => `${p[1]} ${p[3] || ''}`).join(' ').toLowerCase(); c.s += ' ' + v + ' ' + v.replace(/[^a-z0-9 ]/g, ''); }
+    buildCmVersions();
     if (App.data) fixEntries();
+  }
+  // Numéro de version Cardmarket : pour un même nom dans une même extension, Cardmarket numérote V.1, V.2…
+  // dans l'ordre des numéros (normale, art alternatif, overnumbered, signature, spéciale).
+  let cmV = new Map();
+  const cmBase = n => String(n || '').replace(/ - /, ', ');
+  function buildCmVersions() {
+    const groups = new Map();
+    for (const c of st.db.cards) for (const p of c.p) {
+      const g = cmBase(c.n).toLowerCase() + '|' + p[0];
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g).push(p[1]);
+    }
+    cmV = new Map();
+    for (const keys of groups.values()) {
+      if (keys.length < 2) continue;
+      [...new Set(keys)].sort((a, b) => shownCode(a).localeCompare(shownCode(b), 'en', { numeric: true }) || a.localeCompare(b)).forEach((k, i) => cmV.set(k, i + 1));
+    }
   }
   // Anciennes bases : les cartes spéciales K/DA (SP1…SP5) étaient lues comme RAD-001…005 et se mélangeaient avec
   // les vraies RAD-001…005 (Lingering Animus rangée sous « Seraphine, Not Alone »…). Le numéro de version enregistré
@@ -292,7 +310,7 @@
     if (!d || d.deleted) decks()[WISH] = { name: 'Wishlist', cards: {}, wish: true, created: now(), mt: now() };
     return decks()[WISH];
   }
-  function wishCount() { const d = decks()[WISH]; return d && !d.deleted ? Object.values(d.cards || {}).reduce((a, q) => a + q, 0) : 0; }
+  function wishCount() { const d = decks()[WISH]; return d && !d.deleted ? [...Object.values(d.cards || {}), ...Object.values(d.prints || {})].reduce((a, q) => a + q, 0) : 0; }
   function deckCounts(d) {
     let total = 0, missing = 0;
     for (const [id, q] of Object.entries(d.cards || {})) { total += q; missing += Math.max(0, q - ownedOf(id)); }
@@ -421,7 +439,10 @@
     loadImages(box);
   }
   // Ligne pour la wishlist Cardmarket : « 2x Jinx - Rebel »
-  const cmLine = (qty, c) => `${qty}x ${c.n}`;
+  // « 1x Ziggs, Explosive (V.2) » : la version est précisée quand Cardmarket en a plusieurs (p = version voulue ;
+  // sans p, une carte qui n'a qu'une version prend celle-là)
+  const cmName = (c, p) => { p = p || (c.p.length === 1 ? c.p[0] : null); const v = p && cmV.get(p[1]); return cmBase(c.n) + (v ? ` (V.${v})` : ''); };
+  const cmLine = (qty, c, p) => `${qty}x ${cmName(c, p)}`;
 
   // ---------- Decklists texte : « 3 Jinx - Rebel », une carte par ligne, rangées par zone ----------
   const ZONE_EN = { legend: 'Legend', main: 'Main Deck', rune: 'Runes', bf: 'Battlefields' };
@@ -488,11 +509,16 @@
   function renderWish(keepFocus) {
     const box = $('rbList'); if (!box) return;
     const d = decks()[WISH] && !decks()[WISH].deleted ? decks()[WISH] : { cards: {} };
-    const entries = Object.entries(d.cards || {}).map(([id, q]) => ({ c: card(id), q, owned: ownedOf(id) })).filter(x => x.c)
-      .sort((a, b) => label(a.c).localeCompare(label(b.c), 'fr'));
+    // d.cards : peu importe la version ; d.prints : une version précise (clé de version → quantité)
+    const fromPrint = ([pk, q]) => { const hit = st.idx.byKey.get(pk); if (!hit) return null; const c = st.db.cards[hit[0]]; return { c, p: c.p[hit[1]], pk, q, owned: qtyAny(pk) }; };
+    const entries = [...Object.entries(d.cards || {}).map(([id, q]) => ({ c: card(id), q, owned: ownedOf(id) })), ...Object.entries(d.prints || {}).map(fromPrint)].filter(x => x && x.c)
+      .sort((a, b) => label(a.c).localeCompare(label(b.c), 'fr') || (a.pk || a.c.i).localeCompare(b.pk || b.c.i, 'en', { numeric: true }));
     const total = entries.reduce((a, x) => a + x.q, 0);
-    const value = entries.reduce((a, x) => a + x.q * (x.c.cm || 0), 0);
-    const cm = entries.map(x => cmLine(x.q, x.c)).join('\n');
+    const value = entries.reduce((a, x) => a + x.q * ((x.p && x.p[4]) || x.c.cm || 0), 0);
+    const cm = entries.map(x => cmLine(x.q, x.c, x.p)).join('\n');
+    const wcode = x => esc(shownCode(x.p ? x.p[1] : x.c.i)) + (x.p && x.p[3] ? ' · ' + esc(x.p[3]) : '');
+    const wprice = x => x.p ? tag((x.p[4] || x.c.cm || 0) * x.q) : priceTag(x.c.i, x.q);
+    const wattr = x => `data-id="${esc(x.c.i)}"${x.pk ? ` data-pk="${esc(x.pk)}"` : ''}`;
     const results = searchCards(st.wishQ || '', 30);
     const wq = q => `<div class="qty"><button data-r="wq" data-d="-1" aria-label="Retirer de la wishlist">−</button><output>${q}</output><button data-r="wq" data-d="1" aria-label="En vouloir une de plus">+</button></div>`;
     const ownTxt = o => o ? `<span class="own">déjà ${o} dans ta collection</span>` : '';
@@ -504,13 +530,13 @@
         ${layoutSeg('rwLayout')}
       </div>
       ${st.wishQ ? `<div class="yresults">${results.length ? results.map(c => resultHtml(c, `<button class="primary" data-r="wadd">+ Wishlist</button>`)).join('') : '<p class="hint">Aucune carte trouvée.</p>'}</div>` : ''}
-      ${entries.length ? (gal() ? `<div class="gal">${entries.map(({ c, q, owned }) => `<div class="gcard own" data-id="${esc(c.i)}">
-          <button class="pic" data-r="card" aria-label="Détails de ${esc(label(c))}">${imgTag(c.im)}<span class="badge">×${q}</span></button>
-          <div class="cap"><span class="num">${ownTxt(owned) || esc(shownCode(c.i))}</span>${esc(label(c))}${priceTag(c.i, q)}</div>${wq(q)}</div>`).join('')}</div>`
-        : entries.map(({ c, q, owned }) => `<div class="yrow" data-id="${esc(c.i)}">
-          <button class="ypic" data-r="card">${imgTag(c.im)}</button>
-          <div class="yinfo"><button class="nm" data-r="card">${esc(label(c))}</button><span class="en">${esc(shownCode(c.i))}</span>
-            <span class="meta">${ownTxt(owned)}${priceTag(c.i, q)}</span></div>${wq(q)}</div>`).join(''))
+      ${entries.length ? (gal() ? `<div class="gal">${entries.map(x => `<div class="gcard own" ${wattr(x)}>
+          <button class="pic" data-r="card" aria-label="Détails de ${esc(label(x.c))}">${imgTag(printImg(x.c, x.p))}<span class="badge">×${x.q}</span></button>
+          <div class="cap"><span class="num">${wcode(x)}</span>${ownTxt(x.owned)}${esc(label(x.c))}${wprice(x)}</div>${wq(x.q)}</div>`).join('')}</div>`
+        : entries.map(x => `<div class="yrow" ${wattr(x)}>
+          <button class="ypic" data-r="card">${imgTag(printImg(x.c, x.p))}</button>
+          <div class="yinfo"><button class="nm" data-r="card">${esc(label(x.c))}</button><span class="en">${wcode(x)}</span>
+            <span class="meta">${x.p || x.c.p.length < 2 ? '' : '<span class="tag">peu importe la version</span>'}${ownTxt(x.owned)}${wprice(x)}</span></div>${wq(x.q)}</div>`).join(''))
         : `<p class="empty">Ta wishlist est vide : cherche une carte au-dessus, ou ouvre la fiche d'une carte et touche « Ajouter à la wishlist ».</p>`}
       ${entries.length ? `<div class="ycm"><h4>Pour ta wishlist Cardmarket</h4>
         <textarea id="rwCm" readonly rows="${Math.min(8, entries.length)}">${esc(cm)}</textarea>
@@ -520,10 +546,10 @@
     if (hadFocus || keepFocus) { const n = $('rwQ'); n.focus(); try { n.setSelectionRange(caret, caret); } catch (e) { /* rien */ } }
     loadImages(box);
   }
-  function addToWish(id, delta = 1) {
-    const d = wishDeck(); d.cards = d.cards || {};
-    const n = (d.cards[id] || 0) + delta;
-    if (n > 0) d.cards[id] = n; else delete d.cards[id];
+  function addToWish(id, delta = 1, pk) {
+    const d = wishDeck(), m = pk ? (d.prints = d.prints || {}) : (d.cards = d.cards || {}), k = pk || id;
+    const n = (m[k] || 0) + delta;
+    if (n > 0) m[k] = n; else delete m[k];
     touchDeck(d);
     return n;
   }
@@ -542,7 +568,9 @@
     const gen = col()[`${c.i}|*`];
     const prints = c.p.map((p, pi) => ({ p, pi, q: qtyLang(p[1]), qf: qtyLang(p[1], true), all: qtyAny(p[1]) }));
     const ds = liveDecks();
-    const wish = decks()[WISH] && !decks()[WISH].deleted && (decks()[WISH].cards || {})[c.i];
+    const wd = decks()[WISH] && !decks()[WISH].deleted ? decks()[WISH] : null;
+    const wish = wd && (wd.cards || {})[c.i];
+    const wishP = pk => (wd && (wd.prints || {})[pk]) || 0;
     box.innerHTML = `
       <div class="sheet-head"><div><h3>${esc(label(c))}</h3><div class="meta">${esc(c.i)}</div></div>
         <button data-r="${cardBack ? 'back' : 'close'}">${cardBack ? '← Retour' : 'Fermer'}</button></div>
@@ -559,13 +587,14 @@
             ${c.cm ? `<dt>Prix</dt><dd><b class="price">${money(c.cm)}</b> <span class="hint">(TCGplayer, version normale)</span></dd>` : ''}</dl>
           <div class="actions" style="justify-content:flex-start">
             ${ds.length ? `<select id="rcDeck">${ds.map(([id, d]) => `<option value="${id}">${esc(d.name || 'Deck')}</option>`).join('')}</select><button data-r="toDeck">Ajouter au deck</button>` : ''}
-            <button data-r="toWish">☆ Ajouter à la wishlist${wish ? ` (${wish})` : ''}</button>
+            <button data-r="toWish" title="Peu importe la version (ou touche ☆ à côté d'une version précise)">☆ Ajouter à la wishlist${wish ? ` (${wish})` : ''}</button>
             <a data-r="cm">Voir sur Cardmarket ↗</a></div>
           <h4 class="yaddh">Ajouter à ma collection ${langSelect('rcLang')}</h4>
           <div class="yprints">
             <div class="yprint" data-gen="1"><div><b>Peu importe la version</b></div>${App.qtyHtml((gen && gen.qty) || 0)}</div>
             ${prints.map(({ p, pi, q, qf, all }) => `<div class="yprint${all ? ' own' : ''}" data-pi="${pi}">
-              <div><span class="code">${esc(shownCode(p[1]))}</span>${all > q + qf ? ` <span class="own">+${all - q - qf} autre langue</span>` : ''} <span class="tag">${esc(rarName(p))}</span>${isFoilOnly(p) ? ' <span class="tag foil">Foil</span>' : ''}${p[4] ? ' ' + tag(p[4]) : ''}<div class="hint">${esc(setName(p[0]))} ${upTag(p[0])}</div></div>
+              <div><span class="code">${esc(shownCode(p[1]))}</span>${all > q + qf ? ` <span class="own">+${all - q - qf} autre langue</span>` : ''} <span class="tag">${esc(rarName(p))}</span>${isFoilOnly(p) ? ' <span class="tag foil">Foil</span>' : ''}${p[4] ? ' ' + tag(p[4]) : ''}<div class="hint">${esc(setName(p[0]))} ${upTag(p[0])}${cmV.get(p[1]) ? ` · Cardmarket V.${cmV.get(p[1])}` : ''}</div></div>
+              <button class="wishp${wishP(p[1]) ? ' on' : ''}" data-r="wishP" data-pk="${esc(p[1])}" title="Ajouter cette version à la wishlist" aria-label="Ajouter cette version à la wishlist">${wishP(p[1]) ? '★ ' + wishP(p[1]) : '☆'}</button>
               ${App.qtyHtml(q)}</div>
               ${canFoil(p) ? `<div class="yprint yfoil${qf ? ' own' : ''}" data-pi="${pi}" data-foil="1"><div><span class="tag foil">Foil</span>${p[7] ? ' ' + tag(p[7]) : ''}</div>${App.qtyHtml(qf)}</div>` : ''}`).join('')}
           </div>
@@ -615,11 +644,13 @@
     return all.filter(y => !owned.has(y.c.i));
   }
   function setMissingText(i) {
-    const seen = new Set(), lines = [];
-    for (const x of setMissing(i)) {
+    const seen = new Set(), lines = [], miss = setMissing(i);
+    for (const x of miss) {
+      if (st.setRarity) { lines.push(cmLine(1, x.c, x.p)); continue; }
       if (seen.has(x.c.i)) continue;
       seen.add(x.c.i);
-      lines.push(cmLine(1, x.c));
+      const inSet = miss.filter(y => y.c.i === x.c.i);
+      lines.push(cmLine(1, x.c, inSet.length === 1 ? x.p : null));
     }
     return lines.join('\n');
   }
@@ -715,10 +746,10 @@
     if (st.view === 'wish') {
       if (b.dataset.v && b.closest('#rwLayout')) return setLayout(b.dataset.v);
       if (y === 'wadd' && row) { const n = addToWish(row.dataset.id, 1); App.toast(`Ajoutée à la wishlist (×${n})`); return render(); }
-      if (y === 'wq' && row) { addToWish(row.dataset.id, Number(b.dataset.d)); return render(); }
+      if (y === 'wq' && row) { addToWish(row.dataset.id, Number(b.dataset.d), row.dataset.pk); return render(); }
       if (y === 'wcopy') return App.toast(await copyText($('rwCm')) ? 'Liste copiée : colle-la dans ta wishlist Cardmarket' : 'Sélectionne le texte et copie-le à la main');
       if (y === 'wclear') {
-        if (b.dataset.sure) { const d = wishDeck(); d.cards = {}; touchDeck(d); return render(); }
+        if (b.dataset.sure) { const d = wishDeck(); d.cards = {}; d.prints = {}; touchDeck(d); return render(); }
         b.dataset.sure = '1'; b.textContent = 'Confirmer : tout vider'; return;
       }
       if (y === 'card' && row) return openCard(row.dataset.id);
@@ -771,6 +802,10 @@
       const delta = b.dataset.act === 'inc' ? 1 : -1;
       if (pr.dataset.gen) addGeneric(id, delta); else addPrinting(st.idx.byId.get(id), Number(pr.dataset.pi), delta, undefined, !!pr.dataset.foil);
       afterChange(); return;
+    }
+    if (k === 'rb-card' && y === 'wishP') {
+      const pk = b.dataset.pk, n = addToWish($('rcardSheet').dataset.id, 1, pk);
+      App.toast(`${shownCode(pk)} ajoutée à la wishlist (×${n})`); afterChange(); return;
     }
     if (k === 'rb-card' && y === 'toWish') {
       const n = addToWish($('rcardSheet').dataset.id, 1);

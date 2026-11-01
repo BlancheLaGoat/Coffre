@@ -2,6 +2,14 @@
 // et reprises comme notes de version sur GitHub). La plus récente en premier.
 window.COFFRE_CHANGELOG = [
 {
+ "v": "1.17.4",
+ "date": "01/11/2026",
+ "items": [
+  "Riftbound, listes Cardmarket : quand une carte a plusieurs illustrations, la liste copiée précise la version comme sur Cardmarket (« 1x Ziggs, Explosive (V.2) »). Ça vaut pour la wishlist, les manquantes d'un deck et celles d'une extension. Les noms sont écrits comme sur Cardmarket (« Irelia, Fervent »).",
+  "Riftbound : dans la fiche d'une carte, chaque version a son bouton ☆ pour mettre cette illustration précise dans ta wishlist. La fiche indique aussi le numéro de version Cardmarket (V.1, V.2…)."
+ ]
+},
+{
  "v": "1.17.3",
  "date": "31/10/2026",
  "items": [

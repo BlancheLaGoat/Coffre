@@ -4,6 +4,13 @@ h1{margin:0 0 4px}h2{margin:28px 0 8px;color:#e3b54a}.d{color:#9a95ad}details{bo
 summary{cursor:pointer;padding:8px 12px}pre{margin:0;padding:12px;overflow:auto;max-height:520px;font:12px Consolas,monospace;background:#100e16;border-top:1px solid #322e42}
 .mod{font-size:11px;background:#3a2f17;color:#e3b54a;padding:1px 6px;border-radius:4px}.new{font-size:11px;background:#1f3a26;color:#6cc58c;padding:1px 6px;border-radius:4px}ul{margin:4px 0 0}</style></head><body>
 <h1>Journal des modifications</h1><p class="d">Coffre — clique sur un fichier pour voir son code.</p>
+<h2>v1.17.4 <span class="d">— 01/11/2026</span></h2>
+<ul><li>Riftbound : les listes copiées pour Cardmarket précisent la version (V.1, V.2…) quand une carte a plusieurs illustrations, et la wishlist peut contenir une version précise.</li></ul>
+<details><summary><code>src/renderer/rb.js</code>, <code>styles.css</code>, <code>changelog.js</code>, <code>package.json</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ buildCmVersions() : même nom + même extension → V.1, V.2… dans l&#x27;ordre des numéros (normale, art alternatif, overnumbered, signature, spéciale)</span>
+<span style="color:#6cc58c">+ cmName() / cmLine(qty, carte, version) : « 1x Ziggs, Explosive (V.2) », « Irelia - Fervent » écrit « Irelia, Fervent »</span>
+<span style="color:#6cc58c">+ wishlist : d.prints (version précise) en plus de d.cards (peu importe la version) ; bouton ☆ par version dans la fiche</span>
+<span style="color:#6cc58c">+ manquantes d&#x27;une extension : version précisée quand la carte n&#x27;en a qu&#x27;une dans l&#x27;extension, ou quand une rareté est choisie</span>
+<span style="color:#6cc58c">+ &quot;version&quot;: &quot;1.17.4&quot;,</span></pre></details>
 <h2>v1.17.3 <span class="d">— 31/10/2026</span></h2>
 <ul><li>Riftbound : indicateur normales / foil dans la collection, et rattachement automatique des cartes mélangées avec les K/DA de Radiance (RAD-001, RAD-004, RAD-005).</li></ul>
 <details><summary><code>src/renderer/rb.js</code>, <code>styles.css</code>, <code>changelog.js</code>, <code>package.json</code> <span class="mod">modifié</span></summary><pre><span style="color:#6cc58c">+ fixEntries() au chargement de la base : un exemplaire est rattaché à la carte qui porte aujourd&#x27;hui son numéro de version (Lingering Animus, Brawl, Amateur Demolitionist) ; decks : codes de carte disparus remappés</span>
